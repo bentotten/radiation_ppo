@@ -138,6 +138,7 @@ if __name__ == "__main__":
     batch_s: int = 1
 
     # Save directory and experiment name
+    save_gif = True
     env_name: str = "bpf"
     exp_name: str = (
         "loc"
@@ -165,14 +166,18 @@ if __name__ == "__main__":
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
+    
+    # Number of agents
+    number_of_agents = 1
 
     env: RadSearch = RadSearch(
         bbox=np.array(  # type: ignore
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
-        area_obs=np.array(args.area_obs),  # type: ignore
+        observation_area=np.array(args.area_obs),  # type: ignore
         obstruct=args.obstruct,
         np_random=rng,
+        number_agents = number_of_agents
     )
 
     # Run ppo training function
@@ -193,6 +198,7 @@ if __name__ == "__main__":
         seed=robust_seed,
         steps_per_epoch=args.steps_per_epoch,
         epochs=args.epochs,
+        number_of_agents=number_of_agents,
         render=False,
-        save_gif=False,
+        save_gif=save_gif,
     )

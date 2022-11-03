@@ -645,13 +645,13 @@ class GradSearch(object):
             else:
                 self.grad[act] = (o[0]-obs[0])*0.01*self.q_rec
                 self.env.det_coords = det_coords.copy()
-                self.env.detector.set_x(det_coords[0])
-                self.env.detector.set_y(det_coords[1])
+                self.env.detector.set_x(det_coords[0]) # TODO Make compatible with multi-agent env
+                self.env.detector.set_y(det_coords[1]) # TODO Make compatible with multi-agent env
             
         probs = Categorical(self.softmax(self.grad))
-        self.env.det_sto = self.env.det_sto[:self.pointer]
-        self.env.meas_sto = self.env.meas_sto[:self.pointer]
-        self.env.iter_count = self.pointer
+        self.env.det_sto = self.env.det_sto[:self.pointer]  # TODO Make compatible with multi-agent env
+        self.env.meas_sto = self.env.meas_sto[:self.pointer]  # TODO Make compatible with multi-agent env
+        self.env.iter_count = self.pointer  # TODO Make compatible with multi-agent env
         return probs.sample().item()
 
 class FIC(nn.Module):

@@ -1,18 +1,39 @@
 {
-    // Use IntelliSense to learn about possible attributes.
-    // Hover to view descriptions of existing attributes.
-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "PPO",
-            "type": "python",
-            "request": "launch",
-            "program": "${workspaceFolder}/algos/ppo/main.py",
-            "console": "integratedTerminal",
-            "justMyCode": false,
-            "args": ["--seed", "0", "--exp-name", "exp1", "--epochs", "10"],
-            "cwd": "${workspaceFolder}/algos/ppo"
-        }
-    ]
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    // {
+    //   "name": "SIMPLE",
+    //   "type": "python",
+    //   "request": "launch",
+    //   "program": "${workspaceFolder}/algos/simple_ppo/train.py",
+    //   "console": "integratedTerminal",
+    //   "justMyCode": false,
+    //   "args": [],
+    //   "cwd": "${workspaceFolder}/algos/simple_ppo"
+    // },
+    {
+      "name": "PPO",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/ppo/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": ["--seed", "0", "--exp-name", "exp1"],
+      "cwd": "${workspaceFolder}/algos/ppo"
+    },
+    // {
+    //   "name": "MULTI",
+    //   "type": "python",
+    //   //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
+    //   "request": "launch",
+    //   "program": "${workspaceFolder}/algos/multi-agent/main.py",
+    //   "console": "integratedTerminal",
+    //   "justMyCode": false,
+    //   "args": [],
+    //   "cwd": "${workspaceFolder}/algos/multi-agent"
+    // }
+  ]
 }

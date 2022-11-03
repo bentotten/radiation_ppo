@@ -1,7 +1,8 @@
+from cgitb import reset
 from dataclasses import dataclass, field
-from typing import Any, NamedTuple, Type
+from typing import Any, NamedTuple, Type, Union
 from gym_rad_search.envs import rad_search_env  # type: ignore
-from gym_rad_search.envs.rad_search_env import RadSearch  # type: ignore
+from gym_rad_search.envs.rad_search_env import RadSearch, Action  # type: ignore
 import numpy as np
 import numpy.typing as npt
 import torch
@@ -10,6 +11,19 @@ import torch.nn.functional as F
 import time
 import core
 from epoch_logger import EpochLogger
+
+
+# ################################## set device ##################################
+# print("============================================================================================")
+# # set device to cpu or cuda
+# device = torch.device('cpu')
+# if(torch.cuda.is_available()): 
+#     device = torch.device('cuda:0') 
+#     torch.cuda.empty_cache()
+#     print("Device set to : " + str(torch.cuda.get_device_name(device)))
+# else:
+#     print("Device set to : cpu")
+# print("============================================================================================")
 
 
 class BpArgs(NamedTuple):
@@ -77,6 +91,18 @@ class PPOBuffer:
         self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
             self.obs_dim, dtype=np.float32
         )
+        
+        ################################## set device ##################################
+        print("============================================================================================")
+        # set device to cpu or cuda
+        device = torch.device('cpu')
+        if(torch.cuda.is_available()): 
+            device = torch.device('cuda:0') 
+            torch.cuda.empty_cache()
+            print("Device set to : " + str(torch.cuda.get_device_name(device)))
+        else:
+            print("Device set to : cpu")
+        print("============================================================================================")
 
     def store(
         self,
@@ -130,7 +156,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get(self, logger: EpochLogger) -> dict[str, torch.Tensor]:
+    def get(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -157,6 +183,7 @@ class PPOBuffer:
             logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
             loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32),
             ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
+            ep_form = []
         )
 
         if logger:
@@ -227,6 +254,7 @@ class PPO:
         train_v_iters: int = 15,
         lam: float = 0.9,
         max_ep_len: int = 120,
+        number_of_agents: int = 1,
         save_gif: bool = False,
         target_kl: float = 0.07,
         save_freq: int = 500,
@@ -347,7 +375,7 @@ class PPO:
         act_dim: int = rad_search_env.A_SIZE
 
         # Instantiate A2C
-        self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
+        self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)  # TODO make multi-agent
 
         # PFGRU args, from Ma et al. 2020
         bp_args = BpArgs(
@@ -362,7 +390,7 @@ class PPO:
 
         # Count variables
         pi_var_count, model_var_count = (
-            core.count_vars(module) for module in [self.ac.pi, self.ac.model]
+            core.count_vars(module) for module in [self.ac.pi, self.ac.model] # TODO make multi-agent
         )
         self.logger = logger
         self.logger.log(
@@ -376,9 +404,9 @@ class PPO:
         save_gif_freq = epochs // 3
 
         # Set up optimizers and learning rate decay for policy and localization module
-        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr)
+        self.pi_optimizer = Adam(self.ac.pi.parameters(), lr=pi_lr) # TODO make multi-agent
         self.train_pi_iters = train_pi_iters
-        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr)
+        self.model_optimizer = Adam(self.ac.model.parameters(), lr=vf_lr) # TODO make multi-agent
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
         )
@@ -392,35 +420,40 @@ class PPO:
         self.target_kl = target_kl
 
         # Set up model saving
-        self.logger.setup_pytorch_saver(self.ac)
+        self.logger.setup_pytorch_saver(self.ac) # TODO make multi-agent
 
         # Prepare for interaction with environment
         start_time = time.time()
-        o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
+        o, ep_ret, ep_len, done_count, a = env.reset()[0].state, 0, 0, 0, -1 # TODO make multi-agent
+        source_coordinates = np.array(env.src_coords, dtype="float32")
         stat_buff = core.StatBuff()
         stat_buff.update(o[0])
         ep_ret_ls = []
         oob = 0
         reduce_v_iters = True
-        self.ac.model.eval()
+        self.ac.model.eval() # TODO make multi-agent
         # Main loop: collect experience in env and update/log each epoch
         print(f"Starting main training loop!", flush=True)
         for epoch in range(epochs):
             # Reset hidden state
-            hidden = self.ac.reset_hidden()
-            self.ac.pi.logits_net.v_net.eval()
+            hidden = self.ac.reset_hidden() # TODO make multi-agent
+            self.ac.pi.logits_net.v_net.eval() # Pylance note - this seems to call just fine # TODO make multi-agent
             for t in range(steps_per_epoch):
                 # Standardize input using running statistics per episode
                 obs_std = o
                 obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
                 # compute action and logp (Actor), compute value (Critic)
-                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden)
-                next_o, r, d, _ = env.step(a)
+                a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
+                result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
+                next_o = result[0].state
+                r = np.array(result[0].reward, dtype="float32")
+                d = result[0].done
+                msg = result[0].error
                 ep_ret += r
                 ep_len += 1
                 ep_ret_ls.append(ep_ret)
 
-                self.buf.store(obs_std, a, r, v, logp, env.src_coords)
+                self.buf.store(obs_std, a, r, v, logp, source_coordinates) # TODO make multi-agent?
                 logger.store(VVals=v)
 
                 # Update obs (critical!)
@@ -436,7 +469,9 @@ class PPO:
                 if terminal or epoch_ended:
                     if d and not timeout:
                         done_count += 1
-                    if env.oob:
+                    #if env.out_of_bounds:
+                    # Artifact - TODO decouple from rad_ppo agent
+                    if 'out_of_bounds' in msg and msg['out_of_bounds'] == True:
                         # Log if agent went out of bounds
                         oob += 1
                     if epoch_ended and not (terminal):
@@ -450,10 +485,10 @@ class PPO:
                         obs_std[0] = np.clip(
                             (o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8
                         )
-                        _, v, _, _, _ = self.ac.step(obs_std, hidden=hidden)
+                        _, v, _, _, _ = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent
                         if epoch_ended:
                             # Set flag to sample new environment parameters
-                            env.epoch_end = True
+                            env.epoch_end = True # TODO make multi-agent?
                     else:
                         v = 0
                     self.buf.finish_path(v)
@@ -470,25 +505,28 @@ class PPO:
                         if epoch != 0:
                             env.render(
                                 save_gif=save_gif,
-                                path=logger.output_dir,
+                                path=str(logger.output_dir),
                                 epoch_count=epoch,
-                                ep_rew=ep_ret_ls,
+                                #ep_rew=ep_ret_ls,
                             )
 
                     ep_ret_ls = []
                     stat_buff.reset()
-                    if not env.epoch_end:
+                    if not env.epoch_end: # TODO make multi-agent
                         # Reset detector position and episode tracking
-                        hidden = self.ac.reset_hidden()
-                        o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                        hidden = self.ac.reset_hidden() # TODO make multi-agent
+                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                        source_coordinates = np.array(env.src_coords, dtype="float32")
                     else:
                         # Sample new environment parameters, log epoch results
-                        oob += env.oob_count
+                        if 'out_of_bounds_count' in msg:
+                            oob += msg['out_of_bounds_count']
                         logger.store(DoneCount=done_count, OutOfBound=oob)
                         done_count = 0
                         oob = 0
-                        o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
-
+                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                        source_coordinates = np.array(env.src_coords, dtype="float32")
+                        
                     stat_buff.update(o[0])
 
             # Save model
@@ -502,7 +540,7 @@ class PPO:
                 reduce_v_iters = False
 
             # Perform PPO update!
-            self.update(env, bp_args)
+            self.update(env, bp_args) # TODO make multi-agent
 
             # Log info about epoch
             self.logger.log_tabular("Epoch", epoch)
@@ -547,7 +585,7 @@ class PPO:
         for ep in ep_form:
             # For each set of episodes per process from an epoch, compute loss
             trajectories = ep[0]
-            hidden = self.ac.reset_hidden()
+            hidden = self.ac.reset_hidden() # TODO make multi-agent
             obs, act, logp_old, adv, ret, src_tar = (
                 trajectories[:, :observation_idx],
                 trajectories[:, action_idx],
@@ -557,7 +595,7 @@ class PPO:
                 trajectories[:, source_loc_idx:].clone(),
             )
             # Calculate new log prob.
-            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden)
+            pi, val, logp, loc = self.ac.grad_step(obs, act, hidden=hidden) # TODO make multi-agent
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
@@ -629,13 +667,13 @@ class PPO:
         data: dict[str, torch.Tensor] = self.buf.get(self.logger)
 
         # Update function if using the PFGRU, fcn. performs multiple updates per call
-        self.ac.model.train()
+        self.ac.model.train() # TODO make multi-agent
         loss_mod = self.update_model(data, args)
 
         # Update function if using the regression GRU
         # loss_mod = update_loc_rnn(data,env,loss)
 
-        self.ac.model.eval()
+        self.ac.model.eval() # TODO make multi-agent
         min_iters = len(data["ep_form"])
         kk = 0
         term = False
@@ -706,20 +744,21 @@ class PPO:
             )
             for ep in ep_form:
                 sl = len(ep[0])
-                hidden = self.ac.reset_hidden()[0]
-                src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
+                hidden = self.ac.reset_hidden()[0] # TODO make multi-agent
+                #src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
+                src_tar: torch.Tensor = ep[0][:, source_loc_idx:].clone()
                 src_tar[:, :2] = src_tar[:, :2] / args.area_scale
                 obs_t = torch.as_tensor(ep[0][:, :o_idx], dtype=torch.float32)
                 loc_pred = torch.empty_like(src_tar)
                 particle_pred = torch.empty(
-                    (sl, self.ac.model.num_particles, src_tar.shape[1])
+                    (sl, self.ac.model.num_particles, src_tar.shape[1]) # TODO make multi-agent
                 )
 
                 bpdecay_params = np.exp(args.bp_decay * np.arange(sl))
                 bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
                 for zz, meas in enumerate(obs_t):
-                    loc, hidden = self.ac.model(meas, hidden)
-                    particle_pred[zz] = self.ac.model.hid_obs(hidden[0])
+                    loc, hidden = self.ac.model(meas, hidden) # TODO make multi-agent
+                    particle_pred[zz] = self.ac.model.hid_obs(hidden[0]) # TODO make multi-agent
                     loc_pred[zz, :] = loc
 
                 bpdecay_params = torch.FloatTensor(bpdecay_params)
@@ -741,7 +780,7 @@ class PPO:
                 total_loss = pred_loss
                 particle_pred = particle_pred.transpose(0, 1).contiguous()
 
-                particle_gt = src_tar.repeat(self.ac.model.num_particles, 1, 1)
+                particle_gt = src_tar.repeat(self.ac.model.num_particles, 1, 1) # TODO make multi-agent
                 l2_particle_loss = (
                     F.mse_loss(particle_pred, particle_gt, reduction="none")
                     * bpdecay_params
@@ -754,12 +793,12 @@ class PPO:
                 # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
                 # other more complicated distributions could be used to improve the performance
                 y_prob_l2 = torch.exp(-l2_particle_loss).view(
-                    self.ac.model.num_particles, -1, sl, 2
+                    self.ac.model.num_particles, -1, sl, 2 # TODO make multi-agent
                 )
                 l2_particle_loss = -y_prob_l2.mean(dim=0).log()
 
                 y_prob_l1 = torch.exp(-l1_particle_loss).view(
-                    self.ac.model.num_particles, -1, sl, 2
+                    self.ac.model.num_particles, -1, sl, 2 # TODO make multi-agent
                 )
                 l1_particle_loss = -y_prob_l1.mean(dim=0).log()
 
@@ -780,7 +819,9 @@ class PPO:
             model_loss: torch.Tensor = model_loss_arr.mean()
             self.model_optimizer.zero_grad()
             model_loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.ac.model.parameters(), 5)
+            # Clip gradient TODO should 5 be a variable?
+            # TODO Pylance error: https://github.com/Textualize/rich/issues/1523. Unable to resolve
+            torch.nn.utils.clip_grad_norm_(self.ac.model.parameters(), 5) # TODO make multi-agent
 
             self.model_optimizer.step()
 

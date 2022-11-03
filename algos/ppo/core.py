@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from dataclasses import dataclass
 from torch.distributions.categorical import Categorical
+from numbers import Number
 
 from typing import (
     Any,
@@ -18,6 +19,7 @@ from typing import (
     Optional,
     cast,
     overload,
+    Union,
 )
 
 Shape: TypeAlias = int | tuple[int, ...]
@@ -527,7 +529,7 @@ class RNNModelActorCritic(nn.Module):
         )  # obs_dim, hidden_sizes_pol[0]
 
     def step(
-        self, obs: npt.NDArray[np.float32], hidden: tuple[Tensor, Tensor]
+        self, obs: npt.NDArray[np.float32], hidden: Union[tuple[tuple[Tensor, Tensor], Tensor], tuple[Tensor, Tensor]]
     ) -> tuple[
         npt.NDArray[np.float32],
         npt.NDArray[np.float32],
@@ -537,7 +539,7 @@ class RNNModelActorCritic(nn.Module):
     ]:
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
-            loc_pred, hidden_part = self.model(obs_t[:, :3], hidden[0])
+            loc_pred, hidden_part = self.model(obs_t[:, :3], hidden[0]) # PFGRU
             obs_t = torch.cat((obs_t, loc_pred.unsqueeze(0)), dim=1)
             pi, hidden2, v = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])
             a = pi.sample()
@@ -546,11 +548,13 @@ class RNNModelActorCritic(nn.Module):
         return a.numpy(), v.numpy(), logp_a.numpy(), _hidden, loc_pred.numpy()
 
     def grad_step(
-        self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
-    ) -> tuple[Any, Any, Any, Tensor]:
-        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1)
+        #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
+        self, obs: Tensor, act: Tensor, hidden: tuple[tuple[Tensor, Tensor], Tensor]
+    #) -> tuple[Any, Any, Any, Tensor]:
+    ) -> tuple[Any, Tensor, Tensor, Tensor]:
+        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
         loc_pred = torch.empty((obs_t.shape[0], 2))
-        hidden_part = hidden[0]
+        hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
         with torch.no_grad():
             for kk, o in enumerate(obs_t):
                 loc_pred[kk], hidden_part = self.model(o[:, :3], hidden_part)

@@ -113,7 +113,7 @@ def view_envs(path, max_obs, num_envs, render=True):
         repl = 0
         for kk in range(num_envs):
             _, env = refresh_env(env_set,env,kk,num_obs=len(env.obs_coord))
-            L = vis.Line_Segment(env.detector, env.source)
+            L = vis.Line_Segment(env.detector, env.source) # TODO Make compatible with multi-agent env
             inter=False
             zz = 0
             while not inter and zz < jj:
@@ -143,7 +143,7 @@ def refresh_env(env_dict,env,n,num_obs=0):
     env.intensity     = env_dict[key][2]
     env.bkg_intensity = env_dict[key][3]
     env.source        = set_vis_coord(env.source,env.src_coords)
-    env.detector      = set_vis_coord(env.detector,env.det_coords)
+    env.detector      = set_vis_coord(env.detector,env.det_coords) # TODO Make compatible with multi-agent env
     
     if num_obs > 0:
         env.obs_coord = env_dict[key][4]
@@ -165,9 +165,9 @@ def refresh_env(env_dict,env,n,num_obs=0):
         env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
 
     o, _, _, _        = env.step(-1)
-    env.det_sto       = [env_dict[key][1].copy()]
-    env.src_sto       = [env_dict[key][0].copy()]
-    env.meas_sto      = [o[0].copy()]
+    env.det_sto       = [env_dict[key][1].copy()]  # TODO Make compatible with multi-agent env
+    env.src_sto       = [env_dict[key][0].copy()]  # TODO Make compatible with multi-agent env
+    env.meas_sto      = [o[0].copy()]  # TODO Make compatible with multi-agent env
     return o, env
 
 if __name__ == '__main__':

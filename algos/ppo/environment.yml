@@ -1,4 +1,4 @@
-name: ppo_rad
+name: ppo_rad_2
 channels:
   - numba
   - pytorch
@@ -11,6 +11,12 @@ dependencies:
   - numba
   - black
   - swig
+  - cudatoolkit
+  - gym
+  - numpy
+  - matplotlib
   - pip
   - pip:
-      - -e ./gym_rad_search
+      - -e ../../gym_rad_search
+      - -U ray
+

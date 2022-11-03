@@ -4,7 +4,7 @@ import os
 import torch
 import numpy as np
 from numpy.linalg import inv
-import core
+import algos.ppo.eval.eval_core as eval_core
 import matplotlib.pyplot as plt
 import math
 import visilibity as vis
@@ -61,7 +61,7 @@ def select_model(fpath, ac_kwargs, bp_kwargs, grad_kwargs, model='rl',
     bp_kwargs['scale'] = scale
     if model =='gs':
         #Instantiate model
-        grad_act = core.GradSearch(**grad_kwargs)
+        grad_act = eval_core.GradSearch(**grad_kwargs)
         fim = np.zeros((3,3))
         x_est_glob = np.zeros((3,))
         def get_action(x,est=False,FIM=False,act=False,hidden=None,done=False,post=0,step=None,init_est=False):
@@ -96,9 +96,9 @@ def select_model(fpath, ac_kwargs, bp_kwargs, grad_kwargs, model='rl',
                 #Reset model if when doing multiple runs in same environment
                 x_est_glob = np.zeros((3,))
     elif model == 'bpf-a2c':
-        ac = core.RNNModelActorCritic(obs_space,act_space,**ac_kwargs)
+        ac = eval_core.RNNModelActorCritic(obs_space,act_space,**ac_kwargs)
         ac.load_state_dict(torch.load(fname))
-        ac.model = core.ParticleFilter(**bp_kwargs)
+        ac.model = eval_core.ParticleFilter(**bp_kwargs)
         ac.eval()
         fim = np.zeros((3,3))
         def get_action(x,est=False,FIM=False,act=False,hidden=None,done=False,post=0,step=None,init_est=False):
@@ -142,10 +142,10 @@ def select_model(fpath, ac_kwargs, bp_kwargs, grad_kwargs, model='rl',
                     J_tot = np.trace(((J@x[4])*(ac.model.wp_prev[:,step,None,:])).sum(axis=0).squeeze())
                     return act, J_tot,(None,hidden)
             else:
-                ac.model = core.ParticleFilter(**bp_kwargs)
+                ac.model = eval_core.ParticleFilter(**bp_kwargs)
 
     elif model == 'rad-a2c':
-        ac = core.RNNModelActorCritic(obs_space,act_space,**ac_kwargs)
+        ac = eval_core.RNNModelActorCritic(obs_space,act_space,**ac_kwargs)
         ac.load_state_dict(torch.load(fname))
         ac.eval()
         fim = np.zeros((3,3))
@@ -170,7 +170,7 @@ def select_model(fpath, ac_kwargs, bp_kwargs, grad_kwargs, model='rl',
             else:
                 x_est_glob = np.zeros((3,))
     elif model == 'rid-fim':
-        ac = core.FIC(**bp_kwargs)
+        ac = eval_core.FIC(**bp_kwargs)
         ac.FIM_step = FIM_step
         def get_action(x,est=False,FIM=False,act=False,hidden=None,done=False,post=0,step=None,init_est=False):
             if done:
@@ -216,7 +216,7 @@ def select_model(fpath, ac_kwargs, bp_kwargs, grad_kwargs, model='rl',
                 
                 return probs
             else:
-                ac.bpf = core.ParticleFilter(**bp_kwargs)
+                ac.bpf = eval_core.ParticleFilter(**bp_kwargs)
     else:
         raise ValueError('Invalid model type!')
     return get_action
@@ -240,7 +240,7 @@ def refresh_env(env_dict,env,n,num_obs=0):
     env.intensity     = env_dict[key][2]
     env.bkg_intensity = env_dict[key][3]
     env.source        = set_vis_coord(env.source,env.src_coords)
-    env.detector      = set_vis_coord(env.detector,env.det_coords)
+    env.detector      = set_vis_coord(env.detector,env.det_coords) # TODO Make compatible with multi-agent env
     
     if num_obs > 0:
         env.obs_coord = env_dict[key][4]
@@ -262,10 +262,10 @@ def refresh_env(env_dict,env,n,num_obs=0):
         env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
 
     o, _, _, _        = env.step(-1)
-    env.det_sto       = [env_dict[key][1].copy()]
-    env.src_sto       = [env_dict[key][0].copy()]
-    env.meas_sto      = [o[0].copy()]
-    env.prev_det_dist = env.world.shortest_path(env.source,env.detector,env.vis_graph,EPSILON).length()
+    env.det_sto       = [env_dict[key][1].copy()]  # TODO Make compatible with multi-agent env
+    env.src_sto       = [env_dict[key][0].copy()]  # TODO Make compatible with multi-agent env
+    env.meas_sto      = [o[0].copy()]  # TODO Make compatible with multi-agent env
+    env.prev_det_dist = env.world.shortest_path(env.source,env.detector,env.vis_graph,EPSILON).length() # TODO Make compatible with multi-agent env
     env.iter_count    = 1
     return o, env
 
@@ -360,7 +360,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
     o, env = refresh_env(env_set,env,n,num_obs=len(env.obs_coord))
 
     #Instantiate and update running standardization module
-    stat_buff = core.StatBuff()
+    stat_buff = eval_core.StatBuff()
     stat_buff.update(o[0])
 
     try:
@@ -377,11 +377,12 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
 
 
     #Make initial location prediction if applicable
-    x_est = get_action(np.append((env.meas_sto[ep_len]),env.det_sto[ep_len]),est=True)
+    x_est = get_action(np.append((env.meas_sto[ep_len]),env.det_sto[ep_len]),est=True)  # TODO Make compatible with multi-agent env
     obs_std = o
     obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8) 
     
     #Get initial FIM calculation if applicable
+     # TODO Make compatible with multi-agent env
     est_init_bnd, x_est_init = get_action([x_est,env.det_sto[ep_len],env.bkg_intensity,scale_mat,uni_probs[None,:],obs_std],init_est=True) 
     loc_est_ls[mc].append(x_est_init)
     FIM_bound[mc].append(est_init_bnd)
@@ -390,6 +391,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
         loc_est_ls[mc].append(x_est)
 
         #Get action, fisher score, and hidden state when applicable
+         # TODO Make compatible with multi-agent env
         action, score, hidden = get_action([x_est,np.append(env.meas_sto[ep_len],env.det_sto[ep_len]),obs_std,env.bkg_intensity,scale_mat],
                                             hidden=hidden,act=True,step=ep_len)
 
@@ -411,6 +413,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
         
         if fish_analysis:
             #Calculate PCRB if an algorithm is using the bootstrap particle filter
+             # TODO Make compatible with multi-agent env
             R_t = get_action([x_est,env.det_sto[ep_len],env.bkg_intensity,scale_mat],FIM=ep_len)
             rec_bpf = pro_covar + R_t - np.square(pro_covar) @ inv(FIM_bound[mc][ep_len-1]  + pro_covar)
             FIM_bound[mc].append(rec_bpf)
@@ -422,7 +425,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
                 loc_est_err =np.append(loc_est_err, math.sqrt(np.sum(np.square(loc_est_ls[mc][:,1:] - env.src_coords),axis=1).mean()))    
             else:
                 loc_est_err = np.append(loc_est_err,math.sqrt(np.sum(np.square(np.array(loc_est_ls[mc])[:,1:] - env.src_coords),axis=1).mean()))
-            det_ls[mc].append(np.array(env.det_sto))
+            det_ls[mc].append(np.array(env.det_sto))  # TODO Make compatible with multi-agent env
             if mc < 1:
                 if d:
                     done_dist_int = np.append(done_dist_int,env.intensity)
@@ -442,8 +445,8 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
             if render and n==(tot_ep-1) and repl < 1: 
                 #Save trajectory for future rendering
                 seq_sto['Ep'+str(mc)+'_rew'] = ep_ret_ls
-                seq_sto['Ep'+str(mc)+'_meas'] = env.meas_sto
-                seq_sto['Ep'+str(mc)+'_det'] = env.det_sto
+                seq_sto['Ep'+str(mc)+'_meas'] = env.meas_sto  # TODO Make compatible with multi-agent env
+                seq_sto['Ep'+str(mc)+'_det'] = env.det_sto  # TODO Make compatible with multi-agent env
                 seq_sto['Ep'+str(mc)+'_params'] = [env.intensity,env.bkg_intensity,env.src_coords]
                 seq_sto['Ep'+str(mc)+'_obs'] = env.obs_coord
                 seq_sto['Ep'+str(mc)+'_loc'] = loc_est_ls
@@ -454,9 +457,10 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
             
             #Reset environment without performing an env.reset
             env.epoch_end = False
-            env.done = False; env.oob = False
+            env.done = False
+            env.out_of_bounds = False # Artifact - TODO decouple from rad_ppo agent
             env.iter_count = 0
-            env.oob_count = 0
+            env.out_of_bounds_count = 0 # Artifact - TODO decouple from rad_ppo agent
             r, d, ep_ret, ep_len = 0, False, 0, 0
             o, env = refresh_env(env_set,env,n,num_obs=len(env.obs_coord))
 
@@ -474,6 +478,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
             #Get initial location prediction
             x_est = get_action(np.append((env.meas_sto[ep_len]),env.det_sto[ep_len]),est=True)
             if fish_analysis and mc < MC:
+                 # TODO Make compatible with multi-agent env
                 est_init_bnd, x_est_init = get_action([x_est,env.det_sto[ep_len],env.bkg_intensity,scale_mat,uni_probs[None,:],obs_std],init_est=True) 
                 est_init_bnd = (est_init_bnd) 
                 loc_est_ls[mc].append(x_est_init)

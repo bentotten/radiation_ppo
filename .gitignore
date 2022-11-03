@@ -1,6 +1,13 @@
 # Models
 models/
 
+# Simple Logs
+*.csv
+
+# Visuals
+*.gif
+*.png
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
