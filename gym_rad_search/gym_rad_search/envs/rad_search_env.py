@@ -874,8 +874,7 @@ class RadSearch(gym.Env):
     ):
         """
         Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
-        """
-        
+        """       
         reward_length = field(init=False) 
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
@@ -1125,6 +1124,15 @@ class RadSearch(gym.Env):
         if obstacles == []:
             obstacles = self.obs_coord
 
+        # Check only rendering one episode aka data readings available match number of rewards 
+        # (+1 as rewards dont include the first position). 
+        reward_length = len(ep_rew)
+        if data.shape[0] != len(ep_rew)+1:
+            print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length, \
+            minus initial start position: {data.shape[0]}. \
+            Check: Are you trying to render more than one episode?")
+            return 1
+
         if just_env:
             # Setup Graph
             plt.rc("font", size=12)
@@ -1199,6 +1207,7 @@ class RadSearch(gym.Env):
 
             # Setup animation
             print("Frames to render ", reward_length)
+
             ani = animation.FuncAnimation(
                 fig,
                 update,
@@ -1216,11 +1225,11 @@ class RadSearch(gym.Env):
                     ani.save(str(path) + f"/gifs/test_{epoch_count}.gif", writer=writer)
             else:
                 plt.show()
-
             return
 
 # TODO make multi-agent
     def FIM_step(self, agent: Agent, action: Action, coords: Optional[Point] = None) -> Point:
+
         """
         Method for the information-driven controller to update detector coordinates in the environment
         without changing the actual detector positon.
