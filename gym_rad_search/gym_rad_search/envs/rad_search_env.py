@@ -151,22 +151,24 @@ def get_step_size(action: Action) -> float:
     return DET_STEP
 
 
-# Get the new Y for an arbritrary action angle
+# TODO Get the new Y for an arbritrary action angle to work
 def get_y_step_coeff(action: Action, idle_action: Action) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
     '''    
-    return math.sin(2 * math.pi * action / idle_action) if action != idle_action else 0
+    #return math.sin(2 * math.pi * action / idle_action) if action != idle_action else 0
+    return round(math.sin(math.pi * (1.0 - action / 4.0)))
 
-
+# TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
 def get_x_step_coeff(action: Action, idle_action: Action) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
     '''
-    return math.cos(2 * math.pi * action / idle_action) if action != idle_action else 0
+    #return math.cos(2 * math.pi * action / idle_action) if action != idle_action else 0
+    return get_y_step_coeff((action + 6) % 8) 
 
 
 def get_step(action: Action) -> Point:
@@ -1049,7 +1051,10 @@ class RadSearch(gym.Env):
             """
             print(f"Current Frame: {frame_number}", end='\r') # Acts as a progress bar
             
-            current_index = frame_number % (self.iter_count) if self.iter_count > 0 else 0
+            if self.iter_count == 0:
+                raise Warning("Agent must take more than one step to render")
+            
+            current_index = frame_number % (self.iter_count)
             # global location_estimate # TODO Trying to get out of global scope; this is for source prediction
             
             # Set up graphs for first frame

@@ -26,6 +26,7 @@ class CliArgs:
     gamma: float
     seed: int
     steps_per_epoch: int
+    steps_per_episode: int
     epochs: int
     exp_name: str
     dims: tuple[int, int]
@@ -54,6 +55,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         gamma=args.gamma,
         seed=args.seed,
         steps_per_epoch=args.steps_per_epoch,
+        steps_per_episode=args.steps_per_episodem
         epochs=args.epochs,
         exp_name=args.exp_name,
         dims=args.dims,
@@ -75,6 +77,12 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     
     # General parameters
+    parser.add_argument(
+        "--steps-per-episode",
+        type=int,
+        default=120,
+        help="Number of timesteps per episode (before resetting the environment)",
+    )    
     parser.add_argument(
         "--steps-per-epoch",
         type=int,
@@ -249,6 +257,7 @@ if __name__ == "__main__":
         alpha=args.alpha,
         seed=robust_seed,
         steps_per_epoch=args.steps_per_epoch,
+        steps_per_episode=args.steps_per_episode,
         total_epochs=args.epochs,
         number_of_agents=args.agent_count,
         render=args.render,

@@ -314,9 +314,9 @@ class PPO:
     env: RadSearch
     logger_kwargs: EpochLoggerKwargs
     seed: int = field(default= 0)
-    max_ep_len: int = field(default= 120)
-    steps_per_epoch: int = field(default= 4000)
-    total_epochs: int = field(default= 50)
+    steps_per_epoch: int = field(default= 480)
+    steps_per_episode: int = field(default= 120)
+    total_epochs: int = field(default= 3000)
     save_freq: int = field(default= 500)
     save_gif_freq: int = field(default= float('inf'))
     render: bool = field(default= False)
@@ -352,12 +352,13 @@ class PPO:
         logger_kwargs: Arguments for the logging mechanism for saving models and saving/printing progress for each agent.
             Note that the logger is also used for calculating values later on in the episode.
         
-        seed (int): Seed for random number generators.
-        
-        max_ep_len (int): Maximum length of trajectory / episode / rollout / steps.        
+        seed (int): Seed for random number generators.     
 
         steps_per_epoch (int): Number of steps of interaction (state-action pairs)
-            for the agent and the environment in each epoch.
+            for the agent and the environment in each epoch before updating the neural network modules.
+            
+        steps_per_episode (int): Number of steps of interaction (state-action pairs)
+            for the agent and the environment in each episode before resetting the environment.        
 
         total_epochs (int): Number of total epochs of interaction (equivalent to
             number of policy updates) to perform.
@@ -641,7 +642,7 @@ class PPO:
                         out_of_bounds_count[id] += infos[id]['out_of_bounds_count']
                                     
                 # Stopping conditions for episode
-                timeout = steps_in_episode == self.max_ep_len
+                timeout = steps_in_episode == self.steps_per_episode
                 terminal = terminal_reached or timeout
                 epoch_ended = steps == self.steps_per_epoch - 1
 
@@ -687,6 +688,12 @@ class PPO:
                             epoch_count=epoch,
                         )
 
+                    if DEBUG and timeout:
+                        env.render(
+                            path=str(self.loggers[0].output_dir),
+                            epoch_count=epoch,
+                    )                        
+
                     # Reset the environment and counters
                     episode_return_buffer = []
                     for id in self.agents:
@@ -714,14 +721,8 @@ class PPO:
 
                     # Update stat buffers for all agent observations for later observation normalization
                     for id in self.agents:
-                        self.stat_buffers[id].update(observations[id][0])                    
-
-            if DEBUG:
-                env.render(
-                    path=str(self.loggers[0].output_dir),
-                    epoch_count=epoch,
-                )                
-
+                        self.stat_buffers[id].update(observations[id][0])                              
+                    
             if not DEBUG:
                 # Save model
                 if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
@@ -769,7 +770,7 @@ class PPO:
         local_steps_per_epoch = self.steps_per_epoch
         buf = self.agent_buffers[0]
         logger = self.loggers[0]
-        max_ep_len = self.max_ep_len
+        steps_per_episode = self.steps_per_episode
         render = self.render
         save_gif_freq = self.save_gif_freq
         save_gif = self.save_gif
@@ -814,7 +815,7 @@ class PPO:
                 #Update running mean and std
                 stat_buff.update(o[0])
 
-                timeout = ep_len == max_ep_len
+                timeout = ep_len == steps_per_episode
                 terminal = d or timeout
                 epoch_ended = t==local_steps_per_epoch-1
                 
