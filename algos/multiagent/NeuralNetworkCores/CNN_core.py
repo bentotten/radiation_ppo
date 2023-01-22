@@ -795,6 +795,47 @@ class PPO:
         self.render_counter += 1
         plt.close(fig)
         
+    def gradient_step(
+            self, obs: torch.Tensor, act: torch.Tensor, hidden: tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]
+        ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
+            ''' Update A2C '''
+            observation_tensor = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1)
+            
+            # Perform update on PFGRU
+            # loc_pred = torch.empty((obs_t.shape[0], 2))
+            # hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?            
+            # with torch.no_grad():
+            #     for kk, o in enumerate(obs_t):
+            #         loc_pred[kk], hidden_part = self.model(o[:, :3], hidden_part)
+            #obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2) # Add location prediction onto observation
+
+            pass
+            (
+                location_map,
+                others_locations_map,
+                readings_map,
+                visit_counts_map,
+                obstacles_map
+            ) = self.maps.observation_to_map(state_observation, id)
+            
+            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
+            
+            # Add to mapstack buffer to eventually be converted into tensor with minibatches
+            #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
+            self.maps.buffer.coordinate_buffer.append({})
+            for i, observation in state_observation.items():
+                self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
+                
+            # Add single batch tensor dimension for action selection
+            map_stack = torch.unsqueeze(map_stack, dim=0) 
+            
+            # Get actions and values                          
+            action, action_logprob,  = self.pi.act(map_stack) # Choose action
+            state_value = self.critic.act(map_stack)  # Should be a pointer to either local critic or global critic
+
+            
+            pi, logp_a = self.pi(observation_tensor, act=act, hidden=hidden[1])  # Actor
+            return pi, val, logp_a
 
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo

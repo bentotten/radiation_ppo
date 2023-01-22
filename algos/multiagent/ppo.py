@@ -682,7 +682,7 @@ class AgentPPO:
         self, data: dict[str, torch.Tensor], minibatch: int) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
         
         # Set initial variables
-        # TODO what are all of these doing ...
+        # TODO make a named tuple and pass these that way instead of hardcoded indexes
         observation_idx = 11
         action_idx = 14
         logp_old_idx = 13
@@ -699,11 +699,14 @@ class AgentPPO:
         # val-loss is the loss from the critic model
         pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
         
-        # Sample a random episode
+        # Sample a random tensor
+        # TODO check this is sampling the correct dimension
         ep_select = np.random.choice(
             np.arange(0, len(ep_form)), size=int(minibatch), replace=False
         )
         ep_form = [ep_form[idx] for idx in ep_select]
+        
+        # Loss storage buffer(s)
         loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
         loss_arr: torch.Tensor = torch.autograd.Variable(
             torch.tensor([], dtype=torch.float32)
@@ -712,7 +715,7 @@ class AgentPPO:
         for ep in ep_form:
             # For each set of episodes per process from an epoch, compute loss
             trajectories = ep[0]
-            hidden = self.agent.reset_hidden() # TODO make multi-agent
+            hidden = self.reset_neural_nets() 
             obs, act, logp_old, adv, ret, src_tar = (
                 trajectories[:, :observation_idx],
                 trajectories[:, action_idx],
@@ -721,8 +724,14 @@ class AgentPPO:
                 trajectories[:, return_idx, None],
                 trajectories[:, source_loc_idx:].clone(),
             )
-            # Calculate new log prob.
-            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden) # Both PFGRU and A2C? # TODO make multi-agent
+            
+            # Calculate new action log probabilities
+            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':    
+                pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
+            else:
+                results = self.agent.gradient_step(obs, act, hidden)
+                
+                
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
