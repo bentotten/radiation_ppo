@@ -86,7 +86,26 @@ class ActionChoice():
     state_value: torch.float # size(1)
 
 
-################################## PPO Buffer ##################################
+@dataclass
+class RolloutBuffer:      
+    # Buffers
+    mapstacks: list = field(init=False)
+    coordinate_buffer: list = field(init=False)
+    readings: Dict[Any, list] =field(init=False)
+    
+    
+    def __init__(self):
+        self.mapstacks: List = []  # TODO Change to numpy arrays
+        self.coordinate_buffer: CoordinateStorage = []    
+        self.readings: Dict[Any, list] = {} # For heatmap resampling        
+    
+    def clear(self):
+        # Reset readings, mapstacks, and buffer pointers
+        del self.mapstacks[:]
+        del self.coordinate_buffer[:]     
+        self.readings.clear()
+
+
 @dataclass()
 class MapsBuffer:        
     '''
@@ -120,12 +139,10 @@ class MapsBuffer:
     visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
     
-    # Buffers for PPO update to neural networks at end of epoch
-    buffer: PPOBuffer = field(init=False)
+    buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
 
     def __post_init__(self):      
         # Scaled maps
-
         self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
         self.x_limit_scaled: int = self.map_dimensions[0]
         self.y_limit_scaled: int = self.map_dimensions[1]    
@@ -138,7 +155,6 @@ class MapsBuffer:
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
-        self.buffer.clear()
         
     def observation_to_map(self, observation: dict[int, StepResult], id: int
                      ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
@@ -409,7 +425,7 @@ class Actor(nn.Module):
 
 class Critic(nn.Module):
     def __init__(self, map_dim, state_dim, batches: int=6, map_count: int=5, action_dim: int=5, global_critic: bool=False):
-        super(Actor, self).__init__()
+        super(Critic, self).__init__()
         
         '''
             Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
@@ -503,6 +519,7 @@ class PPO:
     action_dim: int
     grid_bounds: tuple[float]
     resolution_accuracy: float
+    steps_per_epoch: int
     random_seed: int = field(default=None)
     
     # Moved to PPO Buffer    
@@ -531,7 +548,8 @@ class PPO:
                 resolution_accuracy=self.resolution_accuracy
             )
 
-        self.pi = Actor(map_dim=self.maps.buffer.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim).to(self.maps.buffer.device) # TODO these are really slow
+        self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
+        self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
 
         
     def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         

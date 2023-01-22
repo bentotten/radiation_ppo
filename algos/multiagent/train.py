@@ -284,7 +284,7 @@ class train_PPO:
         # TODO get rid of redundant for loops
                 
         # Set Pytorch random seed
-        if self.random_seed:
+        if self.seed:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)      
 
