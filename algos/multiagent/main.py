@@ -209,10 +209,12 @@ if __name__ == "__main__":
 
     # Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
-    exp_name = datetime.now().replace(microsecond=0).strftime('%Y-%m-%d-%H:%M:%S') + "_" + exp_name
     rng = npr.default_rng(robust_seed)
 
     # Set up logger args 
+    timestamp = datetime.now().replace(microsecond=0).strftime('%Y-%m-%d-%H:%M:%S')
+    exp_name = timestamp + "_" + exp_name
+    save_dir_name = save_dir_name + '/' + timestamp
     logger_kwargs = {'exp_name': exp_name, 'seed': args.seed, 'data_dir': "../../models/train", 'env_name': save_dir_name}   
 
     # Set up Radiation environment

@@ -1129,7 +1129,8 @@ class RadSearch(gym.Env):
                 ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax1.set_xlabel("X[m]")
                 ax1.set_ylabel("Y[m]")
-                ax1.legend(loc="lower right", fontsize=8)
+                leg = ax1.legend(loc="lower right", fontsize=8)
+                leg.set_draggable(False)  # freeze legend
 
                 # Set up radiation graph
                 # TODO make this less terrible
@@ -1315,14 +1316,15 @@ class RadSearch(gym.Env):
             ax1.set_ylim(0, self.search_area[2][1] / 100)
             ax1.set_xlabel("X[m]")
             ax1.set_ylabel("Y[m]")
-            ax1.legend(loc="lower right", fontsize=8)
+            leg = ax1.legend(loc="lower right", fontsize=8)
+            leg.set_draggable(False) 
         
             # Save
             if self.save_gif:
-                if os.path.isdir(str(path) + ".." + "/gifs/"):
+                if os.path.isdir(str(path) + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
-                    os.mkdir(str(path) + ".." + "/gifs/")
+                    os.mkdir(str(path) + "/gifs/")
                     fig.savefig(str(path) + f"/gifs/environment.png")
             else:
                 plt.show()

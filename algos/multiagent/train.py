@@ -290,7 +290,7 @@ class PPO:
         self.ac_kwargs["seed"] = self.seed
         self.ac_kwargs["pad_dim"] = 2        
 
-        # Instantiate environment 
+        # Get environment information
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
         
@@ -350,6 +350,14 @@ class PPO:
                 f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
             )
             self.loggers[id].setup_pytorch_saver(self.agents[id].agent)
+            
+        # Save env image
+        if self.render:
+            self.env.render(
+            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
+            epoch_count=0,
+            just_env=True
+            )                    
 
     def train(self):
         # Prepare environment variables and reset
@@ -507,16 +515,9 @@ class PPO:
                     time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
                     if (asked_to_save and save_first_epoch and time_to_save):
                         env.render(
-                            path=str(self.loggers[0].output_dir),
+                            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                             epoch_count=epoch,
                         )
-
-                    if DEBUG and timeout:
-                        pass
-                    #     env.render(
-                    #         path=str(self.loggers[0].output_dir),
-                    #         epoch_count=epoch,
-                    # )                        
 
                     # Reset the environment and counters
                     episode_return_buffer = []
