@@ -385,13 +385,12 @@ class train_PPO:
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
         for epoch in range(self.total_epochs):
-            # Reset hidden states and sets Actor into "eval" mode 
+            # Reset hidden layers and sets Actor into "eval" mode 
+            hiddens = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                hiddens = {id: ac.agent.reset_hidden() for id, ac in self.agents.items()}
                 for ac in self.agents.values():
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?                
             else:
-                hiddens = None
                 for ac in self.agents.values():
                     ac.agent.pi.eval()
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
@@ -436,13 +435,13 @@ class train_PPO:
                         obs = observations[id],
                         rew = rewards[id],
                         act = agent_action_decisions[id],
-                        val = agent_thoughts[id].value,
-                        logp = agent_thoughts[id].logprob,
+                        val = agent_thoughts[id].state_value,
+                        logp = agent_thoughts[id].action_logprob,
                         src = source_coordinates,
                         #terminal = terminals[id],  # TODO do we want to store terminal flags?
                     )
                     
-                    self.loggers[id].store(VVals=agent_thoughts[id].value)
+                    self.loggers[id].store(VVals=agent_thoughts[id].state_value)
                     self.stat_buffers[id].update(next_observations[id][0])                    
 
                 # Update obs (critical!)
@@ -485,7 +484,8 @@ class train_PPO:
                                 (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
                             )     
                             for id, ac in self.agents.items():
-                                _, value, _, _, _ = ac.agent.step(standardized_observations[id], hidden=hiddens[id])
+                                results = ac.step(standardized_observations, hiddens=hiddens)
+                                value = results.state_value
  
                         if epoch_ended:
                             # Set flag to sample new environment parameters
@@ -518,12 +518,14 @@ class train_PPO:
                     episode_return_buffer = []
                     for id in self.agents:
                          self.stat_buffers[id].reset()
-                    # If not at the end of an epoch, reset the detector position and episode tracking for incoming new episode                      
+                         
+                    # If not at the end of an epoch, reset hidden layers for incoming new episode    
+                    # TODO why not reset hidden layers at the end of an epoch?                  
                     if not env.epoch_end:
                         for id, ac in self.agents.items():                        
-                            hiddens[id] = ac.agent.reset_hidden()
+                            hiddens[id] = ac.reset_neural_nets()
+                    # Else log epoch results                    
                     else:
-                        # Sample new environment parameters, log epoch results
                         for id in self.agents:
                             if 'out_of_bounds_count' in infos[id]:
                                 out_of_bounds_count[id] += infos[id]['out_of_bounds_count']  # TODO this was already done above, is this being done twice?

@@ -501,10 +501,27 @@ class AgentPPO:
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
         else:
-            results = self.agent.select_action(standardized_observations, self.id)
-            #return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
+            results = self.agent.select_action(standardized_observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
 
         return results         
+    
+    def reset_neural_nets(self, batch_size: int = 1):
+        ''' Reset the neural networks at the end of an epoch '''
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            hiddens = self.agent.reset_hidden()
+        else:
+            # TODO implement reset function to help avoid local minima
+            # actor_hidden = self.agent.pi._reset_state()
+            # critic_hidden = self.agent.critic._reset_state()
+            #pfgru_hidden = self.agent.model.init_hidden(batch_size)
+            actor_hidden = 0
+            critic_hidden = 0
+            pfgru_hidden = 0
+            
+            hiddens = (actor_hidden, critic_hidden, pfgru_hidden)
+        
+        return hiddens
+    
     
     #TODO Make this a Ray remote function 
     def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
@@ -516,7 +533,9 @@ class AgentPPO:
         data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
 
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
-        model_losses = self.update_model(data)
+        # TODO get this working for CNN
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            model_losses = self.update_model(data)
 
         # Update function if using the regression GRU
         # model_losses = update_loc_rnn(data,env,loss)
@@ -672,7 +691,15 @@ class AgentPPO:
         source_loc_idx = 15
 
         ep_form = data["ep_form"]
+        
+        # Policy info buffer
+        # KL is for KL divergence
+        # ent is entropy (randomness)
+        # val is state-value from critic
+        # val-loss is the loss from the critic model
         pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
+        
+        # Sample a random episode
         ep_select = np.random.choice(
             np.arange(0, len(ep_form)), size=int(minibatch), replace=False
         )

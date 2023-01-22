@@ -380,7 +380,7 @@ class Actor(nn.Module):
     def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
 
         # Select Action from Actor
-        self.test(state_map_stack=state_map_stack)
+        #self.test(state_map_stack=state_map_stack)
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
         action = dist.sample()
@@ -393,11 +393,6 @@ class Actor(nn.Module):
         self.actor.train()
         self.local_critic.train()
         
-        # TODO Delete 
-        print(summary(self.actor, input=state_map_stack.shape))
-        self.test(state_map_stack=state_map_stack)
-        exit()
-        
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
@@ -406,6 +401,8 @@ class Actor(nn.Module):
             
         return action_logprobs, state_values, dist_entropy        
 
+    def _reset_state(self):
+        return self._get_init_states()
 
 class Critic(nn.Module):
     def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
@@ -488,8 +485,7 @@ class Critic(nn.Module):
    
     def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]: 
         # Get q-value from critic
-        #state_value = self.local_critic(state_map_stack) if not self.global_critic else global_critic(state_map_stack) # TODO implement global critic
-        self.test(state_map_stack)
+        #self.test(state_map_stack)
         state_value = self.critic(state_map_stack)
         return state_value
     
@@ -499,6 +495,8 @@ class Critic(nn.Module):
             
         return state_values        
 
+    def _reset_state(self):
+        return self._get_init_states()
 
 @dataclass
 class PPO:
@@ -580,18 +578,13 @@ class PPO:
             # Add single batch tensor dimension for action selection
             map_stack = torch.unsqueeze(map_stack, dim=0) 
             
-            #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
-            #action, action_logprob = self.policy_old.act(state) # Choose action
-                 
-            #self.policy.test(map_stack)
-            
+            # Get actions and values                          
             action, action_logprob,  = self.pi.act(map_stack) # Choose action
             state_value = self.critic.act(map_stack)  # Should be a pointer to either local critic or global critic
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
         #return action.item(), action_logprob.item(), state_value.item()
     
-
     def update(self):
         '''   
             Compute the new policy and log probabilities
