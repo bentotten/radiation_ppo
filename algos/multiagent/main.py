@@ -161,7 +161,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--net-type",
         type=str,
         default="rnn",
-        help="Choose between recurrent neural network or MLP Actor-Critic (A2C), option: rnn, mlp",
+        help="Choose between convolutional neural network, recurrent neural network, or MLP Actor-Critic (A2C), or feed forward option: cnn, rnn, mlp, ff",
     )    
     parser.add_argument(
         "--hid-pol", type=int, default=32, help="Actor linear layer size (Policy Hidden Layer Size)"
@@ -243,7 +243,6 @@ if __name__ == "__main__":
     # Run ppo training function
     ppo = train.PPO(
         env=env,
-        actor_critic=RADA2C_core.RNNModelActorCritic,
         logger_kwargs=logger_kwargs,
         ac_kwargs=dict(
             hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
@@ -263,7 +262,8 @@ if __name__ == "__main__":
         render=args.render,
         save_gif=args.render, # TODO combine into just render
         save_freq=args.save_freq,
-        save_gif_freq=args.save_gif_freq
+        save_gif_freq=args.save_gif_freq,
+        actor_critic_architecture=args.net_type
     )
     
     ppo.train()

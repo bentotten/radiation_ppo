@@ -30,8 +30,8 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from ppo import OptimizationStorage, PPOBuffer
 
 # Neural Networks
-from NeuralNetworkCores.FF_core import PPO as van_PPO # vanilla_PPO
-from NeuralNetworkCores.CNN_core import PPO as PPO
+import NeuralNetworkCores.FF_core as RADFF_core
+import NeuralNetworkCores.CNN_core as RADCNN_core
 import NeuralNetworkCores.RADA2C_core as RADA2C_core
 
 # Data Management Utility
@@ -136,7 +136,8 @@ class PPO:
     number_of_agents: int = field(default= 1)
     target_kl: float = field(default= 0.07)
     ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
-    actor_critic: Type[RADA2C_core.RNNModelActorCritic] = field(default=RADA2C_core.RNNModelActorCritic)
+    #actor_critic: Type[RADA2C_core.RNNModelActorCritic] = field(default=RADA2C_core.RNNModelActorCritic)
+    actor_critic_architecture: str = field(default="cnn")
     start_time: float = field(default_factory= lambda: time.time())
     
     """
@@ -280,7 +281,26 @@ class PPO:
 
         # Instantiate Actor-Critic (A2C) Agents
         #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
-        self.agents = {i: self.actor_critic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)}
+        match self.actor_critic_architecture:
+            case 'cnn':
+                self.agents: dict[int, RADCNN_core.PPO] = {
+                    i: RADCNN_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+                }
+            case 'rnn':
+                self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
+                    i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+                }
+            case 'mlp':
+                self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
+                    i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+                }                
+            case 'ff':
+                self.agents: dict[int, RADFF_core.PPO] = {
+                    i: RADFF_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+                }                
+            case _:
+                raise ValueError('Unsupported neural network type')
+            
         for agent in self.agents.values():
             agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
         
