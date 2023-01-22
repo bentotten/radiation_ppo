@@ -107,14 +107,6 @@ class AgentStepReturn(NamedTuple):
     out_prediction:  Union[npt.NDArray, None]
 
 
-class BpArgs(NamedTuple):
-    bp_decay: float
-    l2_weight: float
-    l1_weight: float
-    elbo_weight: float
-    area_scale: float
-
-
 @dataclass
 class StatBuff:
     mu: float = 0.0
@@ -298,18 +290,6 @@ class PPO:
         self.ac_kwargs["seed"] = self.seed
         self.ac_kwargs["pad_dim"] = 2        
 
-        # Set arguments for bootstrap particle filter in the Particle Filter Gated Recurrent Unit (PFGRU) for the source prediction neural networks
-        #  from Ma et al. 2020
-        self.bp_args = BpArgs(
-            bp_decay=0.1,
-            l2_weight=1.0,
-            l1_weight=0.0,
-            elbo_weight=1.0,
-            area_scale=self.env.search_area[2][
-                1
-            ],  # retrieves the height of the created environment
-        )
-
         # Instantiate environment 
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
@@ -334,6 +314,7 @@ class PPO:
                 clip_ratio=self.clip_ratio,
                 alpha=self.alpha,
                 target_kl=self.target_kl,
+                env_height=self.env.search_area[2][1],
             ) for i in range(self.number_of_agents)
         }
 
@@ -626,7 +607,21 @@ class PPO:
                     ac.reduce_pfgru_training()
 
             # Perform PPO update!
-            self.update_agents() 
+            for id, ac in self.agents.items():
+                update_results = ac.update_agent()
+                
+                # Store results
+                self.loggers[id].store(
+                    StopIter=update_results.StopIter,
+                    LossPi=update_results.LossPi,
+                    LossV=update_results.LossV,
+                    LossModel=update_results.LossModel,
+                    KL=update_results.KL,
+                    Entropy=update_results.Entropy,
+                    ClipFrac=update_results.ClipFrac,
+                    LocLoss=update_results.LocLoss,
+                    VarExplain=update_results.VarExplain,
+                )            
             
             if not terminal:
                 pass            
@@ -651,282 +646,6 @@ class PPO:
                 self.loggers[id].log_tabular("StopIter", average_only=True)
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
-
-
-    def update_agents(self) -> None: #         (env, bp_args, loss_fcn=loss)
-
-        """Update for the localization and A2C modules"""
-        # Get data from buffers
-        data: dict[int, dict[str, torch.Tensor]] = {id: ac.ppo_buffer.get() for id, ac in self.agents.items()}
-
-        # Note: update functions perform multiple updates per call, according to minibatch number (sometimes known as k_epoch)
-        
-        # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
-        model_losses = {id: self.update_model(id, data[id], agent) for id, agent in self.agents.items()}
-
-        # Update function if using the regression GRU
-        # model_losses = update_loc_rnn(data,env,loss)
-
-        # Length of data ep_form
-        length = len(data[0]["ep_form"])
-        for id in self.agents: assert len(data[id]["ep_form"]) == length
-        min_iters = length
-        kk = 0
-        term = False
-
-        # Train Actor-Critic policy with multiple steps of gradient descent (mini batch)
-        # TODO TODO make this more concise
-        update_results = {}
-        while not term and kk < self.train_pi_iters:
-            for id, agent in self.agents.items():
-                # Early stop training if KL-div above certain threshold
-                #pi_l, pi_info, term, loc_loss = self.update_a2c(agent, data, min_iters, kk)  # pi_l = policy loss
-                update_results[id] = {}
-                (
-                    update_results[id]['pi_l'], 
-                    update_results[id]['pi_info'], 
-                    update_results[id]['term'], 
-                    update_results[id]['loc_loss']
-                ) = self.update_a2c(id, agent, data[id], min_iters, kk)  # pi_l = policy loss
-                kk += 1
-
-        # Reduce learning rate
-        for id in self.agents:
-            self.agent_optimizers[id].pi_scheduler.step()
-            self.agent_optimizers[id].critic_scheduler.step()            
-            self.agent_optimizers[id].pfgru_scheduler.step()
-
-        for id in self.agents:
-
-            # Log changes from update
-            self.loggers[id].store(StopIter=kk)
-        
-            kl, ent, cf, loss_v = (
-                update_results[id]['pi_info']["kl"],
-                update_results[id]['pi_info']["ent"],
-                update_results[id]['pi_info']["cf"],
-                update_results[id]['pi_info']["val_loss"],
-            )
-
-            self.loggers[id].store(
-                LossPi=update_results[id]['pi_l'].item(),
-                LossV=loss_v.item(),
-                LossModel=model_losses[id].item(),  # TODO if using the regression GRU
-                KL=kl,
-                Entropy=ent,
-                ClipFrac=cf,
-                LocLoss=update_results[id]['loc_loss'],
-                VarExplain=0,
-            )
-
-    def update_model(self, id: int, data: dict[str, torch.Tensor], ac: RADA2C_core.RNNModelActorCritic) -> torch.Tensor:
-        ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''
-        # TODO this was grabbed wholesale, needs to be checked 
-        
-        # Initial values and compatability
-        args: BpArgs = self.bp_args
-        ep_form = data["ep_form"]
-        source_loc_idx = 15
-        o_idx = 3
-        
-        # Put into training mode        
-        ac.model.train() # PFGRU 
-        
-        for _ in range(self.train_pfgru_iters):
-            model_loss_arr: torch.Tensor = torch.autograd.Variable(
-                torch.tensor([], dtype=torch.float32)
-            )
-            for ep in ep_form:
-                sl = len(ep[0])
-                hidden = ac.reset_hidden()[0] 
-                #src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
-                src_tar: torch.Tensor = ep[0][:, source_loc_idx:].clone()
-                src_tar[:, :2] = src_tar[:, :2] / args.area_scale
-                obs_t = torch.as_tensor(ep[0][:, :o_idx], dtype=torch.float32)
-                loc_pred = torch.empty_like(src_tar)
-                particle_pred = torch.empty(
-                    (sl, ac.model.num_particles, src_tar.shape[1]) 
-                )
-
-                bpdecay_params = np.exp(args.bp_decay * np.arange(sl))
-                bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
-                for zz, meas in enumerate(obs_t):
-                    loc, hidden = ac.model(meas, hidden) 
-                    particle_pred[zz] = ac.model.hid_obs(hidden[0]) 
-                    loc_pred[zz, :] = loc
-
-                bpdecay_params = torch.FloatTensor(bpdecay_params)
-                bpdecay_params = bpdecay_params.unsqueeze(-1)
-                l2_pred_loss = (
-                    F.mse_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction="none")
-                    * bpdecay_params
-                )
-                l1_pred_loss = (
-                    F.l1_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction="none")
-                    * bpdecay_params
-                )
-
-                l2_loss = torch.sum(l2_pred_loss)
-                l1_loss = 10 * torch.mean(l1_pred_loss)
-
-                pred_loss = args.l2_weight * l2_loss + args.l1_weight * l1_loss
-
-                total_loss = pred_loss
-                particle_pred = particle_pred.transpose(0, 1).contiguous()
-
-                particle_gt = src_tar.repeat(ac.model.num_particles, 1, 1) 
-                l2_particle_loss = (
-                    F.mse_loss(particle_pred, particle_gt, reduction="none")
-                    * bpdecay_params
-                )
-                l1_particle_loss = (
-                    F.l1_loss(particle_pred, particle_gt, reduction="none")
-                    * bpdecay_params
-                )
-
-                # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
-                # other more complicated distributions could be used to improve the performance
-                y_prob_l2 = torch.exp(-l2_particle_loss).view(
-                    ac.model.num_particles, -1, sl, 2 
-                )
-                l2_particle_loss = -y_prob_l2.mean(dim=0).log()
-
-                y_prob_l1 = torch.exp(-l1_particle_loss).view(
-                    ac.model.num_particles, -1, sl, 2 
-                )
-                l1_particle_loss = -y_prob_l1.mean(dim=0).log()
-
-                xy_l2_particle_loss = torch.mean(l2_particle_loss)
-                l2_particle_loss = xy_l2_particle_loss
-
-                xy_l1_particle_loss = torch.mean(l1_particle_loss)
-                l1_particle_loss = 10 * xy_l1_particle_loss
-
-                belief_loss: torch.Tensor = (
-                    args.l2_weight * l2_particle_loss
-                    + args.l1_weight * l1_particle_loss
-                )
-                total_loss: torch.Tensor = total_loss + args.elbo_weight * belief_loss
-
-                model_loss_arr = torch.hstack((model_loss_arr, total_loss.unsqueeze(0)))
-
-            model_loss: torch.Tensor = model_loss_arr.mean()
-            self.agent_optimizers[id].model_optimizer.zero_grad()
-            model_loss.backward()
-            # Clip gradient TODO should 5 be a variable?
-            # TODO Pylance error: https://github.com/Textualize/rich/issues/1523. Unable to resolve
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5) # TODO make multi-agent
-
-            self.agent_optimizers[id].model_optimizer.step()
-
-        ac.model.eval() 
-        return model_loss
-
-    def update_a2c(
-        self, id: int, ac: RADA2C_core.RNNModelActorCritic, data: dict[str, torch.Tensor], minibatch: int, iter: int
-    ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
-        
-        # Set initial variables
-        env = self.env
-        
-        observation_idx = 11
-        action_idx = 14
-        logp_old_idx = 13
-        advantage_idx = 11
-        return_idx = 12
-        source_loc_idx = 15
-
-        ep_form = data["ep_form"]
-        pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
-        ep_select = np.random.choice(
-            np.arange(0, len(ep_form)), size=int(minibatch), replace=False
-        )
-        ep_form = [ep_form[idx] for idx in ep_select]
-        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
-        loss_arr: torch.Tensor = torch.autograd.Variable(
-            torch.tensor([], dtype=torch.float32)
-        )
-
-        for ep in ep_form:
-            # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]
-            hidden = ac.reset_hidden() # TODO make multi-agent
-            obs, act, logp_old, adv, ret, src_tar = (
-                trajectories[:, :observation_idx],
-                trajectories[:, action_idx],
-                trajectories[:, logp_old_idx],
-                trajectories[:, advantage_idx],
-                trajectories[:, return_idx, None],
-                trajectories[:, source_loc_idx:].clone(),
-            )
-            # Calculate new log prob.
-            pi, val, logp, loc = ac.grad_step(obs, act, hidden=hidden) # Both PFGRU and A2C? # TODO make multi-agent
-            logp_diff: torch.Tensor = logp_old - logp
-            ratio = torch.exp(logp - logp_old)
-
-            clip_adv = (
-                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
-            )
-            clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
-
-            # Useful extra info
-            clipfrac = (
-                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            )
-            approx_kl = logp_diff.detach().mean().item()
-            ent = pi.entropy().detach().mean().item()
-            
-            val_loss = self.agent_optimizers[id].loss(val, ret) # MSE critc loss TODO does this need to be adjusted?
-
-            # TODO: More descriptive name
-            new_loss: torch.Tensor = -(
-                torch.min(ratio * adv, clip_adv).mean()
-                - 0.01 * val_loss
-                + self.alpha * ent
-            )
-            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
-
-            new_loss_sto: torch.Tensor = torch.tensor(
-                [approx_kl, ent, clipfrac, val_loss.detach()]
-            )
-            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
-
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)
-        loss_pi, approx_kl, ent, clipfrac, loss_val = (
-            mean_loss,
-            means[0].detach(),
-            means[1].detach(),
-            means[2].detach(),
-            means[3].detach(),
-        )
-        pi_info["kl"].append(approx_kl)
-        pi_info["ent"].append(ent)
-        pi_info["cf"].append(clipfrac)
-        pi_info["val_loss"].append(loss_val)
-
-        kl = pi_info["kl"][-1].mean()
-        if kl.item() < 1.5 * self.target_kl:
-            self.agent_optimizers[id].pi_optimizer.zero_grad()
-            loss_pi.backward()
-            self.agent_optimizers[id].pi_optimizer.step()
-            term = False
-        else:
-            term = True
-
-        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-            pi_info["kl"][0].numpy(),
-            pi_info["ent"][0].numpy(),
-            pi_info["cf"][0].numpy(),
-            pi_info["val_loss"][0].numpy(),
-        )
-        loss_sum_new = loss_pi
-        return (
-            loss_sum_new,
-            pi_info,
-            term,
-            (env.search_area[2][1] * loc - (src_tar)).square().mean().sqrt(),
-        )
 
 
 def train_scaffolding():
