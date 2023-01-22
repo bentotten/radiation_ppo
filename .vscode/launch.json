@@ -34,12 +34,12 @@
       "args": [
         "--agent-count",
         "3",
-        // "--steps-per-epoch",
-        // "5",
-        // "--steps-per-episode",
-        // "5",
-        // "--epochs",
-        // "1",
+        "--steps-per-epoch",
+        "5",
+        "--steps-per-episode",
+        "5",
+        "--epochs",
+        "1",
         "--render",
         "True",
         "--save-gif-freq",
@@ -51,9 +51,9 @@
         "--enforce_grid_boundaries",
         "True",
         "--exp-name",
-        "TEAM-RAD"
-        // "--net-type",
-        // "cnn"
+        "TEAM-RAD",
+        "--net-type",
+        "cnn"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

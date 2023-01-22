@@ -148,7 +148,7 @@ class PPOBuffer:
     obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
 
     gamma: float = 0.99
-    lam: float = 0.90
+    lam: float = 0.90  # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
     beta: float = 0.005
 
     """
@@ -157,8 +157,8 @@ class PPOBuffer:
     for calculating the advantages of state-action pairs. This is left outside of the
     PPO agent so that A2C architectures can be swapped out as desired.
     
-    gamma (float): Discount factor
-    lam (float): Smoothing parameter for GAE calculation
+    gamma (float): Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
+    lam (float): Smoothing parameter for Generalize Advantage Estimate (GAE) calculations
     beta (float): Entropy for loss function, encourages exploring different policies
     """
     
@@ -379,9 +379,12 @@ class PPOBuffer:
 
 @dataclass
 class AgentPPO:
+    id: int
     observation_space: int
     action_space: int
     env_height: int
+    environment_scale: int
+    scaled_grid_bounds: tuple # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
     steps_per_epoch: int = field(default= 480)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic_architecture: str = field(default="cnn")  
@@ -397,11 +400,11 @@ class AgentPPO:
     reduce_pfgru_iters: bool = field(default=True) 
     gamma: float = field(default= 0.99)
     lam: float = field(default= 0.9)
-    
+    seed: int = field(default= 0)
+
     bp_args: BpArgs = field(init=False)
 
-    def __post_init__(self):
-        
+    def __post_init__(self):   
         # PFGRU args, from Ma et al. 2020
         self.bp_args = BpArgs(
             bp_decay=0.1,
@@ -414,7 +417,20 @@ class AgentPPO:
         # Initialize agents
         match self.actor_critic_architecture:
             case 'cnn':
-                self.agent = RADCNN_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)
+                # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
+                #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
+                #  number being multiplied by the 1/env_scale             
+                resolution_accuracy = 0.01 * 1/self.environment_scale
+                self.agent = RADCNN_core.PPO(
+                    state_dim=self.observation_space, 
+                    action_dim=self.action_space,
+                    grid_bounds=self.scaled_grid_bounds,
+                    resolution_accuracy=resolution_accuracy,
+                    steps_per_epoch=self.steps_per_epoch,
+                    id=self.id,
+                    random_seed=self.seed,                      
+                    )              
+                
             case 'rnn':
                 self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)
             case 'mlp':

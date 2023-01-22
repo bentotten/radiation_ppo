@@ -196,7 +196,7 @@ class train_PPO:
         
         save_gif (bool): Indicates whether to save render of last episode
 
-        gamma (float): Discount factor for calculating expected return. (Always between 0 and 1.)
+        gamma (float):  Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
         
         alpha (float): Entropy reward term scaling.        
 
@@ -284,7 +284,9 @@ class train_PPO:
         # TODO get rid of redundant for loops
                 
         # Set Pytorch random seed
-        torch.manual_seed(self.seed)
+        if self.random_seed:
+            torch.manual_seed(self.seed)
+            np.random.seed(self.seed)      
 
         # Set additional Actor-Critic variables
         self.ac_kwargs["seed"] = self.seed
@@ -293,16 +295,19 @@ class train_PPO:
         # Get environment information
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
+        self.env_scale: int = self.env.scale
+        scaled_grid_bounds = (1, 1)  # Scaled to match current return from env.step(). Can be reinflated with resolution_accuracy        
         
         # For logging
         config_json: dict[str, Any] = convert_json(locals())
 
         self.agents: dict[int, AgentPPO] = {
             i: AgentPPO(
+                id=i,
                 steps_per_epoch=self.steps_per_epoch,
                 actor_critic_architecture=self.actor_critic_architecture,
                 observation_space=self.obs_dim, 
-                action_space=self.act_dim, 
+                action_space=self.act_dim,
                 actor_critic_args=self.ac_kwargs,
                 actor_learning_rate=self.pi_lr,
                 critic_learning_rate=self.critic_learning_rate,
@@ -314,7 +319,10 @@ class train_PPO:
                 clip_ratio=self.clip_ratio,
                 alpha=self.alpha,
                 target_kl=self.target_kl,
+                environment_scale=self.env_scale,                
                 env_height=self.env.search_area[2][1],
+                scaled_grid_bounds=scaled_grid_bounds,
+                seed=self.seed
             ) for i in range(self.number_of_agents)
         }
         
@@ -641,7 +649,7 @@ def train_scaffolding():
         steps_per_epoch = 480
         K_epochs = 80               # update policy for K epochs in one PPO update
         eps_clip = 0.2          # clip parameter for PPO
-        gamma = 0.99            # discount factor
+        gamma = 0.99            # discount rate for expected return and Generalize Advantage Estimate (GAE) calculations
         lamda = 0.95            # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
         beta: float = 0.005     # TODO look up what this is doing
 
