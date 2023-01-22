@@ -121,7 +121,7 @@ class PPOBuffer:
     coordinate_buffer: list = field(default_factory=list)  # TODO Change to numpy arrays like above
     episode_length_buffer: list = field(default_factory=list)      
     
-    # Used for Location Prediction; 
+    # Used for Location Prediction?
     # TODO not implemented yet
     obs_win: npt.NDArray[np.float32] = field(init=False)
     obs_win_std: npt.NDArray[np.float32] = field(init=False)    
@@ -737,7 +737,7 @@ class PPO:
             np.random.seed(random_seed)                 
         
         # Hyperparameters
-        self.gamma: float = gamma  # Discount factor
+        #self.gamma: float = gamma  # Discount factor
         self.lamda = lamda  # Smoothing parameter for GAE calculation
         self.beta = beta  # Entropy for loss function, encourages exploring different policies
         self.epsilon = epsilon  # clipping parameter to ensure we only make the maximum of ε% change to our policy at a time.
@@ -760,18 +760,17 @@ class PPO:
 
         self.policy = Actor(map_dim=self.maps.buffer.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device) # TODO these are really slow
 
-        self.optimizer_actor = torch.optim.Adam([
-                        {'params': self.policy.actor.parameters(), 'lr': lr_actor},
-                        
-                    ])
-        self.optimizer_critic = torch.optim.Adam([
-                {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}           
-            ])
-        
-        self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device)  # TODO why is this here
-        self.policy_old.load_state_dict(self.policy.state_dict()) # TODO why is this here 
-        
-        self.MseLoss = nn.MSELoss()
+        # Moved to PPO buffer
+        #self.optimizer_actor = torch.optim.Adam([
+        #                {'params': self.policy.actor.parameters(), 'lr': lr_actor},
+        #                
+        #            ])
+        # self.optimizer_critic = torch.optim.Adam([
+        #         {'params': self.policy.local_critic.parameters(), 'lr': lr_critic}           
+        #     ])
+        #self.MseLoss = nn.MSELoss()
+        # self.policy_old = Actor(map_dim=self.maps.map_dimensions, state_dim=state_dim, action_dim=action_dim).to(self.maps.buffer.device)  # TODO why is this here
+        # self.policy_old.load_state_dict(self.policy.state_dict()) # TODO why is this here 
         
     def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         
 
@@ -807,12 +806,10 @@ class PPO:
             
             #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
             #action, action_logprob = self.policy_old.act(state) # Choose action
-            
-            # TODO Delete 
-            summary(self.policy_old.actor, input=map_stack.shape)        
+                 
             #self.policy.test(map_stack)
             
-            action, action_logprob, state_value = self.policy_old.act(map_stack) # Choose action # TODO why old policy?
+            action, action_logprob, state_value = self.policy.act(map_stack) # Choose action # TODO why old policy?
 
         return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
         #return action.item(), action_logprob.item(), state_value.item()
@@ -830,6 +827,8 @@ class PPO:
         ''' Wrapper for inner buffer storage '''
         self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
+
+    # TODO pull these up into PPO class
     def update(self):
         '''   
             Compute the new policy and log probabilities
@@ -982,7 +981,6 @@ class PPO:
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
    
     def load(self, checkpoint_path):
-        self.policy_old.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         
     def render(self, savepath=getcwd(), save_map=True, add_value_text=False, interpolation_method='nearest', epoch_count: int=0):

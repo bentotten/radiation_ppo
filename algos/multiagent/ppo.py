@@ -1,11 +1,19 @@
-from dataclasses import dataclass, field
 import torch
+from torch.optim import Adam
+
 import numpy as np
 import numpy.typing as npt
-from typing import TypeAlias, Union, cast, Optional
+
+from dataclasses import dataclass, field
+from typing import TypeAlias, Union, cast, Optional, Any
 import scipy.signal
 
 from epoch_logger import EpochLogger
+
+# Neural Networks
+import NeuralNetworkCores.FF_core as RADFF_core
+import NeuralNetworkCores.CNN_core as RADCNN_core
+import NeuralNetworkCores.RADA2C_core as RADA2C_core
 
 
 Shape: TypeAlias = int | tuple[int, ...]
@@ -60,8 +68,8 @@ class OptimizationStorage:
         
     '''     
     This stores information related to updating neural network models for each agent. It includes the clip ratio for 
-        ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy,
-        and the target KL for early stopping.
+    ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy,
+    and the target KL for early stopping.
         
     train_pi_iters (int): Maximum number of gradient descent steps to take on actor policy loss per epoch. 
             (Early stopping may cause optimizer to take fewer than this.)
@@ -102,31 +110,43 @@ class PPOBuffer:
     obs_dim: int  # Observation space dimensions
     max_size: int  # Max steps per epoch
 
-    obs_buf: npt.NDArray[np.float32] = field(init=False)
-    act_buf: npt.NDArray[np.float32] = field(init=False)
-    adv_buf: npt.NDArray[np.float32] = field(init=False)
-    rew_buf: npt.NDArray[np.float32] = field(init=False)
-    ret_buf: npt.NDArray[np.float32] = field(init=False)
-    val_buf: npt.NDArray[np.float32] = field(init=False)
-    source_tar: npt.NDArray[np.float32] = field(init=False)
-    logp_buf: npt.NDArray[np.float32] = field(init=False)
-    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
-    obs_win_std: npt.NDArray[np.float32] = field(init=False) # Location prediction
+    ptr: int = field(init=False)  # For keeping track of location in buffer during update
+    path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
+    obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer
+    act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer
+    adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer
+    rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer
+    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Cumulative(?) return buffer
+    val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer
+    source_tar: npt.NDArray[np.float32] = field(init=False) # Source location buffer (for moving targets)
+    logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
+    
+    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete?
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
 
     gamma: float = 0.99
     lam: float = 0.90
     beta: float = 0.005
-    ptr: int = 0
-    path_start_idx: int = 0
 
     """
     A buffer for storing histories experienced by a PPO agent interacting
     with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
     for calculating the advantages of state-action pairs. This is left outside of the
     PPO agent so that A2C architectures can be swapped out as desired.
+    
+    gamma (float): Discount factor
+    lam (float): Smoothing parameter for GAE calculation
+    beta (float): Entropy for loss function, encourages exploring different policies
     """
+    
+    # TODO do we need epsilon clip?
+    # epsilon/clip = clipping parameter to ensure we only make the maximum of ε% change to our policy at a time.
+    # eps_clip = clip_ratio 
 
     def __post_init__(self):
+        self.ptr: int = 0
+        self.path_start_idx: int = 0     
+           
         self.obs_buf: npt.NDArray[np.float32] = np.zeros(
             combined_shape(self.max_size, self.obs_dim), dtype=np.float32
         )
@@ -151,6 +171,8 @@ class PPOBuffer:
         self.logp_buf: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
         )
+
+        # TODO artifact - delete? Appears to be used in the location prediction, but is never updated        
         self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
         self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
             self.obs_dim, dtype=np.float32
@@ -242,7 +264,7 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to buffer instead of pulling from logger
+        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         numEps = len(epLens)
         epLenTotal = sum(epLens)
         assert numEps > 0
@@ -252,7 +274,7 @@ class PPOBuffer:
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
             adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
             logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
             ep_form = []
         )
@@ -291,6 +313,53 @@ class PPOBuffer:
                     torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
                 )
 
-            data["ep_form"] = epForm
+            data["ep_form"] = epForm  # TODO add to a buffer instead of pulling from logger
 
         return data
+
+
+@dataclass
+class AgentPPO:
+    observation_space: int
+    action_space: int
+    actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
+    actor_critic_architecture: str = field(default="cnn")  
+    train_pi_iters: int = field(default= 40)
+    train_v_iters: int = field(default= 40)
+    train_pfgru_iters: int = field(default= 15)
+    actor_learning_rate: float = field(default= 3e-4)
+    critic_learning_rate: float = field(default= 1e-3)
+    pfgru_learning_rate: float = field(default= 5e-3)    
+    clip_ratio: float = field(default= 0.2)
+    alpha: float = field(default= 0)
+    target_kl: float = field(default= 0.07)
+    reduce_pfgru_iters: bool = field(default=True) # Reduces PFGRU training iteration when further along to speed up training
+    
+    def __post_init__(self):
+        # Initialize agents
+        match self.actor_critic_architecture:
+            case 'cnn':
+                self.agent = RADCNN_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)
+            case 'rnn':
+                self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)
+            case 'mlp':
+                self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)             
+            case 'ff':
+                self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)           
+            case _:
+                raise ValueError('Unsupported neural network type')
+            
+        # Inititalize buffers and optimizers
+        self.agent_buffer = PPOBuffer(obs_dim=self.obs_dim, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam)
+        self.agent_optimizer = OptimizationStorage(
+            train_pi_iters = self.train_pi_iters,                
+            train_v_iters = self.train_v_iters,
+            train_pfgru_iters = self.train_pfgru_iters,              
+            pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
+            critic_optimizer = Adam(self.agent.pi.parameters(), lr=self.critic_learning_rate),
+            model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
+            loss = torch.nn.MSELoss(reduction="mean"),
+            clip_ratio = self.clip_ratio,
+            alpha = self.alpha,
+            target_kl = self.target_kl,             
+            )    

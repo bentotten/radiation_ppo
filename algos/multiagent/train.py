@@ -6,10 +6,12 @@ import sys
 import glob
 import time
 from datetime import datetime
+import math
 
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F
+import torch.nn as nn
 
 import numpy as np
 import numpy.random as npr
@@ -27,7 +29,7 @@ from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ig
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # PPO
-from ppo import OptimizationStorage, PPOBuffer
+from ppo import OptimizationStorage, PPOBuffer, AgentPPO
 
 # Neural Networks
 import NeuralNetworkCores.FF_core as RADFF_core
@@ -52,6 +54,10 @@ DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
 DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
 
 ################################### Functions for algorithm/implementation conversions ###################################
+
+def count_variables(module: nn.Module) -> int:
+    return sum(np.prod(p.shape) for p in module.parameters())
+
 
 def convert_nine_to_five_action_space(action):
     ''' Converts 4 direction + idle action space to 9 dimensional equivelant
@@ -107,6 +113,29 @@ class BpArgs(NamedTuple):
     l1_weight: float
     elbo_weight: float
     area_scale: float
+
+
+@dataclass
+class StatBuff:
+    mu: float = 0.0
+    sig_sto: float = 0.0
+    sig_obs: float = 1.0
+    count: int = 0
+    ''' statistics buffer for normalizing returns from environment '''
+    
+    def update(self, obs: float) -> None:
+        self.count += 1
+        if self.count == 1:
+            self.mu = obs
+        else:
+            mu_n = self.mu + (obs - self.mu) / (self.count)
+            s_n = self.sig_sto + (obs - self.mu) * (obs - mu_n)
+            self.mu = mu_n
+            self.sig_sto = s_n
+            self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
+
+    def reset(self) -> None:
+        self = StatBuff()
 
 
 ################################### Training ###################################
@@ -178,13 +207,12 @@ class PPO:
         
         alpha (float): Entropy reward term scaling.        
 
-        clip_ratio (float): Hyperparameter for clipping in the policy objective.
+        clip_ratio (float): Usually seen as Epsilon Hyperparameter for clipping in the policy objective.
             Roughly: how far can the new policy go from the old policy while
             still profiting (improving the objective function)? The new policy
-            can still go farther than the clip_ratio says, but it doesn't help
-            on the objective anymore. (Usually small, 0.1 to 0.3.) Typically
-            denoted by :math:`\epsilon`. Basically if the policy wants to perform too large
-            an update, it goes with a clipped value instead.
+            can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
+            (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, 
+            it goes with a clipped value instead.
 
         pi_lr (float): Learning rate for Actor/policy optimizer.
 
@@ -264,7 +292,8 @@ class PPO:
         self.ac_kwargs["seed"] = self.seed
         self.ac_kwargs["pad_dim"] = 2        
 
-        # Set arguments for bootstrap particle filter in the Particle Filter Gated Recurrent Unit (PFGRU) for the source prediction neural networks, from Ma et al. 2020
+        # Set arguments for bootstrap particle filter in the Particle Filter Gated Recurrent Unit (PFGRU) for the source prediction neural networks
+        #  from Ma et al. 2020
         self.bp_args = BpArgs(
             bp_decay=0.1,
             l2_weight=1.0,
@@ -279,70 +308,88 @@ class PPO:
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
 
+        self.agents: dict[int, PPO] = {
+            i: AgentPPO(
+                actor_critic_architecture=self.actor_critic_architecture,
+                observation_space=self.obs_dim, 
+                action_space=self.act_dim, 
+                actor_critic_args=self.ac_kwargs,
+                actor_learning_rate=self.pi_lr,
+                critic_learning_rate=self.critic_learning_rate,
+                pfgru_learning_rate=self.pfgru_learning_rate,
+                train_pi_iters=self.train_pi_iters,
+                train_v_iters=self.train_v_iters,
+                train_pfgru_iters=self.train_pfgru_iters,
+                clip_ratio=self.clip_ratio,
+                alpha=self.alpha,
+                target_kl=self.target_kl
+            ) for i in range(self.number_of_agents)
+        }
+
         # Instantiate Actor-Critic (A2C) Agents
-        #self.ac = actor_critic(obs_dim, act_dim, **ac_kwargs)
-        match self.actor_critic_architecture:
-            case 'cnn':
-                self.agents: dict[int, RADCNN_core.PPO] = {
-                    i: RADCNN_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-                }
-            case 'rnn':
-                self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
-                    i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-                }
-            case 'mlp':
-                self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
-                    i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-                }                
-            case 'ff':
-                self.agents: dict[int, RADFF_core.PPO] = {
-                    i: RADFF_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-                }                
-            case _:
-                raise ValueError('Unsupported neural network type')
-            
-        for agent in self.agents.values():
-            agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
+        # TODO Move to PPO
+        # match self.actor_critic_architecture:
+        #     case 'cnn':
+        #         self.agents: dict[int, RADCNN_core.PPO] = {
+        #             i: RADCNN_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+        #         }
+        #     case 'rnn':
+        #         self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
+        #             i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+        #         }
+        #     case 'mlp':
+        #         self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
+        #             i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+        #         }                
+        #     case 'ff':
+        #         self.agents: dict[int, RADFF_core.PPO] = {
+        #             i: RADFF_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
+        #         }                
+        #     case _:
+        #         raise ValueError('Unsupported neural network type')
         
+        # TODO add PFGRU to FF and CNN networks
+        for ppo_agent in self.agents.values():
+            ppo_agent.agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
+        
+        # Set up PPO trajectory buffers. This stores values to be later used for updating each agent after the conclusion of an epoch
+        # TODO Move to PPO        
+        # self.agent_buffers = {
+        #     i: PPOBuffer(
+        #             obs_dim=self.obs_dim, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam,
+        #         )
+        #         for i in range(self.number_of_agents)
+        #     }
+        
+        # Set up optimizers and learning rate decay for policy and localization modules in each agent. Schedulers are set up in initialization.
+        # TODO Move to PPO                
+        # self.agent_optimizers = {
+        #         i: OptimizationStorage(
+        #             train_pi_iters = self.train_pi_iters,                
+        #             train_v_iters = self.train_v_iters,
+        #             train_pfgru_iters = self.train_pfgru_iters,              
+        #             pi_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.pi_lr),
+        #             critic_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.critic_learning_rate),
+        #             model_optimizer = Adam(self.agents[i].model.parameters(), lr=self.pfgru_learning_rate),
+        #             loss = torch.nn.MSELoss(reduction="mean"),
+        #             clip_ratio = self.clip_ratio,
+        #             alpha = self.alpha,
+        #             target_kl = self.target_kl,             
+        #             )
+        #         for i in range(self.number_of_agents)
+        #     }
+        
+        # Setup statistics buffers for normalizing returns from environment
+        self.stat_buffers = {i: StatBuff() for i in range(self.number_of_agents)}
+                
         # Count variables for actor/policy (pi) and PFGRU (model)
-        # TODO rename all of these to make them consistent :V 
         self.pi_var_count, self.model_var_count = {}, {}
         for id, ac in self.agents.items():
             self.pi_var_count[id], self.model_var_count[id] = (
-                RADA2C_core.count_vars(module) for module in [ac.pi, ac.model]
-            )
-        
-        # Set up PPO trajectory buffers. This stores values to be later used for updating each agent after the conclusion of an epoch
-        self.agent_buffers = {
-            i: PPOBuffer(
-                    obs_dim=self.obs_dim, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam,
-                )
-                for i in range(self.number_of_agents)
-            }
-        self.buf = self.agent_buffers # Adding for backwards compatibility # TODO verify .buf has been replaced and delete
-
-        # Set up optimizers and learning rate decay for policy and localization modules in each agent. Schedulers are set up in initialization.
-        self.agent_optimizers = {
-                i: OptimizationStorage(
-                    train_pi_iters = self.train_pi_iters,                
-                    train_v_iters = self.train_v_iters,
-                    train_pfgru_iters = self.train_pfgru_iters,              
-                    pi_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.pi_lr),
-                    critic_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.critic_learning_rate),
-                    model_optimizer = Adam(self.agents[i].model.parameters(), lr=self.pfgru_learning_rate),
-                    loss = torch.nn.MSELoss(reduction="mean"),
-                    clip_ratio = self.clip_ratio,
-                    alpha = self.alpha,
-                    target_kl = self.target_kl,             
-                    )
-                for i in range(self.number_of_agents)
-            }
-        
-        # Setup statistics buffers for normalizing returns from environment
-        self.stat_buffers = {i: RADA2C_core.StatBuff() for i in range(self.number_of_agents)}
-        self.reduce_pfgru_iters = True  # Reduces PFGRU training iteration when further along to speed up training
-                
-        # Instatiate loggers and set up model saving
+                count_variables(module) for module in [ac.pi, ac.model]
+            )   
+            
+        # Instatiate loggers and set up model saving                 
         logger_kwargs_set = {
             id: setup_logger_kwargs(
                 exp_name=f"{id}_{self.logger_kwargs['exp_name']}",
