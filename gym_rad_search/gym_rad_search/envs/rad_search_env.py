@@ -21,7 +21,7 @@ from matplotlib.ticker import FormatStrFormatter
 from matplotlib.animation import PillowWriter
 from matplotlib.patches import Polygon as PolygonPatches
 
-from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple
 from typing_extensions import TypeAlias
 
 
@@ -167,7 +167,7 @@ def get_y_step_coeff(action: Action) -> int:
 
 # The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action + 6)/4))
 def get_x_step_coeff(action: Action) -> int:
-    return get_y_step_coeff((action + 6) % 8)
+    return get_y_step_coeff((action + 6) % 8) # TODO CHANGE TO A_SIZE and make work correctly
 
 
 def get_step(action: Action) -> Point:
@@ -201,13 +201,11 @@ def create_color(id: int) -> Color:
     return Color(np.array(specific_color) / 255)
 
 
-@dataclass()
-class StepResult():
-    # TODO change to match new return
-    observation: dict[int, npt.NDArray[np.float32]] = field(default_factory=dict)
-    reward: dict[int, float] = field(default_factory=dict)
-    success: dict[int, bool] = field(default_factory=dict)
-    info: dict[dict[Any, Any]] = field(default_factory=dict)
+class StepResult(NamedTuple):
+    observation: dict[int, npt.NDArray[np.float32]]
+    reward: dict[int, float]
+    terminal: dict[int, bool] 
+    info: dict[dict[Any, Any]] 
     
 
 @dataclass
@@ -267,7 +265,8 @@ class RadSearch(gym.Env):
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
-    enforce_grid_boundaries: bool = field(default=True)
+    enforce_grid_boundaries: bool = field(default=False)
+    save_gif: bool = field(default=False)    
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
@@ -356,9 +355,7 @@ class RadSearch(gym.Env):
         
         self.reset()
 
-    def step(
-        self, action: Optional[Action] = None, action_list: Optional[dict] = None 
-    ) -> StepResult:
+    def step( self, action: Optional[Union[Action, dict]] = None ) -> StepResult:
         """
         Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep". 
         Accepts literal action for single agent, or a dict of agent-IDs and actions.
@@ -449,6 +446,11 @@ class RadSearch(gym.Env):
                         if agent.intersect
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
+                    
+                    if action == -1:
+                        raise ValueError("Take Action function returned false, but 'Idle' indicated")
+                    else:
+                        reward = -0.5 * agent.sp_dist / self.max_dist
 
                 if action == -1 and not agent.collision:
                     reward = -0.5 * agent.sp_dist / self.max_dist
@@ -457,7 +459,6 @@ class RadSearch(gym.Env):
                     reward = -0.5 * agent.sp_dist / self.max_dist
 
             # If detector coordinate noise is desired
-            # TODO why is noise coordinate being added here? Why is noise a coordinate at all?
             noise: Point = Point(
                 tuple(self.np_random.normal(scale=5, size=2))
                 if self.coord_noise
@@ -486,6 +487,13 @@ class RadSearch(gym.Env):
             info = {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'blocked': agent.obstacle_blocking, 'scale': 1 / self.search_area[2][1]}
             return state, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
+
+        assert action is None or type(action) == int or  type(action) == dict, 'Action not integer or a dictionary of actions.'
+        if type(action) is int: 
+            assert action in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+        elif type(action) is dict:
+            for a in action.values(): assert a in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+        action_list = action if type(action) is dict else None
 
         # TODO implement this natively to meet Gym environment requirements
         aggregate_observation_result: dict = {_: None for _ in self.agents}
@@ -517,8 +525,8 @@ class RadSearch(gym.Env):
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
         else:
             # Provides backwards compatability for single actions instead of action lists for single agents.
-            if action and len(self.agents) > 1:
-                print("WARNING: Passing single action to mutliple agents during step.", file=sys.stderr)
+            if type(action) == int and len(self.agents) > 1:
+                print("WARNING: Passing single action to mutliple agents during step! Collision avoidance has been disabled!", file=sys.stderr)
             # Used during reset to get initial state or during single-agent move
             for agent_id, agent in self.agents.items():                
                 (
@@ -537,8 +545,10 @@ class RadSearch(gym.Env):
             #print("Step result [success]: ", aggregate_step_result[0].done)
             print()
         
+        # To meet Gym compliance, must be in form observation, reward, done, info
         #return aggregate_step_result
-        return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+        #return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+        return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
     def reset(self) -> StepResult:
         """
@@ -604,7 +614,7 @@ class RadSearch(gym.Env):
             self.reset()
 
         # Get current states
-        step = self.step(action=None, action_list=None)
+        step = self.step(action=None)
         # Reclear iteration count 
         self.iter_count = 0
         return step
@@ -1137,6 +1147,7 @@ class RadSearch(gym.Env):
                 ax3.plot()
                     
             else: # If not first frame
+                # TODO add this back now that multi-agent radppo is up
                 # if location_estimate:
                 #     location_estimate.remove()
                     
@@ -1237,7 +1248,6 @@ class RadSearch(gym.Env):
 
         if obstacles == []:
             obstacles = self.obs_coord
-
         if just_env:
             # Setup Graph
             plt.rc("font", size=12)
@@ -1290,11 +1300,11 @@ class RadSearch(gym.Env):
             ax1.legend(loc="lower right", fontsize=8)
         
             # Save
-            if save_gif:
-                if os.path.isdir(str(path) + "/gifs/"):
+            if self.save_gif:
+                if os.path.isdir(str(path) + ".." + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
-                    os.mkdir(str(path) + "/gifs/")
+                    os.mkdir(str(path) + ".." + "/gifs/")
                     fig.savefig(str(path) + f"/gifs/environment.png")
             else:
                 plt.show()
@@ -1320,7 +1330,7 @@ class RadSearch(gym.Env):
                 frames=data_length,
                 fargs=(ax1, ax2, ax3, self.src_coords, self.search_area, measurements, flattened_rewards),
             )
-            if save_gif:
+            if self.save_gif:
                 writer = PillowWriter(fps=5)
                 if os.path.isdir(str(path) + "/gifs/"):
                     ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
