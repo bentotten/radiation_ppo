@@ -9,7 +9,7 @@ import numpy.random as npr
 import gym
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
-import core
+import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
 from epoch_logger import setup_logger_kwargs, EpochLogger
 import train
 from gym_rad_search.envs import RadSearch  # type: ignore
@@ -235,7 +235,7 @@ if __name__ == "__main__":
     # Run ppo training function
     ppo = train.PPO(
         env=env,
-        actor_critic=core.RNNModelActorCritic,
+        actor_critic=RADA2C_core.RNNModelActorCritic,
         logger_kwargs=logger_kwargs,
         ac_kwargs=dict(
             hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,

@@ -3,7 +3,7 @@ import torch
 from dataclasses import field
 import numpy as np
 
-from algos.multiagent.core import RNNModelActorCritic
+from algos.multiagent.NeuralNetworkCores.RADA2C_core import RNNModelActorCritic
 
 class TestAgentCreation(unittest.TestCase):
     def setUp(self):

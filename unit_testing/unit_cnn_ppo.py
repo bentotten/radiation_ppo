@@ -5,7 +5,7 @@ from dataclasses import field
 import numpy as np
 
 from gym_rad_search.envs import StepResult
-from algos.multiagent.CNN_PPO import  MapsBuffer, Actor, PPO
+from algos.multiagent.NeuralNetworkCores.CNN_core import  MapsBuffer, Actor, PPO
 
 # https://github.com/cgoldberg/python-unittest-tutorial
 

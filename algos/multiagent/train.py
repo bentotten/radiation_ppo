@@ -22,8 +22,8 @@ from gym_rad_search.envs import rad_search_env # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
-from vanilla_PPO import PPO as van_PPO # vanilla_PPO
-from CNN_PPO import PPO as PPO
+from algos.multiagent.NeuralNetworkCores.FF_core import PPO as van_PPO # vanilla_PPO
+from algos.multiagent.NeuralNetworkCores.CNN_core import PPO as PPO
 
 from dataclasses import dataclass, field
 from typing_extensions import TypeAlias
@@ -32,7 +32,7 @@ import copy
 
 from cgitb import reset
 
-import core
+import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
 from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
@@ -130,7 +130,7 @@ class OptimizationStorage:
 
 @dataclass
 class PPOBuffer:
-    obs_dim: core.Shape  # Observation space dimensions
+    obs_dim: RADA2C_core.Shape  # Observation space dimensions
     max_size: int  # Max steps per epoch
 
     obs_buf: npt.NDArray[np.float32] = field(init=False)
@@ -159,10 +159,10 @@ class PPOBuffer:
 
     def __post_init__(self):
         self.obs_buf: npt.NDArray[np.float32] = np.zeros(
-            core.combined_shape(self.max_size, self.obs_dim), dtype=np.float32
+            RADA2C_core.combined_shape(self.max_size, self.obs_dim), dtype=np.float32
         )
         self.act_buf: npt.NDArray[np.float32] = np.zeros(
-            core.combined_shape(self.max_size), dtype=np.float32
+            RADA2C_core.combined_shape(self.max_size), dtype=np.float32
         )
         self.adv_buf: npt.NDArray[np.float32] = np.zeros(
             self.max_size, dtype=np.float32
@@ -250,10 +250,10 @@ class PPOBuffer:
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
         # lambda introduces bias when VF is inaccurate
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
+        self.adv_buf[path_slice] = RADA2C_core.discount_cumsum(deltas, self.gamma * self.lam)
 
         # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
+        self.ret_buf[path_slice] = RADA2C_core.discount_cumsum(rews, self.gamma)[:-1]
 
         self.path_start_idx = self.ptr
 
@@ -352,7 +352,7 @@ class PPO:
     number_of_agents: int = field(default= 1)
     target_kl: float = field(default= 0.07)
     ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
-    actor_critic: Type[core.RNNModelActorCritic] = field(default=core.RNNModelActorCritic)
+    actor_critic: Type[RADA2C_core.RNNModelActorCritic] = field(default=RADA2C_core.RNNModelActorCritic)
     start_time: float = field(default_factory= lambda: time.time())
     
     """
@@ -501,7 +501,7 @@ class PPO:
         self.pi_var_count, self.model_var_count = {}, {}
         for id, ac in self.agents.items():
             self.pi_var_count[id], self.model_var_count[id] = (
-                core.count_vars(module) for module in [ac.pi, ac.model]
+                RADA2C_core.count_vars(module) for module in [ac.pi, ac.model]
             )
         
         # Set up PPO trajectory buffers. This stores values to be later used for updating each agent after the conclusion of an epoch
@@ -530,7 +530,7 @@ class PPO:
             }
         
         # Setup statistics buffers for normalizing returns from environment
-        self.stat_buffers = {i: core.StatBuff() for i in range(self.number_of_agents)}
+        self.stat_buffers = {i: RADA2C_core.StatBuff() for i in range(self.number_of_agents)}
         self.reduce_v_iters = True  # Reduces training iteration when further along to speed up training
                 
         # Instatiate loggers and set up model saving
@@ -786,7 +786,7 @@ class PPO:
         start_time = time.time()
         o = env.reset()[0][0]
         ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-        stat_buff = core.StatBuff()
+        stat_buff = RADA2C_core.StatBuff()
         stat_buff.update(o[0])
         ep_ret_ls = []
         oob = 0
@@ -972,7 +972,7 @@ class PPO:
                 VarExplain=0,
             )
 
-    def update_model(self, id: int, data: dict[str, torch.Tensor], ac: core.RNNModelActorCritic) -> torch.Tensor:
+    def update_model(self, id: int, data: dict[str, torch.Tensor], ac: RADA2C_core.RNNModelActorCritic) -> torch.Tensor:
         ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''
         # TODO this was grabbed wholesale, needs to be checked 
         
@@ -1076,7 +1076,7 @@ class PPO:
         return model_loss
 
     def update_a2c(
-        self, id: int, ac: core.RNNModelActorCritic, data: dict[str, torch.Tensor], minibatch: int, iter: int
+        self, id: int, ac: RADA2C_core.RNNModelActorCritic, data: dict[str, torch.Tensor], minibatch: int, iter: int
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
         
         # Set initial variables
