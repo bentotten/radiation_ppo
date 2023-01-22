@@ -67,6 +67,7 @@ COLORS = [
     Colorcode([0, 255, 0]), # Green
     Colorcode([255, 127, 0]) # Orange
     ]
+COLOR_FACTOR = 0.75  # How much to lighten previous rendered step by
 
 
 def sum_p(p1: Point, p2: Point) -> Point:
@@ -202,6 +203,12 @@ def create_color(id: int) -> Color:
         offset: int = (id * 22) % 255  # Create large offset for that base color, bounded by 255
         specific_color[id % 3] = (255 + specific_color[id % 3] - offset) % 255  # Perform the offset
     return Color(np.array(specific_color) / 255)
+
+
+def lighten_color(color: Color, factor: float) -> Color:
+    ''' increase tint of a color '''
+    scaled_color = color * 255 # return to original scale
+    return Color(np.array(list(map(lambda c: (c + (255 - c) * factor) / 255, scaled_color))))
 
 
 class StepResult(NamedTuple):
@@ -1004,6 +1011,9 @@ class RadSearch(gym.Env):
         Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
         """       
         reward_length = field(init=False) # Prevent from being unbound
+        # Set up global saver (for changing colors of last graph's agents)      
+        self.plot_saver = {i: None for i in range(self.number_agents)}
+            
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
 
@@ -1078,20 +1088,17 @@ class RadSearch(gym.Env):
                     marker=MarkerStyle("*"),
                     label="Source",
                 )
-                    
+                
                 for agent_id, agent in self.agents.items():
                     data = np.array(agent.det_sto[current_index]) / 100 
                     data_sub = (np.array(agent.det_sto[current_index + 1]) / 100)- (np.array(agent.det_sto[current_index]) / 100)
                     orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
-                    ax1.scatter(
+                    self.plot_saver[agent_id] = ax1.scatter(
                         data[0],
                         data[1],
                         marker_size,
                         c=[agent.marker_color],
                         marker=MarkerStyle((3, 0, orient - 90)),
-                    )
-                    ax1.scatter(
-                        -1000, -1000, marker_size, c=[agent.marker_color], marker=MarkerStyle("^"), label=f"{agent_id}_Detector"
                     )
                 
                 # Plot Obstacles
@@ -1164,8 +1171,12 @@ class RadSearch(gym.Env):
                     if current_index != len(agent.det_sto)-1:
                         data_sub = (np.array(agent.det_sto[current_index + 1]) / 100)- (np.array(agent.det_sto[current_index]) / 100)
                         orient = math.degrees(math.atan2(data_sub[1], data_sub[0]))
+                        
+                        # Change last detector color to lighter version of itself
+                        self.plot_saver[agent_id].set_color(lighten_color(agent.marker_color, factor=COLOR_FACTOR))
+                        
                         # Plot detector
-                        ax1.scatter(
+                        self.plot_saver[agent_id] = ax1.scatter(
                             data[0],
                             data[1],
                             marker_size,
@@ -1173,17 +1184,16 @@ class RadSearch(gym.Env):
                             marker=MarkerStyle((3, 0, orient - 90)),
                         )
                     else:
-                        ax1.scatter(
+                        # Change last detector color to lighter version of itself
+                        self.plot_saver[agent_id].set_color(lighten_color(agent.marker_color, factor=COLOR_FACTOR))                        
+                        self.plot_saver[agent_id] = ax1.scatter(
                             data[0],
                             data[1],
                             marker_size,
                             c=[agent.marker_color],
                             marker=MarkerStyle((3, 0)),
                         )                        
-                    # TODO What is this doing?
-                    ax1.scatter(
-                        -1000, -1000, marker_size, [agent.marker_color], marker=MarkerStyle("^"), label=f"{agent_id}_Detector"
-                    )
+
                     # Plot detector path if not last step
                     if current_index != len(agent.det_sto)-1:
                         data_prev: npt.NDArray[np.float64] = np.array(agent.det_sto[current_index-1]) / 100
@@ -1198,6 +1208,7 @@ class RadSearch(gym.Env):
                             alpha=0.3,
                             ls="--",
                         )
+                        
                     # Plot radiation counts - stem graph
                     current_color = tuple(agent.marker_color)
                     markerline, _, _ = ax2.stem(

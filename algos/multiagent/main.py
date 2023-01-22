@@ -69,7 +69,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         minibatches=args.minibatches,
         env_name=args.env_name,
         save_freq=args.save_freq,
-        save_gif_freq=args.save_gif_freq
+        save_gif_freq=args.save_gif_freq,
     )
 
 ''' Function to generate argument parser '''
@@ -100,7 +100,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Name of experiment for saving",
     )
     parser.add_argument(
-        "--agent_count", type=int, # Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        "--agent-count", type=int, # Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         default=1, 
         help="Number of agents"
     )   
@@ -108,10 +108,10 @@ def create_parser() -> argparse.ArgumentParser:
         "--render", type=bool, default=False, help="Save gif"
     )          
     parser.add_argument(
-        "--save_gif_freq", type=float, default=float('inf'), help="If render is true, save gif after this many epochs."
+        "--save-gif-freq", type=int, default=float('inf'), help="If render is true, save gif after this many epochs."
     )     
     parser.add_argument(
-        "--save_freq", type=int, default=500, help="How often to save the model."
+        "--save-freq", type=int, default=500, help="How often to save the model."
     )        
     
     # Environment Parameters

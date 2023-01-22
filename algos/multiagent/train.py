@@ -317,59 +317,10 @@ class PPO:
                 env_height=self.env.search_area[2][1],
             ) for i in range(self.number_of_agents)
         }
-
-        # Instantiate Actor-Critic (A2C) Agents
-        # TODO Move to PPO
-        # match self.actor_critic_architecture:
-        #     case 'cnn':
-        #         self.agents: dict[int, RADCNN_core.PPO] = {
-        #             i: RADCNN_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-        #         }
-        #     case 'rnn':
-        #         self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
-        #             i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-        #         }
-        #     case 'mlp':
-        #         self.agents: dict[int, RADA2C_core.RNNModelActorCritic] = {
-        #             i: RADA2C_core.RNNModelActorCritic(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-        #         }                
-        #     case 'ff':
-        #         self.agents: dict[int, RADFF_core.PPO] = {
-        #             i: RADFF_core.PPO(self.obs_dim, self.act_dim, **self.ac_kwargs) for i in range(self.number_of_agents)
-        #         }                
-        #     case _:
-        #         raise ValueError('Unsupported neural network type')
         
         # TODO add PFGRU to FF and CNN networks
         for ac in self.agents.values():
             ac.agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
-        
-        # Set up PPO trajectory buffers. This stores values to be later used for updating each agent after the conclusion of an epoch
-        # TODO Move to PPO        
-        # self.agent_buffers = {
-        #     i: PPOBuffer(
-        #             obs_dim=self.obs_dim, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam,
-        #         )
-        #         for i in range(self.number_of_agents)
-        #     }
-        
-        # Set up optimizers and learning rate decay for policy and localization modules in each agent. Schedulers are set up in initialization.
-        # TODO Move to PPO                
-        # self.agent_optimizers = {
-        #         i: OptimizationStorage(
-        #             train_pi_iters = self.train_pi_iters,                
-        #             train_v_iters = self.train_v_iters,
-        #             train_pfgru_iters = self.train_pfgru_iters,              
-        #             pi_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.pi_lr),
-        #             critic_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.critic_learning_rate),
-        #             model_optimizer = Adam(self.agents[i].model.parameters(), lr=self.pfgru_learning_rate),
-        #             loss = torch.nn.MSELoss(reduction="mean"),
-        #             clip_ratio = self.clip_ratio,
-        #             alpha = self.alpha,
-        #             target_kl = self.target_kl,             
-        #             )
-        #         for i in range(self.number_of_agents)
-        #     }
         
         # Setup statistics buffers for normalizing returns from environment
         self.stat_buffers = {i: StatBuff() for i in range(self.number_of_agents)}
@@ -384,7 +335,7 @@ class PPO:
         # Instatiate loggers and set up model saving                 
         logger_kwargs_set = {
             id: setup_logger_kwargs(
-                exp_name=f"{id}_{self.logger_kwargs['exp_name']}",
+                exp_name=f"{self.logger_kwargs['exp_name']}_agent{id}",
                 seed=self.logger_kwargs['seed'],
                 data_dir=self.logger_kwargs['data_dir'],
                 env_name=self.logger_kwargs['env_name']
@@ -500,11 +451,11 @@ class PPO:
                 
                 # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not
                 #  all, this will need to be changed.
-                terminal_reached = False
+                terminal_reached_flag = False
                 for id in terminal_counter:
                     if terminals[id] == True and not timeout:
                         terminal_counter[id] += 1   
-                        terminal_reached = True             
+                        terminal_reached_flag = True             
                 # Check if some agents went out of bounds
                 for id in infos:
                     if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
@@ -512,7 +463,7 @@ class PPO:
                                     
                 # Stopping conditions for episode
                 timeout = steps_in_episode == self.steps_per_episode
-                terminal = terminal_reached or timeout
+                terminal = terminal_reached_flag or timeout
                 epoch_ended = steps == self.steps_per_epoch - 1
 
                 if terminal or epoch_ended:
