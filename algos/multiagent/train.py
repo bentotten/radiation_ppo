@@ -99,14 +99,6 @@ def convert_nine_to_five_action_space(action):
             raise Exception('Action is not within valid [-1,3] range.')
 
 
-class AgentStepReturn(NamedTuple):
-    action: Union[npt.NDArray, None]
-    value:  Union[npt.NDArray, None]
-    logprob:  Union[npt.NDArray, None]
-    hidden:  Union[torch.Tensor, None]
-    out_prediction:  Union[npt.NDArray, None]
-
-
 @dataclass
 class StatBuff:
     mu: float = 0.0
@@ -357,7 +349,7 @@ class train_PPO:
             self.loggers[id].log(
                 f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
             )
-            self.loggers[id].setup_pytorch_saver(self.agents[id].agent)
+            self.loggers[id].setup_pytorch_saver(self.agents[id].agent.pi)  # Only setup to save one nn module currently, here saving the policy
             
         # Save env image
         if self.render:
@@ -399,13 +391,14 @@ class train_PPO:
                 for ac in self.agents.values():
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?                
             else:
+                hiddens = None
                 for ac in self.agents.values():
-                    ac.agent.actor.eval()
+                    ac.agent.pi.eval()
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
             
             # Start episode!
             for steps in range(self.steps_per_epoch):
-                # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
+                # Standardize (make less than 1) prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 standardized_observations = {id: observations[id] for id in self.agents}
                 for id in self.agents:
                     standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
@@ -413,15 +406,8 @@ class train_PPO:
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts = {id: None for id in self.agents}
                 for id, ac in self.agents.items():
-                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                        action, value, logprob, hiddens[id], out_prediction = ac.agent.step(standardized_observations[id], hidden=hiddens[id])
-                    else:
-                        # TODO
-                        pass  
-                          
-                    agent_thoughts[id] = AgentStepReturn(
-                        action=action, value=value, logprob=logprob, hidden=hiddens[id], out_prediction=out_prediction
-                    )
+                    agent_thoughts[id] = ac.step(standardized_observations, hiddens)
+                    #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                 
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 

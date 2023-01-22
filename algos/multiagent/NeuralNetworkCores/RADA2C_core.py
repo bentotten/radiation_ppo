@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from torch.distributions.categorical import Categorical
 from numbers import Number
 
@@ -20,9 +20,21 @@ from typing import (
     cast,
     overload,
     Union,
+    NamedTuple
 )
 
 Shape: TypeAlias = int | tuple[int, ...]
+
+
+class ActionChoice(NamedTuple):
+    action: Any= field(default=None) #npt.NDArray   = field(default=None) # size (1)
+    action_logprob: npt.NDArray   = field(default=None) # size (1)
+    state_value: npt.NDArray  = field(default=None)  # size(1)
+    hiddens: tuple[torch.Tensor]  = field(default=None)
+    loc_pred: npt.NDArray  = field(default=None)
+    
+    # For compatibility with CNN
+    id: int = field(default=None)
 
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
@@ -546,7 +558,10 @@ class RNNModelActorCritic(nn.Module):
             a = pi.sample()
             logp_a: Tensor = self.pi._log_prob_from_distribution(pi, a)  # Actor
             _hidden: tuple[Tensor, Tensor] = (hidden_part, hidden2)
-        return a.numpy(), v.numpy(), logp_a.numpy(), _hidden, loc_pred.numpy()
+                
+        #, action_logprob=action_logprob, state_value=state_value, hiddens=hiddens, loc_pred=loc_pred)    
+        return ActionChoice(action=a.numpy(), action_logprob=logp_a.numpy(), state_value=v.numpy(), hiddens=_hidden, loc_pred=loc_pred.numpy())    
+
 
     def grad_step(
         #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]

@@ -51,9 +51,9 @@
         "--enforce_grid_boundaries",
         "True",
         "--exp-name",
-        "TEAM-RAD",
-        "--net-type",
-        "cnn"
+        "TEAM-RAD"
+        //"--net-type",
+        //"cnn"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

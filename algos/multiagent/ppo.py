@@ -497,6 +497,15 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
+    def step(self, standardized_observations: npt.NDArray, hiddens = None):
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
+        else:
+            results = self.agent.select_action(standardized_observations, self.id)
+            #return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
+
+        return results         
+    
     #TODO Make this a Ray remote function 
     def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
         """

@@ -93,9 +93,13 @@ def mlp(
 @dataclass()
 class ActionChoice():
     id: int 
-    action: torch.int # size (1)
-    action_logprob: torch.float # size (1)
-    state_value: torch.float # size(1)
+    action: npt.NDArray # size (1)
+    action_logprob: npt.NDArray # size (1)
+    state_value: npt.NDArray # size(1)
+
+    # For compatibility with RAD-PPO
+    hiddens: Union[torch.Tensor, None] = field(default=None)
+    loc_pred: Union[npt.NDArray, None] = field(default=None)
 
 
 @dataclass
@@ -552,7 +556,10 @@ class PPO:
     lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
     '''
     def __post_init__(self):      
-        # Initialize
+        
+    
+        
+        # Initialize buffers and neural networks
         self.maps = MapsBuffer(
                 observation_dimension = self.state_dim,
                 max_size=self.steps_per_epoch,                  
@@ -562,12 +569,15 @@ class PPO:
 
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
         self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
+        
+        # For PFGRU (Developed from RAD-A2C https://github.com/peproctor/radiation_ppo)
+        bpf_hsize: int = 64
+        bpf_num_particles: int = 40
+        bpf_alpha: float = 0.7            
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
-        self.model = PFGRUCell(self.num_particles, obs_dim - 8, obs_dim - 8, self.bpf_hsize, self.alpha, True, "relu") 
-
+        self.model = PFGRUCell(bpf_num_particles, self.state_dim - 8, self.state_dim - 8, bpf_hsize, bpf_alpha, True, "relu") 
         
     def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         
-
         # Add intensity readings to a list if reading has not been seen before at that location.
         for observation in state_observation.values():
             key = (observation[1], observation[2])
@@ -590,12 +600,12 @@ class PPO:
             map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
-            self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
+            #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
             self.maps.buffer.coordinate_buffer.append({})
             for i, observation in state_observation.items():
                 self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
                 
-            # Add single minibatch for action selection
+            # Add single batch tensor dimension for action selection
             map_stack = torch.unsqueeze(map_stack, dim=0) 
             
             #state = torch.FloatTensor(state).to(device) # Convert to tensor TODO already a tensor, is this necessary?
@@ -603,26 +613,12 @@ class PPO:
                  
             #self.policy.test(map_stack)
             
-            action, action_logprob, state_value = self.policy.act(map_stack) # Choose action # TODO why old policy?
+            action, action_logprob, state_value = self.pi.act(map_stack) # Choose action
 
-        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value.item())
+        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
         #return action.item(), action_logprob.item(), state_value.item()
     
-    def store(
-            self,
-            obs: npt.NDArray[Any],
-            act: npt.NDArray[np.int32],
-            rew: npt.NDArray[np.float32],
-            val: npt.NDArray[np.float32],
-            logp: npt.NDArray[np.float32],
-            src: npt.NDArray[np.float32],
-            terminal: npt.NDArray[np.bool],
-        ) -> None:
-        ''' Wrapper for inner buffer storage '''
-        self.maps.buffer.store(obs=obs, act=act, rew=rew, val=val, logp=logp, src=src, terminal=terminal)
 
-
-    # TODO pull these up into PPO class
     def update(self):
         '''   
             Compute the new policy and log probabilities
@@ -778,7 +774,7 @@ class PPO:
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         
     def render(self, savepath=getcwd(), save_map=True, add_value_text=False, interpolation_method='nearest', epoch_count: int=0):
-        # TODO x and y are swapped - investigate if reading that way or a part of  imshow()
+        ''' Renders heatmaps from maps buffer '''
         if save_map:
             if not path.isdir(str(savepath) + "/heatmaps/"):
                 mkdir(str(savepath) + "/heatmaps/")
@@ -812,10 +808,6 @@ class PPO:
         obs_ax.imshow(obstacles_transposed, cmap='viridis', interpolation=interpolation_method)
         obs_ax.set_title('Obstacles Detected (cm from Agent)') 
         obs_ax.invert_yaxis()
-        
-        #divider = make_axes_locatable(loc_ax)
-        #cax = divider.append_axes('right', size='5%', pad=0.05)             
-        #fig.colorbar(loc_ax, cax=cax, orientation='vertical')
         
         # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
         if add_value_text:
