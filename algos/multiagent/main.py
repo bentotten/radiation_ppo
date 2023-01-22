@@ -245,7 +245,7 @@ if __name__ == "__main__":
     # )    
 
     # Run ppo training function
-    ppo = train.PPO(
+    simulation = train.train_PPO(
         env=env,
         logger_kwargs=logger_kwargs,
         ac_kwargs=dict(
@@ -270,5 +270,4 @@ if __name__ == "__main__":
         actor_critic_architecture=args.net_type,
     )
     
-    ppo.train()
-    #ppo.train_old()
+    simulation.train()

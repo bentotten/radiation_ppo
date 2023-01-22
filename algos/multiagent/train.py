@@ -132,7 +132,7 @@ class StatBuff:
 
 ################################### Training ###################################
 @dataclass
-class PPO:
+class train_PPO:
     env: RadSearch
     logger_kwargs: EpochLoggerKwargs
     seed: int = field(default= 0)
@@ -297,7 +297,7 @@ class PPO:
         # For logging
         config_json: dict[str, Any] = convert_json(locals())
 
-        self.agents: dict[int, PPO] = {
+        self.agents: dict[int, AgentPPO] = {
             i: AgentPPO(
                 steps_per_epoch=self.steps_per_epoch,
                 actor_critic_architecture=self.actor_critic_architecture,
@@ -467,8 +467,8 @@ class PPO:
                 # Check if some agents went out of bounds
                 for id in infos:
                     if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
-                        if DEBUG: 
-                            print(f"Agent out of bounds at ({observations[id][1]}, {observations[id][2]})")
+                        #if DEBUG: 
+                            #print(f"Agent out of bounds at ({observations[id][1]}, {observations[id][2]})")
                         out_of_bounds_count[id] += infos[id]['out_of_bounds_count']
                                     
                 # Stopping conditions for episode
@@ -562,7 +562,7 @@ class PPO:
 
             # Perform PPO update!
             for id, ac in self.agents.items():
-                update_results = ac.update_agent()
+                update_results = ac.update_agent(self.loggers[id])
                 
                 # Store results
                 self.loggers[id].store(

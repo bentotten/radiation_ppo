@@ -277,7 +277,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get(self) -> dict[str, Union[torch.Tensor, list]]:
+    def get(self, logger=None) -> dict[str, Union[torch.Tensor, list]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -293,12 +293,30 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        epLens: list[int] = self.episode_lengths
-        #epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
+        episode_lengths: list[int] = self.episode_lengths
+        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
+        
+        number_episodes = len(episode_lengths)
         numEps = len(epLens)
+        
+        total_episode_length = sum(episode_lengths)
         epLenTotal = sum(epLens)
+        
+        assert number_episodes > 0
         assert numEps > 0
+        
         data = dict(
+            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+            act=torch.as_tensor(self.act_buf, dtype=torch.float32),
+            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+            logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+            ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
+            ep_form = []
+        )           
+        
+        data_old = dict(
             obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
             act=torch.as_tensor(self.act_buf, dtype=torch.float32),
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
@@ -307,14 +325,22 @@ class PPOBuffer:
             loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
             ep_form = []
+        )     
+
+        # If they're equal then we don't need to do anything
+        # Otherwise we need to add one to make sure that numEps is the correct size
+        episode_len_Size = (
+            number_episodes
+            + int(total_episode_length != len(self.obs_buf))
         )
 
+        # If they're equal then we don't need to do anything
+        # Otherwise we need to add one to make sure that numEps is the correct size
         epLenSize = (
-            # If they're equal then we don't need to do anything
-            # Otherwise we need to add one to make sure that numEps is the correct size
             numEps
             + int(epLenTotal != len(self.obs_buf))
         )
+        
         obs_buf = np.hstack(
             (
                 self.obs_buf,
@@ -325,10 +351,14 @@ class PPOBuffer:
                 self.source_tar,
             )
         )
+        
+        episode_form: list[list[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
         epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+        
         slice_b: int = 0
         slice_f: int = 0
         jj: int = 0
+        
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         for ep_i in epLens:
             slice_f += ep_i
@@ -418,13 +448,13 @@ class AgentPPO:
             self.reduce_pfgru_iters = False     
     
     #TODO Make this a Ray remote function 
-    def update_agent(self) -> None: #         (env, bp_args, loss_fcn=loss)
+    def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
         """
         Update for the localization (PFGRU) and A2C modules
         Note: update functions perform multiple updates per call
         """      
         # Get data from buffers
-        data: dict[str, torch.Tensor] = self.ppo_buffer.get()
+        data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
 
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
         model_losses = self.update_model(data)
