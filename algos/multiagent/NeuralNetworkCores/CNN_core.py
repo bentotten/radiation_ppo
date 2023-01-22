@@ -301,11 +301,11 @@ class MapsBuffer:
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
-    def __init__(self, map_dim, state_dim, batches: int=6, map_count: int=5, action_dim: int=5, global_critic: bool=False):
+    def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5):
         super(Actor, self).__init__()
         
         ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 1
+                1. batch size: 1 mapstack
                 2. (map_count) number of channels: 5 input maps
                 3. Height: grid height
                 4. Width: grid width
@@ -316,13 +316,6 @@ class Actor(nn.Module):
                     3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
                     4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
                     5. Obstacle Map: a 2D matrix of obstacles detected by agents
-                    
-            Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 1 maps
-                2. (map_count) number of channels: 5 input maps, same as Actor
-                3. Height: grid height
-                4. Width: grid width
-
         '''
 
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
@@ -343,9 +336,7 @@ class Actor(nn.Module):
         #nn.ReLU()
         self.step7 = nn.Linear(in_features=16, out_features=5) # TODO eventually make '5' action_dim instead
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1] 
-        self.global_critic = global_critic
 
-        # TODO uncomment after ready to combine
         self.actor = nn.Sequential(
                         nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
                         nn.ReLU(),
@@ -359,25 +350,6 @@ class Actor(nn.Module):
                         nn.ReLU(),
                         nn.Linear(in_features=16, out_features=5), # output tensor with shape (5)
                         nn.Softmax(dim=0)  # Put in range [0,1]
-                    )
-
-        # If decentralized critic
-        # TODO uncomment after ready to combine
-        if not self.global_critic:
-            self.local_critic = nn.Sequential(
-                        # Starting shape (batch_size, 4, Height, Width)
-                        nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
-                        nn.ReLU(),
-                        nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (batch_size, 8, x, x) x is the floor(((Width - Size)/ Stride) +1)
-                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (batch_size, 16, 2, 2)
-                        nn.ReLU(),
-                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, x)
-                        nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32), # output tensor with shape (32)
-                        nn.ReLU(),
-                        nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
-                        nn.ReLU(),
-                        nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
-                        nn.ReLU(),
                     )
 
     def test(self, state_map_stack): 
@@ -414,11 +386,7 @@ class Actor(nn.Module):
         action = dist.sample()
         action_logprob = dist.log_prob(action)
         
-        # Get q-value from critic
-        #state_value = self.local_critic(state_map_stack) if not self.global_critic else global_critic(state_map_stack) # TODO implement global critic
-        state_value = self.local_critic(state_map_stack)
-        
-        return action.detach(), action_logprob.detach(), state_value.detach()
+        return action, action_logprob
     
     def evaluate(self, state_map_stack, action):       
         
@@ -440,12 +408,12 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, map_dim, state_dim, batches: int=6, map_count: int=5, action_dim: int=5, global_critic: bool=False):
+    def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Critic, self).__init__()
         
         '''
             Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 1 maps
+                1. batch size: 1 mapstack
                 2. (map_count) number of channels: 5 input maps, same as Actor
                 3. Height: grid height
                 4. Width: grid width                
@@ -474,7 +442,7 @@ class Critic(nn.Module):
         #nn.ReLU()
         self.step6 = nn.Linear(in_features=32, out_features=16) 
         #nn.ReLU()
-        nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
+        self.step7 = nn.Linear(in_features=16, out_features=1) # output tensor with shape (1)
         #nn.ReLU()
         
         self.critic = nn.Sequential(
@@ -519,7 +487,11 @@ class Critic(nn.Module):
         pass
    
     def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]: 
-        raise ValueError("Not implemented")
+        # Get q-value from critic
+        #state_value = self.local_critic(state_map_stack) if not self.global_critic else global_critic(state_map_stack) # TODO implement global critic
+        self.test(state_map_stack)
+        state_value = self.critic(state_map_stack)
+        return state_value
     
     def evaluate(self, state_map_stack, action):       
         self.critic.train()
@@ -537,6 +509,7 @@ class PPO:
     resolution_accuracy: float
     steps_per_epoch: int
     random_seed: int = field(default=None)
+    critic: Any = field(default=None)  # Eventually allows for a global critic
     
     # Moved to PPO Buffer    
     #steps_per_epoch    
@@ -556,9 +529,6 @@ class PPO:
     lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
     '''
     def __post_init__(self):      
-        
-    
-        
         # Initialize buffers and neural networks
         self.maps = MapsBuffer(
                 observation_dimension = self.state_dim,
@@ -568,7 +538,9 @@ class PPO:
             )
 
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
-        self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
+        
+        if not self.critic:
+            self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
         
         # For PFGRU (Developed from RAD-A2C https://github.com/peproctor/radiation_ppo)
         bpf_hsize: int = 64
@@ -613,7 +585,8 @@ class PPO:
                  
             #self.policy.test(map_stack)
             
-            action, action_logprob, state_value = self.pi.act(map_stack) # Choose action
+            action, action_logprob,  = self.pi.act(map_stack) # Choose action
+            state_value = self.critic.act(map_stack)  # Should be a pointer to either local critic or global critic
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
         #return action.item(), action_logprob.item(), state_value.item()
