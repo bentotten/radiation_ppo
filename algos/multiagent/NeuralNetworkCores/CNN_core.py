@@ -1,13 +1,3 @@
-'''
-Implementation of "Target Localization using Multi-Agent Deep Reinforcement Learning with Proximal Policy Optimization" by Alagha et al.
-Partially adapted from:
-    - towardsdatascience.com/proximal-policy-optimization-tutorial-part-2-2-gae-and-ppo-loss-fe1b3c5549e8
-    - github.com/nikhilbarhate99/PPO-PyTorch
-    - https://towardsdatascience.com/a-graphic-guide-to-implementing-ppo-for-atari-games-5740ccbe3fbc
-    - https://www.youtube.com/watch?v=KHZVXao4qXs 
-    - https://stackoverflow.com/questions/46422845/what-is-the-way-to-understand-proximal-policy-optimization-algorithm-in-rl 
-
-'''
 from os import stat, path, mkdir, getcwd
 
 from numpy import dtype
@@ -18,14 +8,14 @@ import scipy.signal
 
 import torch
 import torch.nn as nn
-from torch.distributions import MultivariateNormal
-from torch.distributions import Categorical
+import torch.nn.functional as F
+from torch.distributions import MultivariateNormal, Categorical
 from torchinfo import summary
 
 import pytorch_lightning as pl
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict
+from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload
 from typing_extensions import TypeAlias
 
 import matplotlib.pyplot as plt
@@ -46,7 +36,6 @@ Shape: TypeAlias = int | tuple[int, ...]
 
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 
-################################## Helper Functions and Classes ##################################
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     if shape is None:
         return (length,)
@@ -76,6 +65,29 @@ def discount_cumsum(
          x2]
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+
+
+def mlp(
+    sizes: list[Shape],
+    activation,
+    output_activation=nn.Identity,
+    layer_norm: bool = False,
+) -> nn.Sequential:
+    layers = []
+    for j in range(len(sizes) - 1):
+        layer = [nn.Linear(sizes[j], sizes[j + 1])]
+
+        if layer_norm:
+            ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None
+            layer.append(ln)
+
+        layer.append(activation() if j < len(sizes) - 1 else output_activation())
+        layers += layer
+
+    if layer_norm and None in layers:
+        layers.remove(None)
+
+    return nn.Sequential(*layers)
 
 
 @dataclass()
@@ -550,6 +562,8 @@ class PPO:
 
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
         self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
+        # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
+        self.model = PFGRUCell(self.num_particles, obs_dim - 8, obs_dim - 8, self.bpf_hsize, self.alpha, True, "relu") 
 
         
     def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         
@@ -822,3 +836,213 @@ class PPO:
         
         self.render_counter += 1
         plt.close(fig)
+        
+
+
+# Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
+class PFRNNBaseCell(nn.Module):
+    """parent class for PFRNNs"""
+
+    def __init__(
+        self,
+        num_particles: int,
+        input_size: int,
+        hidden_size: int,
+        resamp_alpha: float,
+        use_resampling: bool,
+        activation: str,
+    ):
+        """init function
+
+        Arguments:
+            num_particles {int} -- number of particles
+            input_size {int} -- input size
+            hidden_size {int} -- particle vector length
+            resamp_alpha {float} -- alpha value for soft-resampling
+            use_resampling {bool} -- whether to use soft-resampling
+            activation {str} -- activation function to use
+        """
+        super().__init__()
+        self.num_particles: int = num_particles
+        self.samp_thresh: float = num_particles * 1.0
+        self.input_size: int = input_size
+        self.h_dim: int = hidden_size
+        self.resamp_alpha: float = resamp_alpha
+        self.use_resampling: bool = use_resampling
+        self.activation: str = activation
+        self.initialize: str = "rand"
+        if activation == "relu":
+            self.batch_norm: nn.BatchNorm1d = nn.BatchNorm1d(
+                self.num_particles, track_running_stats=False
+            )
+
+    @overload
+    def resampling(self, particles: torch.Tensor, prob: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        ...
+
+    @overload
+    def resampling(
+        self, particles: tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        ...
+
+    def resampling(
+        self, particles: torch.Tensor | tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
+    ) -> tuple[tuple[torch.Tensor, torch.Tensor] | torch.Tensor, torch.Tensor]:
+        """soft-resampling
+
+        Arguments:
+            particles {tensor} -- the latent particles
+            prob {tensor} -- particle weights
+
+        Returns:
+            tuple -- particles
+        """
+
+        resamp_prob = (
+            self.resamp_alpha * torch.exp(prob)
+            + (1 - self.resamp_alpha) * 1 / self.num_particles
+        )
+        resamp_prob = resamp_prob.view(self.num_particles, -1)
+        flatten_indices = (
+            torch.multinomial(
+                resamp_prob.transpose(0, 1),
+                num_samples=self.num_particles,
+                replacement=True,
+            )
+            .transpose(1, 0)
+            .contiguous()
+            .view(-1, 1)
+            .squeeze()
+        )
+
+        # PFLSTM
+        if type(particles) == tuple:
+            particles_new = (
+                particles[0][flatten_indices],
+                particles[1][flatten_indices],
+            )
+        # PFGRU
+        else:
+            particles_new = particles[flatten_indices]
+
+        prob_new = torch.exp(prob.view(-1, 1)[flatten_indices])
+        prob_new = prob_new / (
+            self.resamp_alpha * prob_new + (1 - self.resamp_alpha) / self.num_particles
+        )
+        prob_new = torch.log(prob_new).view(self.num_particles, -1)
+        prob_new = prob_new - torch.logsumexp(prob_new, dim=0, keepdim=True)
+
+        return particles_new, prob_new
+
+    def reparameterize(self, mu: torch.Tensor, var: torch.Tensor) -> torch.Tensor:
+        """Implements the reparameterization trick introduced in [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
+
+        Arguments:
+            mu {tensor} -- learned mean
+            var {tensor} -- learned variance
+
+        Returns:
+            tensor -- sample
+        """
+        std: torch.Tensor = F.softplus(var)
+        eps: torch.Tensor = torch.FloatTensor(std.shape).normal_()
+        return mu + eps * std
+
+
+# Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
+class PFGRUCell(PFRNNBaseCell):
+    def __init__(
+        self,
+        num_particles: int,
+        input_size: int,
+        obs_size: int,
+        hidden_size: int,
+        resamp_alpha: float,
+        use_resampling: bool,
+        activation: str,
+    ):
+        super().__init__(
+            num_particles,
+            input_size,
+            hidden_size,
+            resamp_alpha,
+            use_resampling,
+            activation,
+        )
+
+        self.fc_z: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
+        self.fc_r: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
+        self.fc_n: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim * 2)
+
+        self.fc_obs: nn.Linear = nn.Linear(self.h_dim + self.input_size, 1)
+        self.hid_obs: nn.Sequential = mlp([self.h_dim, 24, 2], nn.ReLU)
+        self.hnn_dropout: nn.Dropout = nn.Dropout(p=0)
+
+    def forward(
+        self, input_: torch.Tensor, hx: tuple[torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        """One step forward for PFGRU
+
+        Arguments:
+            input_ {tensor} -- the input tensor
+            hx {tuple} -- previous hidden state (particles, weights)
+
+        Returns:
+            tuple -- new tensor
+        """
+        h0, p0 = hx
+        obs_in = input_.repeat(h0.shape[0], 1)
+        obs_cat = torch.cat((h0, obs_in), dim=1)
+
+        z = torch.sigmoid(self.fc_z(obs_cat))
+        r = torch.sigmoid(self.fc_r(obs_cat))
+        n = self.fc_n(torch.cat((r * h0, obs_in), dim=1))
+
+        mu_n, var_n = torch.split(n, split_size_or_sections=self.h_dim, dim=1)
+        n: torch.Tensor = self.reparameterize(mu_n, var_n)
+
+        if self.activation == "relu":
+            # if we use relu as the activation, batch norm is require
+            n = n.view(self.num_particles, -1, self.h_dim).transpose(0, 1).contiguous()
+            n = self.batch_norm(n)
+            n = n.transpose(0, 1).contiguous().view(-1, self.h_dim)
+            n = torch.relu(n)
+        elif self.activation == "tanh":
+            n = torch.tanh(n)
+        else:
+            raise ModuleNotFoundError
+
+        h1: torch.Tensor = (1 - z) * n + z * h0
+
+        p1 = self.observation_likelihood(h1, obs_in, p0)
+
+        if self.use_resampling:
+            h1, p1 = self.resampling(h1, p1)
+
+        p1 = p1.view(-1, 1)
+        mean_hid = torch.sum(torch.exp(p1) * self.hnn_dropout(h1), dim=0)
+        loc_pred: torch.Tensor = self.hid_obs(mean_hid)
+
+        return loc_pred, (h1, p1)
+
+    def observation_likelihood(self, h1: torch.Tensor, obs_in: torch.Tensor, p0: torch.Tensor) -> torch.Tensor:
+        """observation function based on compatibility function"""
+        logpdf_obs: torch.Tensor = self.fc_obs(torch.cat((h1, obs_in), dim=1))
+        p1: torch.Tensor = logpdf_obs + p0
+        p1 = p1.view(self.num_particles, -1, 1)
+        p1 = F.log_softmax(p1, dim=0)
+        return p1
+
+    def init_hidden(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+        initializer: Callable[[int, int], torch.Tensor] = (
+            torch.rand if self.initialize == "rand" else torch.zeros
+        )
+        h0 = initializer(batch_size * self.num_particles, self.h_dim)
+        p0: torch.Tensor = torch.ones(batch_size * self.num_particles, 1) * np.log(
+            1 / self.num_particles
+        )
+        hidden = (h0, p0)
+        return hidden
+
+
