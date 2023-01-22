@@ -37,7 +37,7 @@ import NeuralNetworkCores.CNN_core as RADCNN_core
 import NeuralNetworkCores.RADA2C_core as RADA2C_core
 
 # Data Management Utility
-from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs
+from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -161,6 +161,7 @@ class PPO:
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
     train_pfgru_iters: int = field(default= 15)
+    reduce_pfgru_iters: bool = field(default=True)
     lam: float = field(default= 0.9)
     number_of_agents: int = field(default= 1)
     target_kl: float = field(default= 0.07)
@@ -228,6 +229,8 @@ class PPO:
             
         train_pfgru_iters (int): Number of gradient descent steps to take for source localization neural network (the PFGRU unit)           
 
+        reduce_pfgru_iters (bool): Reduces PFGRU training iteration when further along to speed up training
+
         lam (float): Lambda for GAE-Lambda advantage estimator calculations. (Always between 0 and 1,
             close to 1.)
 
@@ -284,7 +287,10 @@ class PPO:
                                         | make sure to flatten this!)
             ===========  ================  ======================================
     """
-    def __post_init__(self):          
+    def __post_init__(self):  
+        
+        # TODO get rid of redundant for loops
+                
         # Set Pytorch random seed
         torch.manual_seed(self.seed)
 
@@ -307,9 +313,13 @@ class PPO:
         # Instantiate environment 
         self.obs_dim: int = self.env.observation_space.shape[0]
         self.act_dim: int = rad_search_env.A_SIZE
+        
+        # For logging
+        config_json: dict[str, Any] = convert_json(locals())
 
         self.agents: dict[int, PPO] = {
             i: AgentPPO(
+                steps_per_epoch=self.steps_per_epoch,
                 actor_critic_architecture=self.actor_critic_architecture,
                 observation_space=self.obs_dim, 
                 action_space=self.act_dim, 
@@ -320,9 +330,10 @@ class PPO:
                 train_pi_iters=self.train_pi_iters,
                 train_v_iters=self.train_v_iters,
                 train_pfgru_iters=self.train_pfgru_iters,
+                reduce_pfgru_iters=self.reduce_pfgru_iters,
                 clip_ratio=self.clip_ratio,
                 alpha=self.alpha,
-                target_kl=self.target_kl
+                target_kl=self.target_kl,
             ) for i in range(self.number_of_agents)
         }
 
@@ -349,8 +360,8 @@ class PPO:
         #         raise ValueError('Unsupported neural network type')
         
         # TODO add PFGRU to FF and CNN networks
-        for ppo_agent in self.agents.values():
-            ppo_agent.agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
+        for ac in self.agents.values():
+            ac.agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
         
         # Set up PPO trajectory buffers. This stores values to be later used for updating each agent after the conclusion of an epoch
         # TODO Move to PPO        
@@ -386,7 +397,7 @@ class PPO:
         self.pi_var_count, self.model_var_count = {}, {}
         for id, ac in self.agents.items():
             self.pi_var_count[id], self.model_var_count[id] = (
-                count_variables(module) for module in [ac.pi, ac.model]
+                count_variables(module) for module in [ac.agent.pi, ac.agent.model]
             )   
             
         # Instatiate loggers and set up model saving                 
@@ -398,14 +409,15 @@ class PPO:
                 env_name=self.logger_kwargs['env_name']
             ) for id in self.agents
         }
+        
         self.loggers = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
         
         for id in self.agents:
-            self.loggers[id].save_config(locals())  # TODO THIS PICKLE DEPENDS ON THE DIRECTORY STRUCTURE!! Needs rewrite!      
+            self.loggers[id].save_config(config_json)    
             self.loggers[id].log(
                 f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
             )
-            self.loggers[id].setup_pytorch_saver(self.agents[id])
+            self.loggers[id].setup_pytorch_saver(self.agents[id].agent)
 
     def train(self):
         # Prepare environment variables and reset
@@ -424,7 +436,7 @@ class PPO:
         for id in self.agents:
             self.stat_buffers[id].update(observations[id][0])
         
-        # Removed features - migrating to pytorch lightning instead of mpi (God willing)
+        # TODO Removed features - migrating to pytorch lightning instead of mpi (God willing)
         #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
         print(f"Starting main training loop!", flush=True)
@@ -433,12 +445,17 @@ class PPO:
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
         for epoch in range(self.total_epochs):
-            
             # Reset hidden states and sets Actor into "eval" mode 
-            hiddens = {id: ac.reset_hidden() for id, ac in self.agents.items()}
-            for ac in self.agents.values():
-                ac.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
+            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                hiddens = {id: ac.agent.reset_hidden() for id, ac in self.agents.items()}
+                for ac in self.agents.values():
+                    ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?                
+            else:
+                for ac in self.agents.values():
+                    ac.agent.actor.eval()
+                    ac.agent.critic.eval() # TODO will need to be changed for global critic
             
+            # Start episode!
             for steps in range(self.steps_per_epoch):
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 standardized_observations = {id: observations[id] for id in self.agents}
@@ -446,17 +463,20 @@ class PPO:
                     standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
                     
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
-                # a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?                
                 agent_thoughts = {id: None for id in self.agents}
-                for id, agent in self.agents.items():
-                    action, value, logprob, hiddens[id], out_prediction = agent.step(standardized_observations[id], hidden=hiddens[id])
-                    
+                for id, ac in self.agents.items():
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                        action, value, logprob, hiddens[id], out_prediction = ac.agent.step(standardized_observations[id], hidden=hiddens[id])
+                    else:
+                        # TODO
+                        pass  
+                          
                     agent_thoughts[id] = AgentStepReturn(
                         action=action, value=value, logprob=logprob, hidden=hiddens[id], out_prediction=out_prediction
                     )
                 
                 # Create action list to send to environment
-                agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id, action in agent_thoughts.items()} 
+                agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 
                 
                 # TODO the above does not include idle action. After working, add an additional state space for 9 potential actions and uncomment:                 
                 #agent_action_decisions = {id: int(action)-1 for id, action in agent_thoughts.items()} 
@@ -477,8 +497,8 @@ class PPO:
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
                 #   record state values with logger 
-                for id in self.agents:
-                    self.agent_buffers[id].store(
+                for id, ac in self.agents.items():
+                    ac.ppo_buffer.store(
                         obs = observations[id],
                         rew = rewards[id],
                         act = agent_action_decisions[id],
@@ -528,8 +548,8 @@ class PPO:
                             standardized_observations[id][0] = np.clip(
                                 (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
                             )     
-                            for id, agent in self.agents.items():
-                                _, value, _, _, _ = agent.step(standardized_observations[id], hidden=hiddens[id])
+                            for id, ac in self.agents.items():
+                                _, value, _, _, _ = ac.agent.step(standardized_observations[id], hidden=hiddens[id])
  
                         if epoch_ended:
                             # Set flag to sample new environment parameters
@@ -537,13 +557,15 @@ class PPO:
                     else:
                         value = 0
                     # Finish the trajectory and compute advantages. See function comments for more information                        
-                    for id, agent in self.agents.items():
-                        self.agent_buffers[id].finish_path(value)
+                    for id, ac in self.agents.items():
+                        ac.ppo_buffer.finish_path(value)
                         
                     if terminal:
                         # only save episode returns and episode length if trajectory finished
-                        for id, agent in self.agents.items():
-                            self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)                 
+                        for id, ac in self.agents.items():
+                            self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)
+                            # TODO verify matches logger - goal is to get logger out of PPO buffer
+                            ac.ppo_buffer.store_episode_length(episode_length=steps_in_episode)
 
                     # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
                     asked_to_save = epoch_ended and self.render
@@ -557,10 +579,11 @@ class PPO:
                         )
 
                     if DEBUG and timeout:
-                        env.render(
-                            path=str(self.loggers[0].output_dir),
-                            epoch_count=epoch,
-                    )                        
+                        pass
+                    #     env.render(
+                    #         path=str(self.loggers[0].output_dir),
+                    #         epoch_count=epoch,
+                    # )                        
 
                     # Reset the environment and counters
                     episode_return_buffer = []
@@ -569,7 +592,7 @@ class PPO:
                     # If not at the end of an epoch, reset the detector position and episode tracking for incoming new episode                      
                     if not env.epoch_end:
                         for id, ac in self.agents.items():                        
-                            hiddens[id] = ac.reset_hidden()
+                            hiddens[id] = ac.agent.reset_hidden()
                     else:
                         # Sample new environment parameters, log epoch results
                         for id in self.agents:
@@ -591,190 +614,50 @@ class PPO:
                     for id in self.agents:
                         self.stat_buffers[id].update(observations[id][0])                              
                     
-            if not DEBUG:
-                # Save model
-                if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
-                    for id in self.agents:
-                        self.loggers[id].save_state({}, None)
-                    pass
-
-                # Reduce localization module training iterations after 100 epochs to speed up training
-                if self.reduce_pfgru_iters and epoch > 99:
-                    self.train_pfgru_iters = 5
-                    self.reduce_pfgru_iters = False
-
-                # Perform PPO update!
-                self.update_agents() 
-                
-                if not terminal:
-                    pass            
-
-                # Log info about epoch
-                for id in self.agents:
-                    self.loggers[id].log_tabular("AgentID", id)        
-                    self.loggers[id].log_tabular("Epoch", epoch)      
-                    self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
-                    self.loggers[id].log_tabular("EpLen", average_only=True)
-                    self.loggers[id].log_tabular("VVals", with_min_and_max=True)
-                    self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
-                    self.loggers[id].log_tabular("LossPi", average_only=True)
-                    self.loggers[id].log_tabular("LossV", average_only=True)
-                    self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
-                    self.loggers[id].log_tabular("LocLoss", average_only=True)
-                    self.loggers[id].log_tabular("Entropy", average_only=True)
-                    self.loggers[id].log_tabular("KL", average_only=True)
-                    self.loggers[id].log_tabular("ClipFrac", average_only=True)
-                    self.loggers[id].log_tabular("DoneCount", sum_only=True)
-                    self.loggers[id].log_tabular("OutOfBound", average_only=True)
-                    self.loggers[id].log_tabular("StopIter", average_only=True)
-                    self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
-                    self.loggers[id].dump_tabular()
-
-
-    def train_old(self):
-        env = self.env
-        ac = self.agents[0]
-        epochs = self.total_epochs
-        local_steps_per_epoch = self.steps_per_epoch
-        buf = self.agent_buffers[0]
-        logger = self.loggers[0]
-        steps_per_episode = self.steps_per_episode
-        render = self.render
-        save_gif_freq = self.save_gif_freq
-        save_gif = self.save_gif
-        save_freq = self.save_freq
-        steps_per_epoch = self.steps_per_epoch
-        
-        # Prepare for interaction with environment
-        start_time = time.time()
-        o = env.reset()[0][0]
-        ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-        stat_buff = RADA2C_core.StatBuff()
-        stat_buff.update(o[0])
-        ep_ret_ls = []
-        oob = 0
-        reduce_pfgru_iters = True
-        ac.model.eval()
-        # Main loop: collect experience in env and update/log each epoch
-        for epoch in range(epochs):
-            #Reset hidden state
-            hidden = ac.reset_hidden()
-            ac.pi.logits_net.v_net.eval()
-            for t in range(local_steps_per_epoch):
-                #Standardize input using running statistics per episode
-                obs_std = o
-                obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                #compute action and logp (Actor), compute value (Critic)
-                a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-                results = env.step(int(a))
-                next_o = results[0][0]
-                r = results[1][0]
-                d = results[2][0]
-                ep_ret += r
-                ep_len += 1
-                ep_ret_ls.append(ep_ret)
-
-                buf.store(obs_std, a, r, v, logp, env.src_coords)
-                logger.store(VVals=v)
-
-                # Update obs (critical!)
-                o = next_o
-
-                #Update running mean and std
-                stat_buff.update(o[0])
-
-                timeout = ep_len == steps_per_episode
-                terminal = d or timeout
-                epoch_ended = t==local_steps_per_epoch-1
-                
-                if terminal or epoch_ended:
-                    if d and not timeout:
-                        done_count += 1
-                    if 'out_of_bounds' in results[3][0] and results[3][0]['out_of_bounds'] == True:
-                        oob += 1
-                    if epoch_ended and not(terminal):
-                        print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
-
-                    if timeout or epoch_ended:
-                        # if trajectory didn't reach terminal state, bootstrap value target
-                        obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                        _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
-                        if epoch_ended:
-                            #Set flag to sample new environment parameters
-                            env.epoch_end = True
-                    else:
-                        v = 0
-                    buf.finish_path(v)
-                    if terminal:
-                        # only save EpRet / EpLen if trajectory finished
-                        logger.store(EpRet=ep_ret, EpLen=ep_len)
-
-                    if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
-                        #Check agent progress during training
-                        if epoch != 0:
-                            env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
-                                    ep_rew=ep_ret_ls)
-                    
-                    ep_ret_ls = []
-                    stat_buff.reset()
-                    if not env.epoch_end:
-                        #Reset detector position and episode tracking
-                        hidden = ac.reset_hidden()
-                        o = env.reset()[0][0]
-                        ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-                    else:
-                        #Sample new environment parameters, log epoch results
-                        #oob += env.oob_count
-                        logger.store(DoneCount=done_count, OutOfBound=oob)
-                        done_count = 0; oob = 0
-                        o = env.reset()[0][0]
-                        ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-
-                    stat_buff.update(o[0])
-
             # Save model
-            if (epoch % save_freq == 0) or (epoch == epochs-1):
-                logger.save_state(None, None)
+            if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
+                for id in self.agents:
+                    self.loggers[id].save_state({}, None)
                 pass
 
-            
-            #Reduce localization module training iterations after 100 epochs to speed up training
-            if reduce_pfgru_iters and epoch > 99:
-                self.train_pfgru_iters = 5
-                reduce_pfgru_iters = False
+            # Reduce localization module training iterations after 100 epochs to speed up training
+            if epoch > 99:
+                for ac in self.agents.values():
+                    ac.reduce_pfgru_training()
 
             # Perform PPO update!
-            self.update_agents()
+            self.update_agents() 
             
             if not terminal:
-                pass
+                pass            
 
             # Log info about epoch
-            # WARNING: DO NOT RENAME VARIABLES UNTIL REPLACING THEM WITH A BUFFER! Logger is used extensively for agent update
-            logger.log_tabular('Epoch', epoch)
-            logger.log_tabular('EpRet', with_min_and_max=True)
-            logger.log_tabular('EpLen', average_only=True)
-            logger.log_tabular('VVals', with_min_and_max=True)
-            logger.log_tabular('TotalEnvInteracts', (epoch+1)*steps_per_epoch)
-            logger.log_tabular('LossPi', average_only=True)
-            logger.log_tabular('LossV', average_only=True)
-            logger.log_tabular('LossModel', average_only=True)
-            logger.log_tabular('LocLoss', average_only=True)
-            logger.log_tabular('Entropy', average_only=True)
-            logger.log_tabular('KL', average_only=True)
-            logger.log_tabular('ClipFrac', average_only=True)
-            logger.log_tabular('DoneCount', sum_only=True)
-            logger.log_tabular('OutOfBound', average_only=True)
-            logger.log_tabular('StopIter', average_only=True)
-            logger.log_tabular('Time', time.time()-start_time)
-            logger.dump_tabular()        
+            for id in self.agents:
+                self.loggers[id].log_tabular("AgentID", id)        
+                self.loggers[id].log_tabular("Epoch", epoch)      
+                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
+                self.loggers[id].log_tabular("EpLen", average_only=True)
+                self.loggers[id].log_tabular("VVals", with_min_and_max=True)
+                self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
+                self.loggers[id].log_tabular("LossPi", average_only=True)
+                self.loggers[id].log_tabular("LossV", average_only=True)
+                self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
+                self.loggers[id].log_tabular("LocLoss", average_only=True)
+                self.loggers[id].log_tabular("Entropy", average_only=True)
+                self.loggers[id].log_tabular("KL", average_only=True)
+                self.loggers[id].log_tabular("ClipFrac", average_only=True)
+                self.loggers[id].log_tabular("DoneCount", sum_only=True)
+                self.loggers[id].log_tabular("OutOfBound", average_only=True)
+                self.loggers[id].log_tabular("StopIter", average_only=True)
+                self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
+                self.loggers[id].dump_tabular()
 
 
     def update_agents(self) -> None: #         (env, bp_args, loss_fcn=loss)
 
         """Update for the localization and A2C modules"""
         # Get data from buffers
-        data: dict[int, dict[str, torch.Tensor]] = {id: self.agent_buffers[id].get(logger=self.loggers[id]) for id in self.agents}
+        data: dict[int, dict[str, torch.Tensor]] = {id: ac.ppo_buffer.get() for id, ac in self.agents.items()}
 
         # Note: update functions perform multiple updates per call, according to minibatch number (sometimes known as k_epoch)
         

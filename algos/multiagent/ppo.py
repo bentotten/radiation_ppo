@@ -110,6 +110,8 @@ class PPOBuffer:
     obs_dim: int  # Observation space dimensions
     max_size: int  # Max steps per epoch
 
+    episode_lengths: npt.NDArray[np.float32] = field(default_factory=list)  # Episode length storage
+
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer
@@ -120,7 +122,7 @@ class PPOBuffer:
     val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer
     source_tar: npt.NDArray[np.float32] = field(init=False) # Source location buffer (for moving targets)
     logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
-    
+        
     obs_win: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete?
     obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
 
@@ -217,6 +219,13 @@ class PPOBuffer:
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
+    def store_episode_length(self, episode_length: int ) -> None:
+        """
+        Save episode length at the end of an epoch for later calculations
+        """
+        self.episode_lengths.append(episode_length)
+            
+
     def finish_path(self, last_val: int = 0) -> None:
         """
         Call this at the end of a trajectory, or when one gets cut off
@@ -248,7 +257,7 @@ class PPOBuffer:
 
         self.path_start_idx = self.ptr
 
-    def get(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
+    def get(self) -> dict[str, Union[torch.Tensor, list]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -264,7 +273,8 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
+        epLens: list[int] = self.episode_lengths
+        #epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         numEps = len(epLens)
         epLenTotal = sum(epLens)
         assert numEps > 0
@@ -279,41 +289,40 @@ class PPOBuffer:
             ep_form = []
         )
 
-        if logger:
-            epLenSize = (
-                # If they're equal then we don't need to do anything
-                # Otherwise we need to add one to make sure that numEps is the correct size
-                numEps
-                + int(epLenTotal != len(self.obs_buf))
+        epLenSize = (
+            # If they're equal then we don't need to do anything
+            # Otherwise we need to add one to make sure that numEps is the correct size
+            numEps
+            + int(epLenTotal != len(self.obs_buf))
+        )
+        obs_buf = np.hstack(
+            (
+                self.obs_buf,
+                self.adv_buf[:, None],
+                self.ret_buf[:, None],
+                self.logp_buf[:, None],
+                self.act_buf[:, None],
+                self.source_tar,
             )
-            obs_buf = np.hstack(
-                (
-                    self.obs_buf,
-                    self.adv_buf[:, None],
-                    self.ret_buf[:, None],
-                    self.logp_buf[:, None],
-                    self.act_buf[:, None],
-                    self.source_tar,
-                )
+        )
+        epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+        slice_b: int = 0
+        slice_f: int = 0
+        jj: int = 0
+        # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
+        for ep_i in epLens:
+            slice_f += ep_i
+            epForm[jj].append(
+                torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
             )
-            epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
-            slice_b: int = 0
-            slice_f: int = 0
-            jj: int = 0
-            # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
-            for ep_i in epLens:
-                slice_f += ep_i
-                epForm[jj].append(
-                    torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
-                )
-                slice_b += ep_i
-                jj += 1
-            if slice_f != len(self.obs_buf):
-                epForm[jj].append(
-                    torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
-                )
+            slice_b += ep_i
+            jj += 1
+        if slice_f != len(self.obs_buf):
+            epForm[jj].append(
+                torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+            )
 
-            data["ep_form"] = epForm  # TODO add to a buffer instead of pulling from logger
+        data["ep_form"] = epForm
 
         return data
 
@@ -322,6 +331,7 @@ class PPOBuffer:
 class AgentPPO:
     observation_space: int
     action_space: int
+    steps_per_epoch: int = field(default= 480)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic_architecture: str = field(default="cnn")  
     train_pi_iters: int = field(default= 40)
@@ -333,8 +343,10 @@ class AgentPPO:
     clip_ratio: float = field(default= 0.2)
     alpha: float = field(default= 0)
     target_kl: float = field(default= 0.07)
-    reduce_pfgru_iters: bool = field(default=True) # Reduces PFGRU training iteration when further along to speed up training
-    
+    reduce_pfgru_iters: bool = field(default=True) 
+    gamma: float = field(default= 0.99)
+    lam: float = field(default= 0.9)
+
     def __post_init__(self):
         # Initialize agents
         match self.actor_critic_architecture:
@@ -350,7 +362,9 @@ class AgentPPO:
                 raise ValueError('Unsupported neural network type')
             
         # Inititalize buffers and optimizers
-        self.agent_buffer = PPOBuffer(obs_dim=self.obs_dim, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam)
+        self.ppo_buffer = PPOBuffer(
+            obs_dim=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam
+            )
         self.agent_optimizer = OptimizationStorage(
             train_pi_iters = self.train_pi_iters,                
             train_v_iters = self.train_v_iters,
@@ -363,3 +377,9 @@ class AgentPPO:
             alpha = self.alpha,
             target_kl = self.target_kl,             
             )    
+        
+    def reduce_pfgru_training(self):
+        '''Reduce localization module training iterations after some number of epochs to speed up training'''
+        if self.reduce_pfgru_iters:
+            self.train_pfgru_iters = 5
+            self.reduce_pfgru_iters = False        
