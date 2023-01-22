@@ -21,12 +21,7 @@
       "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": [
-        "--data_dir",
-        "${workspaceFolder}/algos/multiagent/",
-        "--smooth",
-        "10"
-      ],
+      "args": ["--data_dir", "${workspaceFolder}/models", "--smooth", "10"],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
@@ -37,24 +32,26 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [
-        "--agent_count",
-        "3",
-        // "--steps-per-epoch",
-        // "2",
+        "--agent-count",
+        "1",
+        "--steps-per-epoch",
+        "50",
+        "--steps-per-episode",
+        "50",
         "--epochs",
         "1",
         "--render",
         "True",
+        "--save-gif-freq",
+        "1",
         //"--obstruct",
         //"1",
         "--seed",
         "2",
-        // "--save_gif_freq",
-        // "0",
         "--enforce_grid_boundaries",
         "True",
         "--exp-name",
-        "multi-ppo"
+        "TEAM-RAD"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
@@ -65,6 +62,8 @@
 // help="Number of timesteps per epoch (before updating agent networks)"
 // "--steps-per-epoch", "480",
 // help="Number of total epochs to train the agent"
+// "--steps-per-episode", "120",
+// help="Number of total steps in an episode "
 // "--epochs", "3000",
 // help="Random seed control"
 // "--seed", "2",

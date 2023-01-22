@@ -459,6 +459,7 @@ class PPO:
                 # Check if some agents went out of bounds
                 for id in infos:
                     if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
+                        print(f"Agent out of bounds at ({observations[id][1]}, {observations[id][2]})")
                         out_of_bounds_count[id] += infos[id]['out_of_bounds_count']
                                     
                 # Stopping conditions for episode

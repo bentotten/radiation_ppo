@@ -217,7 +217,8 @@ if __name__ == "__main__":
 
     # Set up Radiation environment
     dim_length, dim_height = args.dims
-    intial_parameters = {'bbox': np.array(  # type: ignore
+    intial_parameters = {
+        'bbox': np.array(  # type: ignore
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
         'observation_area': np.array(args.area_obs),  # type: ignore
@@ -225,6 +226,7 @@ if __name__ == "__main__":
         'np_random': rng,
         'number_agents': args.agent_count,
         'save_gif': args.render,
+        'enforce_grid_boundaries': args.enforce_grid_boundaries
     }
 
     env: RadSearch = gym.make(args.env_name,**intial_parameters)
@@ -263,7 +265,7 @@ if __name__ == "__main__":
         save_gif=args.render, # TODO combine into just render
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,
-        actor_critic_architecture=args.net_type
+        actor_critic_architecture=args.net_type,
     )
     
     ppo.train()
