@@ -55,7 +55,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         gamma=args.gamma,
         seed=args.seed,
         steps_per_epoch=args.steps_per_epoch,
-        steps_per_episode=args.steps_per_episodem
+        steps_per_episode=args.steps_per_episode,
         epochs=args.epochs,
         exp_name=args.exp_name,
         dims=args.dims,

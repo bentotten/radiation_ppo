@@ -1,9 +1,68 @@
 from dataclasses import dataclass, field
 import torch
+import numpy as np
+import numpy.typing as npt
+from typing import TypeAlias, Union, cast, Optional
+import scipy.signal
+
+from epoch_logger import EpochLogger
+
+
+Shape: TypeAlias = int | tuple[int, ...]
+
+
+def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
+    if shape is None:
+        return (length,)
+    elif np.isscalar(shape):
+        shape = cast(int, shape)
+        return (length, shape)
+    else:
+        shape = cast(tuple[int, ...], shape)
+        return (length, *shape)
+
+
+def discount_cumsum(
+    x: npt.NDArray[np.float64], discount: float
+) -> npt.NDArray[np.float64]:
+    """
+    magic from rllab for computing discounted cumulative sums of vectors.
+    input:
+        vector x,
+        [x0,
+         x1,
+         x2]
+
+    output:
+        [x0 + discount * x1 + discount^2 * x2,
+         x1 + discount * x2,
+         x2]
+    """
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
+
 
 @dataclass
 class OptimizationStorage:
-    ''' 
+    train_pi_iters: int
+    train_v_iters: int
+    train_pfgru_iters: int    
+    pi_optimizer: torch.optim
+    critic_optimizer: torch.optim
+    model_optimizer: torch.optim
+    clip_ratio: float
+    alpha: float
+    target_kl: float
+    
+    pi_scheduler: torch.optim.lr_scheduler = field(init=False)  # Schedules gradient steps for actor
+    critic_scheduler: torch.optim.lr_scheduler = field(init=False)  # Schedules gradient steps for value function (critic)
+    pfgru_scheduler: torch.optim.lr_scheduler = field(init=False)   # Schedules gradient steps for PFGRU location predictor module
+    loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean"))) # Loss calculator utility NOTE: Actor/PFGRU have other complex loss functions
+        
+    '''     
+    This stores information related to updating neural network models for each agent. It includes the clip ratio for 
+        ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy,
+        and the target KL for early stopping.
+        
     train_pi_iters (int): Maximum number of gradient descent steps to take on actor policy loss per epoch. 
             (Early stopping may cause optimizer to take fewer than this.)
 
@@ -24,22 +83,7 @@ class OptimizationStorage:
     
     target_kl (float): Roughly what KL divergence we think is appropriate between new and old policies after an update.
         This will get used for early stopping (Usually small, 0.01 or 0.05.) 
-    
-    '''
-    train_pi_iters: int
-    train_v_iters: int
-    train_pfgru_iters: int    
-    pi_optimizer: torch.optim
-    critic_optimizer: torch.optim
-    model_optimizer: torch.optim
-    clip_ratio: float
-    alpha: float
-    target_kl: float
-    
-    pi_scheduler: torch.optim.lr_scheduler = field(init=False)  # Schedules gradient steps for actor
-    critic_scheduler: torch.optim.lr_scheduler = field(init=False)  # Schedules gradient steps for value function (critic)
-    pfgru_scheduler: torch.optim.lr_scheduler = field(init=False)   # Schedules gradient steps for PFGRU location predictor module
-    loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean"))) # Loss calculator utility NOTE: Actor/PFGRU have other complex loss functions
+    '''        
         
     def __post_init__(self):        
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
@@ -52,3 +96,201 @@ class OptimizationStorage:
             self.model_optimizer, step_size=100, gamma=0.99
         )        
 
+
+@dataclass
+class PPOBuffer:
+    obs_dim: int  # Observation space dimensions
+    max_size: int  # Max steps per epoch
+
+    obs_buf: npt.NDArray[np.float32] = field(init=False)
+    act_buf: npt.NDArray[np.float32] = field(init=False)
+    adv_buf: npt.NDArray[np.float32] = field(init=False)
+    rew_buf: npt.NDArray[np.float32] = field(init=False)
+    ret_buf: npt.NDArray[np.float32] = field(init=False)
+    val_buf: npt.NDArray[np.float32] = field(init=False)
+    source_tar: npt.NDArray[np.float32] = field(init=False)
+    logp_buf: npt.NDArray[np.float32] = field(init=False)
+    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO where is this used?
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # Location prediction
+
+    gamma: float = 0.99
+    lam: float = 0.90
+    beta: float = 0.005
+    ptr: int = 0
+    path_start_idx: int = 0
+
+    """
+    A buffer for storing histories experienced by a PPO agent interacting
+    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
+    for calculating the advantages of state-action pairs. This is left outside of the
+    PPO agent so that A2C architectures can be swapped out as desired.
+    """
+
+    def __post_init__(self):
+        self.obs_buf: npt.NDArray[np.float32] = np.zeros(
+            combined_shape(self.max_size, self.obs_dim), dtype=np.float32
+        )
+        self.act_buf: npt.NDArray[np.float32] = np.zeros(
+            combined_shape(self.max_size), dtype=np.float32
+        )
+        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.rew_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.val_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.source_tar: npt.NDArray[np.float32] = np.zeros(
+            (self.max_size, 2), dtype=np.float32
+        )
+        self.logp_buf: npt.NDArray[np.float32] = np.zeros(
+            self.max_size, dtype=np.float32
+        )
+        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
+            self.obs_dim, dtype=np.float32
+        )
+        
+        ################################## set device ##################################
+        print("============================================================================================")
+        # set device to cpu or cuda
+        device = torch.device('cpu')
+        if(torch.cuda.is_available()): 
+            device = torch.device('cuda:0') 
+            torch.cuda.empty_cache()
+            print("Device set to : " + str(torch.cuda.get_device_name(device)))
+        else:
+            print("Device set to : cpu")
+        print("============================================================================================")
+
+    def store(
+        self,
+        obs: npt.NDArray[np.float32],
+        act: npt.NDArray[np.float32],
+        rew: npt.NDArray[np.float32],
+        val: npt.NDArray[np.float32],
+        logp: npt.NDArray[np.float32],
+        src: npt.NDArray[np.float32],
+    ) -> None:
+        """
+        Append one timestep of agent-environment interaction to the buffer.
+        obs: observation (Usually the one returned from environment for previous step)
+        act: action taken 
+        rew: reward from environment
+        val: state-value from critic
+        logp: log probability from actor
+        src: source coordinates
+        """
+        assert self.ptr < self.max_size
+        self.obs_buf[self.ptr, :] = obs
+        self.act_buf[self.ptr] = act
+        self.rew_buf[self.ptr] = rew
+        self.val_buf[self.ptr] = val
+        self.source_tar[self.ptr] = src
+        self.logp_buf[self.ptr] = logp
+        self.ptr += 1
+
+    def finish_path(self, last_val: int = 0) -> None:
+        """
+        Call this at the end of a trajectory, or when one gets cut off
+        by an epoch ending. This looks back in the buffer to where the
+        trajectory started, and uses rewards and value estimates from
+        the whole trajectory to compute advantage estimates with GAE-Lambda,
+        as well as compute the rewards-to-go for each state, to use as
+        the targets for the value function.
+
+        The "last_val" argument should be 0 if the trajectory ended
+        because the agent reached a terminal state (died), and otherwise
+        should be V(s_T), the value function estimated for the last state.
+        This allows us to bootstrap the reward-to-go calculation to account
+        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
+        """
+
+        path_slice = slice(self.path_start_idx, self.ptr)
+        rews = np.append(self.rew_buf[path_slice], last_val)
+        vals = np.append(self.val_buf[path_slice], last_val)
+
+        # the next two lines implement GAE-Lambda advantage calculation
+        # gamma determines scale of value function, introduces bias regardless of VF accuracy
+        # lambda introduces bias when VF is inaccurate
+        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lam)
+
+        # the next line computes rewards-to-go, to be targets for the value function
+        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
+
+        self.path_start_idx = self.ptr
+
+    def get(self, logger: EpochLogger) -> dict[str, Union[torch.Tensor, list]]:
+        """
+        Call this at the end of an epoch to get all of the data from
+        the buffer, with advantages appropriately normalized (shifted to have
+        mean zero and std one). Also, resets some pointers in the buffer.
+        """
+        assert self.ptr == self.max_size  # buffer has to be full before you can get
+        self.ptr, self.path_start_idx = 0, 0
+        # the next two lines implement the advantage normalization trick
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
+        # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
+        # self.ret_buf = (self.ret_buf) / ret_std
+        # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
+        # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
+
+        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to buffer instead of pulling from logger
+        numEps = len(epLens)
+        epLenTotal = sum(epLens)
+        assert numEps > 0
+        data = dict(
+            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+            act=torch.as_tensor(self.act_buf, dtype=torch.float32),
+            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+            logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32),
+            ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
+            ep_form = []
+        )
+
+        if logger:
+            epLenSize = (
+                # If they're equal then we don't need to do anything
+                # Otherwise we need to add one to make sure that numEps is the correct size
+                numEps
+                + int(epLenTotal != len(self.obs_buf))
+            )
+            obs_buf = np.hstack(
+                (
+                    self.obs_buf,
+                    self.adv_buf[:, None],
+                    self.ret_buf[:, None],
+                    self.logp_buf[:, None],
+                    self.act_buf[:, None],
+                    self.source_tar,
+                )
+            )
+            epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+            slice_b: int = 0
+            slice_f: int = 0
+            jj: int = 0
+            # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
+            for ep_i in epLens:
+                slice_f += ep_i
+                epForm[jj].append(
+                    torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
+                )
+                slice_b += ep_i
+                jj += 1
+            if slice_f != len(self.obs_buf):
+                epForm[jj].append(
+                    torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+                )
+
+            data["ep_form"] = epForm
+
+        return data

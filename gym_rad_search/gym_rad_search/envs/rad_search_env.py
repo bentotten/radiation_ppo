@@ -152,7 +152,7 @@ def get_step_size(action: Action) -> float:
 
 
 # TODO Get the new Y for an arbritrary action angle to work
-def get_y_step_coeff(action: Action, idle_action: Action) -> float:
+def get_y_step_coeff(action: Action, idle_action: Action = None) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
@@ -162,7 +162,7 @@ def get_y_step_coeff(action: Action, idle_action: Action) -> float:
 
 # TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
-def get_x_step_coeff(action: Action, idle_action: Action) -> float:
+def get_x_step_coeff(action: Action, idle_action: Action = None) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
