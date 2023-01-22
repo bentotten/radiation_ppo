@@ -14,24 +14,20 @@
       "cwd": "${workspaceFolder}"
     },
     {
-      "name": "SIMPLE",
+      "name": "PLOT MULTI",
       "type": "python",
+      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
       "request": "launch",
-      "program": "${workspaceFolder}/algos/simple_ppo/train.py",
+      "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": [],
-      "cwd": "${workspaceFolder}/algos/simple_ppo"
-    },
-    {
-      "name": "PPO",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/algos/ppo/main.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": ["--seed", "0", "--exp-name", "exp1", "--render", "True"],
-      "cwd": "${workspaceFolder}/algos/ppo"
+      "args": [
+        "--data_dir",
+        "${workspaceFolder}/algos/multiagent/",
+        "--smooth",
+        "10"
+      ],
+      "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
       "name": "MULTI",
@@ -46,7 +42,7 @@
         // "--steps-per-epoch",
         // "2",
         "--epochs",
-        "5",
+        "1",
         "--render",
         "True",
         //"--obstruct",
@@ -59,22 +55,6 @@
         "True",
         "--exp-name",
         "multi-ppo"
-      ],
-      "cwd": "${workspaceFolder}/algos/multiagent"
-    },
-    {
-      "name": "PLOT MULTI",
-      "type": "python",
-      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
-      "request": "launch",
-      "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": [
-        "--data_dir",
-        "${workspaceFolder}/algos/multiagent/",
-        "--smooth",
-        "10"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

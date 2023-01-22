@@ -30,9 +30,9 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from ppo import OptimizationStorage
 
 # Neural Networks
-from algos.multiagent.NeuralNetworkCores.FF_core import PPO as van_PPO # vanilla_PPO
-from algos.multiagent.NeuralNetworkCores.CNN_core import PPO as PPO
-import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
+from NeuralNetworkCores.FF_core import PPO as van_PPO # vanilla_PPO
+from NeuralNetworkCores.CNN_core import PPO as PPO
+import NeuralNetworkCores.RADA2C_core as RADA2C_core
 
 # Data Management Utility
 from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs
@@ -716,43 +716,50 @@ class PPO:
                     for id in self.agents:
                         self.stat_buffers[id].update(observations[id][0])                    
 
-            # Save model
-            if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
+            if DEBUG:
+                env.render(
+                    path=str(self.loggers[0].output_dir),
+                    epoch_count=epoch,
+                )                
+
+            if not DEBUG:
+                # Save model
+                if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
+                    for id in self.agents:
+                        self.loggers[id].save_state({}, None)
+                    pass
+
+                # Reduce localization module training iterations after 100 epochs to speed up training
+                if self.reduce_pfgru_iters and epoch > 99:
+                    self.train_pfgru_iters = 5
+                    self.reduce_pfgru_iters = False
+
+                # Perform PPO update!
+                self.update_agents() 
+                
+                if not terminal:
+                    pass            
+
+                # Log info about epoch
                 for id in self.agents:
-                    self.loggers[id].save_state({}, None)
-                pass
-
-            # Reduce localization module training iterations after 100 epochs to speed up training
-            if self.reduce_pfgru_iters and epoch > 99:
-                self.train_pfgru_iters = 5
-                self.reduce_pfgru_iters = False
-
-            # Perform PPO update!
-            self.update_agents() 
-            
-            if not terminal:
-                pass            
-
-            # Log info about epoch
-            for id in self.agents:
-                self.loggers[id].log_tabular("AgentID", id)        
-                self.loggers[id].log_tabular("Epoch", epoch)      
-                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
-                self.loggers[id].log_tabular("EpLen", average_only=True)
-                self.loggers[id].log_tabular("VVals", with_min_and_max=True)
-                self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
-                self.loggers[id].log_tabular("LossPi", average_only=True)
-                self.loggers[id].log_tabular("LossV", average_only=True)
-                self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
-                self.loggers[id].log_tabular("LocLoss", average_only=True)
-                self.loggers[id].log_tabular("Entropy", average_only=True)
-                self.loggers[id].log_tabular("KL", average_only=True)
-                self.loggers[id].log_tabular("ClipFrac", average_only=True)
-                self.loggers[id].log_tabular("DoneCount", sum_only=True)
-                self.loggers[id].log_tabular("OutOfBound", average_only=True)
-                self.loggers[id].log_tabular("StopIter", average_only=True)
-                self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
-                self.loggers[id].dump_tabular()
+                    self.loggers[id].log_tabular("AgentID", id)        
+                    self.loggers[id].log_tabular("Epoch", epoch)      
+                    self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
+                    self.loggers[id].log_tabular("EpLen", average_only=True)
+                    self.loggers[id].log_tabular("VVals", with_min_and_max=True)
+                    self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
+                    self.loggers[id].log_tabular("LossPi", average_only=True)
+                    self.loggers[id].log_tabular("LossV", average_only=True)
+                    self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
+                    self.loggers[id].log_tabular("LocLoss", average_only=True)
+                    self.loggers[id].log_tabular("Entropy", average_only=True)
+                    self.loggers[id].log_tabular("KL", average_only=True)
+                    self.loggers[id].log_tabular("ClipFrac", average_only=True)
+                    self.loggers[id].log_tabular("DoneCount", sum_only=True)
+                    self.loggers[id].log_tabular("OutOfBound", average_only=True)
+                    self.loggers[id].log_tabular("StopIter", average_only=True)
+                    self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
+                    self.loggers[id].dump_tabular()
 
 
     def train_old(self):

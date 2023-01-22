@@ -142,35 +142,35 @@ def count_matching_p(p1: Point, point_list: list[Point]) -> int:
     return count    
 
 
-# 0: (-1)*DET_STEP     *x, ( 0)*DET_STEP     *y
-# 1: (-1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
-# 2: ( 0)*DET_STEP     *x, (+1)*DET_STEP     *y
-# 3: (+1)*DET_STEP_FRAC*x, (+1)*DET_STEP_FRAC*y
-# 4: (+1)*DET_STEP     *x, ( 0)*DET_STEP     *y
-# 5: (+1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
-# 6: ( 0)*DET_STEP     *x, (-1)*DET_STEP     *y
-# 7: (-1)*DET_STEP_FRAC*x, (-1)*DET_STEP_FRAC*y
-
-# If action is odd, then we are moving on the diagonal and so our step size is smaller.
-# Otherwise, we're moving solely in a cardinal direction.
 def get_step_size(action: Action) -> float:
     """
     Return the step size for the given action.
     """
-    return DET_STEP if action % 2 == 0 else DET_STEP_FRAC
+
+    #return DET_STEP if action % 2 == 0 else DET_STEP_FRAC  # TODO obsolete with arbritrary step angles
+    return DET_STEP
 
 
 # Get the new Y for an arbritrary action angle
-def get_y_step_coeff(action: Action, max_action: Action) -> float:
-    return math.sin(2 * math.pi * action / max_action) if action < max_action else 0
+def get_y_step_coeff(action: Action, idle_action: Action) -> float:
+    '''
+    action (Action): Scalar representing desired travel angle
+    idle_action (Action): Action representing idle state (usually the maximum action)
+    '''    
+    return math.sin(2 * math.pi * action / idle_action) if action != idle_action else 0
 
 
 # Get the new X coordinate for an arbritrary action angle
-def get_x_step_coeff(action: Action) -> float:
-    return math.cos(2 * math.pi * action / max_action) if action < max_action else 0
+def get_x_step_coeff(action: Action, idle_action: Action) -> float:
+    '''
+    action (Action): Scalar representing desired travel angle
+    idle_action (Action): Action representing idle state (usually the maximum action)
+    '''
+    return math.cos(2 * math.pi * action / idle_action) if action != idle_action else 0
 
 
 def get_step(action: Action) -> Point:
+    # TODO needs updated documentation for arbritrary angles
     """
     Return the step offset for the given action, scaled
         -1: stay idle 
@@ -187,7 +187,8 @@ def get_step(action: Action) -> Point:
         return Point((0.0, 0.0))
     else:
         return scale_p(
-            Point((get_x_step_coeff(action), get_y_step_coeff(action))),
+            # TODO update once no longer using -1 as idle
+            Point((get_x_step_coeff(action=action, idle_action=-1), get_y_step_coeff(action=action, idle_action=-1))),
             get_step_size(action),
         )
 
@@ -964,7 +965,8 @@ class RadSearch(gym.Env):
             for action in cast(tuple[Directions], get_args(Directions)):
                 # Gets slight offset to remove effects of being "on" an obstruction
                 step = scale_p(
-                    Point((get_x_step_coeff(action), get_y_step_coeff(action))),
+                    # TODO update once no longer using -1 as idle            
+                    Point((get_x_step_coeff(action=action, idle_action=-1), get_y_step_coeff(action=action, idle_action=-1))),
                     dist * length,
                 )
                 qs[action] = sum_p(qs[action], step)
@@ -1047,7 +1049,7 @@ class RadSearch(gym.Env):
             """
             print(f"Current Frame: {frame_number}", end='\r') # Acts as a progress bar
             
-            current_index = frame_number % (self.iter_count)
+            current_index = frame_number % (self.iter_count) if self.iter_count > 0 else 0
             # global location_estimate # TODO Trying to get out of global scope; this is for source prediction
             
             # Set up graphs for first frame
