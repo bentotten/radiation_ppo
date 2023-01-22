@@ -1,5 +1,7 @@
 # Models
 models/
+*.pkl
+data/
 
 # Simple Logs
 *.csv
