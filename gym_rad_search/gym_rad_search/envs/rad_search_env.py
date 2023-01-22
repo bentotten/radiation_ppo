@@ -160,14 +160,14 @@ def get_step_size(action: Action) -> float:
     return DET_STEP if action % 2 == 0 else DET_STEP_FRAC
 
 
-# The signs of the y-coeffecients follow the signs of sin(pi * (1 - action/4))
-def get_y_step_coeff(action: Action) -> int:
-    return round(math.sin(math.pi * (1.0 - action / 4.0)))
+# Get the new Y for an arbritrary action angle
+def get_y_step_coeff(action: Action, max_action: Action) -> float:
+    return math.sin(2 * math.pi * action / max_action) if action < max_action else 0
 
 
-# The signs of the x-coefficients follow the signs of cos(pi * (1 - action/4)) = sin(pi * (1 - (action + 6)/4))
-def get_x_step_coeff(action: Action) -> int:
-    return get_y_step_coeff((action + 6) % 8) # TODO CHANGE TO A_SIZE and make work correctly
+# Get the new X coordinate for an arbritrary action angle
+def get_x_step_coeff(action: Action) -> float:
+    return math.cos(2 * math.pi * action / max_action) if action < max_action else 0
 
 
 def get_step(action: Action) -> Point:

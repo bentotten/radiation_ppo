@@ -14,25 +14,27 @@ import torch.nn.functional as F
 import numpy as np
 import numpy.random as npr
 import numpy.typing as npt
+
 from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple, Type, Union
 from typing_extensions import TypeAlias
+from dataclasses import dataclass, field
+from typing_extensions import TypeAlias
 
+# Simulation Environment
 import gym
 from gym_rad_search.envs import rad_search_env # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
+# PPO
+from ppo import OptimizationStorage
+
+# Neural Networks
 from algos.multiagent.NeuralNetworkCores.FF_core import PPO as van_PPO # vanilla_PPO
 from algos.multiagent.NeuralNetworkCores.CNN_core import PPO as PPO
-
-from dataclasses import dataclass, field
-from typing_extensions import TypeAlias
-
-import copy
-
-from cgitb import reset
-
 import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
+
+# Data Management Utility
 from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs
 
 # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
@@ -105,27 +107,6 @@ class BpArgs(NamedTuple):
     l1_weight: float
     elbo_weight: float
     area_scale: float
-
-@dataclass
-class OptimizationStorage:
-    train_pi_iters: int        
-    train_v_iters: int    
-    pi_optimizer: torch.optim
-    model_optimizer: torch.optim
-    clip_ratio: float
-    alpha: float
-    target_kl: float
-    pi_scheduler: torch.optim.lr_scheduler = field(init=False)
-    model_scheduler: torch.optim.lr_scheduler = field(init=False)    
-    loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean")))          
-        
-    def __post_init__(self):        
-        self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.pi_optimizer, step_size=100, gamma=0.99
-        )
-        self.model_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.model_optimizer, step_size=100, gamma=0.99
-        )        
 
 
 @dataclass
@@ -343,11 +324,13 @@ class PPO:
     gamma: float = field(default= 0.99)
     alpha: float = field(default= 0)
     clip_ratio: float = field(default= 0.2)
-    pi_lr: float = field(default= 3e-4)
     mp_mm: tuple[int, int] = field(default= (5, 5))
-    vf_lr: float = field(default= 5e-3)  # TODO THIS IS BEING USED TO UPDATE THE PFGRU NOT THE CRITIC
+    pi_lr: float = field(default= 3e-4)
+    critic_learning_rate: float = field(default= 1e-3)
+    pfgru_learning_rate: float = field(default= 5e-3)
     train_pi_iters: int = field(default= 40)
-    train_v_iters: int = field(default= 15)  # TODO THIS IS BEING USED TO UPDATE THE PFGRU NOT THE CRITIC
+    train_v_iters: int = field(default= 40)
+    train_pfgru_iters: int = field(default= 15)
     lam: float = field(default= 0.9)
     number_of_agents: int = field(default= 1)
     target_kl: float = field(default= 0.07)
@@ -402,14 +385,17 @@ class PPO:
 
         pi_lr (float): Learning rate for Actor/policy optimizer.
 
-        vf_lr (float): Learning rate for Critic/state-value function optimizer. # TODO THIS IS BEING USED TO UPDATE THE PFGRU NOT THE CRITIC
+        critic_learning_rate (float): Learning rate for Critic (value) function optimizer.
+        
+        pfgru_learning_rate (float): Learning rate for the source prediction module (PFGRU)
 
-        train_pi_iters (int): Maximum number of gradient descent steps to take
-            on actor policy loss per epoch. (Early stopping may cause optimizer
-            to take fewer than this.)
+        train_pi_iters (int): Maximum number of gradient descent steps to take on actor policy loss per epoch. 
+            (Early stopping may cause optimizer to take fewer than this.)
 
         train_v_iters (int): Number of gradient descent steps to take on
-            critic state-value function per epoch. # TODO THIS IS NOW FOR PFGRU! UPDATE DOCS
+            critic state-value function per epoch.
+            
+        train_pfgru_iters (int): Number of gradient descent steps to take for source localization neural network (the PFGRU unit)           
 
         lam (float): Lambda for GAE-Lambda advantage estimator calculations. (Always between 0 and 1,
             close to 1.)
@@ -513,14 +499,15 @@ class PPO:
             }
         self.buf = self.agent_buffers # Adding for backwards compatibility # TODO verify .buf has been replaced and delete
 
-        # Set up optimizers and learning rate decay for policy and localization modules in each agent. 
-        #  Pi_scheduler and model_scheduler are set up in initialization.
+        # Set up optimizers and learning rate decay for policy and localization modules in each agent. Schedulers are set up in initialization.
         self.agent_optimizers = {
                 i: OptimizationStorage(
                     train_pi_iters = self.train_pi_iters,                
-                    train_v_iters = self.train_v_iters,                
+                    train_v_iters = self.train_v_iters,
+                    train_pfgru_iters = self.train_pfgru_iters,              
                     pi_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.pi_lr),
-                    model_optimizer = Adam(self.agents[i].model.parameters(), lr=self.vf_lr),
+                    critic_optimizer = Adam(self.agents[i].pi.parameters(), lr=self.critic_learning_rate),
+                    model_optimizer = Adam(self.agents[i].model.parameters(), lr=self.pfgru_learning_rate),
                     loss = torch.nn.MSELoss(reduction="mean"),
                     clip_ratio = self.clip_ratio,
                     alpha = self.alpha,
@@ -531,7 +518,7 @@ class PPO:
         
         # Setup statistics buffers for normalizing returns from environment
         self.stat_buffers = {i: RADA2C_core.StatBuff() for i in range(self.number_of_agents)}
-        self.reduce_v_iters = True  # Reduces training iteration when further along to speed up training
+        self.reduce_pfgru_iters = True  # Reduces PFGRU training iteration when further along to speed up training
                 
         # Instatiate loggers and set up model saving
         logger_kwargs_set = {
@@ -736,9 +723,9 @@ class PPO:
                 pass
 
             # Reduce localization module training iterations after 100 epochs to speed up training
-            if self.reduce_v_iters and epoch > 99:
-                self.train_v_iters = 5
-                self.reduce_v_iters = False
+            if self.reduce_pfgru_iters and epoch > 99:
+                self.train_pfgru_iters = 5
+                self.reduce_pfgru_iters = False
 
             # Perform PPO update!
             self.update_agents() 
@@ -790,7 +777,7 @@ class PPO:
         stat_buff.update(o[0])
         ep_ret_ls = []
         oob = 0
-        reduce_v_iters = True
+        reduce_pfgru_iters = True
         ac.model.eval()
         # Main loop: collect experience in env and update/log each epoch
         for epoch in range(epochs):
@@ -876,9 +863,9 @@ class PPO:
 
             
             #Reduce localization module training iterations after 100 epochs to speed up training
-            if reduce_v_iters and epoch > 99:
-                train_v_iters = 5
-                reduce_v_iters = False
+            if reduce_pfgru_iters and epoch > 99:
+                self.train_pfgru_iters = 5
+                reduce_pfgru_iters = False
 
             # Perform PPO update!
             self.update_agents()
@@ -947,7 +934,8 @@ class PPO:
         # Reduce learning rate
         for id in self.agents:
             self.agent_optimizers[id].pi_scheduler.step()
-            self.agent_optimizers[id].model_scheduler.step()
+            self.agent_optimizers[id].critic_scheduler.step()            
+            self.agent_optimizers[id].pfgru_scheduler.step()
 
         for id in self.agents:
 
@@ -985,7 +973,7 @@ class PPO:
         # Put into training mode        
         ac.model.train() # PFGRU 
         
-        for _ in range(self.train_v_iters):
+        for _ in range(self.train_pfgru_iters):
             model_loss_arr: torch.Tensor = torch.autograd.Variable(
                 torch.tensor([], dtype=torch.float32)
             )
@@ -1128,7 +1116,8 @@ class PPO:
             )
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-            val_loss = self.agent_optimizers[id].loss(val, ret)
+            
+            val_loss = self.agent_optimizers[id].loss(val, ret) # MSE critc loss TODO does this need to be adjusted?
 
             # TODO: More descriptive name
             new_loss: torch.Tensor = -(
@@ -1611,21 +1600,6 @@ def train_scaffolding():
                 
                 # Update stats buffer for normalizer
                 #stat_buff.update(o[0])
-
-        # TODO for eventual merger with radppo
-        # Save model
-        # if (epoch % save_freq == 0) or (epoch == epochs-1):
-        #     logger.save_state(None, None)
-        #     pass
-
-        # TODO implement this
-        # # Reduce localization module training iterations after 100 epochs to speed up training
-        # if reduce_v_iters and epoch_counter > 99:
-        #     train_v_iters = 5
-        #     reduce_v_iters = False
-
-        # Perform PPO update!
-        #self.update(env, bp_args) 
 
         # update PPO agents
         if CNN:
