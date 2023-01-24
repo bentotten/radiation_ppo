@@ -554,6 +554,7 @@ class RNNModelActorCritic(nn.Module):
             obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
             loc_pred, hidden_part = self.model(obs_t[:, :3], hidden[0]) # PFGRU
             obs_t = torch.cat((obs_t, loc_pred.unsqueeze(0)), dim=1)
+            obs_tensor_unsqueezed = obs_t.unsqueeze(0)
             pi, hidden2, v = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])  # Actor
             a = pi.sample()
             logp_a: Tensor = self.pi._log_prob_from_distribution(pi, a)  # Actor
@@ -569,9 +570,9 @@ class RNNModelActorCritic(nn.Module):
     #) -> tuple[Any, Any, Any, Tensor]:
     ) -> tuple[Any, Tensor, Tensor, Tensor]:
         ''' Update A2C '''
-        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) # TODO this is already a tensor, is this necessary?
+        obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1) 
         loc_pred = torch.empty((obs_t.shape[0], 2))
-        hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?
+        hidden_part = hidden[0]  
         with torch.no_grad():
             for kk, o in enumerate(obs_t):
                 loc_pred[kk], hidden_part = self.model(o[:, :3], hidden_part)  # PFGRU

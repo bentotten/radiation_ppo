@@ -155,7 +155,9 @@ class MapsBuffer:
     visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
     
+    # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
+    observation_buffer: list = field(default_factory=lambda: list())  # TODO should this be in the PPO buffer?
 
     def __post_init__(self):      
         # Scaled maps
@@ -171,6 +173,7 @@ class MapsBuffer:
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        del self.observation_buffer[:]
         
     def observation_to_map(self, observation: dict[int, StepResult], id: int
                      ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
@@ -387,11 +390,15 @@ class Actor(nn.Module):
         action_logprob = dist.log_prob(action)
         
         return action, action_logprob
+
+    def forward(self, x, act):
+        """ forward through actor"""
+        action_logits = self.actor(x)
+        return action_logits
     
     def evaluate(self, state_map_stack, action):       
         
         self.actor.train()
-        self.local_critic.train()
         
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
@@ -402,7 +409,8 @@ class Actor(nn.Module):
         return action_logprobs, state_values, dist_entropy        
 
     def _reset_state(self):
-        return self._get_init_states()
+        raise NotImplementedError("Not implemented")
+
 
 class Critic(nn.Module):
     def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
@@ -496,10 +504,11 @@ class Critic(nn.Module):
         return state_values        
 
     def _reset_state(self):
-        return self._get_init_states()
+        raise NotImplementedError("Not implemented")
+
 
 @dataclass
-class PPO:
+class CCNBase:
     id: int    
     state_dim: int
     action_dim: int
@@ -547,8 +556,9 @@ class PPO:
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         self.model = PFGRUCell(bpf_num_particles, self.state_dim - 8, self.state_dim - 8, bpf_hsize, bpf_alpha, True, "relu") 
         
-    def select_action(self, state_observation: dict[int, StepResult], id: int) -> ActionChoice:         
-        # Add intensity readings to a list if reading has not been seen before at that location.
+    def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:         
+        # Add intensity readings to a list if reading has not been seen before at that location. 
+        # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
         for observation in state_observation.values():
             key = (observation[1], observation[2])
             if key in self.maps.buffer.readings:
@@ -574,7 +584,12 @@ class PPO:
             self.maps.buffer.coordinate_buffer.append({})
             for i, observation in state_observation.items():
                 self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
-                
+            
+            #print(state_observation[self.id])
+            #observation_key = hash(state_observation[self.id].flatten().tolist)
+            if save_map:
+                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
+            
             # Add single batch tensor dimension for action selection
             map_stack = torch.unsqueeze(map_stack, dim=0) 
             
@@ -612,7 +627,7 @@ class PPO:
         self.optimizer_actor.zero_grad()
         self.optimizer_critic.zero_grad()
             
-        # Optimize policy for K epochs (TODO minibatches?)
+        # Optimize policy for K epochs 
         print(data['maps'])
         print(data["act"])
 
@@ -795,48 +810,6 @@ class PPO:
         self.render_counter += 1
         plt.close(fig)
         
-    def gradient_step(
-            self, obs: torch.Tensor, act: torch.Tensor, hidden: tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]
-        ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor]:
-            ''' Update A2C '''
-            observation_tensor = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1)
-            
-            # Perform update on PFGRU
-            # loc_pred = torch.empty((obs_t.shape[0], 2))
-            # hidden_part = hidden[0]  # TODO his contains two tensors, is that accounted for?            
-            # with torch.no_grad():
-            #     for kk, o in enumerate(obs_t):
-            #         loc_pred[kk], hidden_part = self.model(o[:, :3], hidden_part)
-            #obs_t = torch.cat((obs_t, loc_pred.unsqueeze(1)), dim=2) # Add location prediction onto observation
-
-            pass
-            (
-                location_map,
-                others_locations_map,
-                readings_map,
-                visit_counts_map,
-                obstacles_map
-            ) = self.maps.observation_to_map(state_observation, id)
-            
-            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
-            
-            # Add to mapstack buffer to eventually be converted into tensor with minibatches
-            #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
-            self.maps.buffer.coordinate_buffer.append({})
-            for i, observation in state_observation.items():
-                self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
-                
-            # Add single batch tensor dimension for action selection
-            map_stack = torch.unsqueeze(map_stack, dim=0) 
-            
-            # Get actions and values                          
-            action, action_logprob,  = self.pi.act(map_stack) # Choose action
-            state_value = self.critic.act(map_stack)  # Should be a pointer to either local critic or global critic
-
-            
-            pi, logp_a = self.pi(observation_tensor, act=act, hidden=hidden[1])  # Actor
-            return pi, val, logp_a
-
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):

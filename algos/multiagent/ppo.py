@@ -162,10 +162,6 @@ class PPOBuffer:
     beta (float): Entropy for loss function, encourages exploring different policies
     """
     
-    # TODO do we need epsilon clip?
-    # epsilon/clip = clipping parameter to ensure we only make the maximum of ε% change to our policy at a time.
-    # eps_clip = clip_ratio 
-
     def __post_init__(self):
         self.ptr: int = 0
         self.path_start_idx: int = 0     
@@ -425,7 +421,7 @@ class AgentPPO:
                 resolution_accuracy = 0.01 * 1/self.environment_scale
                 
                 # Initialize Agents                
-                self.agent = RADCNN_core.PPO(
+                self.agent = RADCNN_core.CCNBase(
                     state_dim=self.observation_space, 
                     action_dim=self.action_space,
                     grid_bounds=self.scaled_grid_bounds,
@@ -497,11 +493,11 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, standardized_observations: npt.NDArray, hiddens = None):
+    def step(self, standardized_observations: npt.NDArray, hiddens = None, save_map = True):
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
         else:
-            results = self.agent.select_action(standardized_observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
+            results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
 
         return results         
     
@@ -522,6 +518,30 @@ class AgentPPO:
         
         return hiddens
     
+    def compute_loss_pi(self, data, map_stacks):
+        ''' Compute loss for actor network'''
+        # NOTE: Not using observation tensor, using internal map buffer
+        
+        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+        
+        # Stack the mapstack into a single tensor
+        maps = torch.stack(map_stacks)
+
+        # Policy loss
+        pi, logp = self.agent.pi(maps, act)
+        logp = logp.cpu()
+        ratio = torch.exp(logp - logp_old)
+        clip_adv = torch.clamp(ratio, 1-self.clip_ratio, 1+self.clip_ratio) * adv
+        loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+
+        # Useful extra info
+        approx_kl = (logp_old - logp).mean().item()
+        ent = pi.entropy().mean().item()
+        clipped = ratio.gt(1+self.clip_ratio) | ratio.lt(1-self.clip_ratio)
+        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
+        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+
+        return loss_pi, pi_info    
     
     #TODO Make this a Ray remote function 
     def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
@@ -531,6 +551,16 @@ class AgentPPO:
         """      
         # Get data from buffers
         data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
+        
+        # NOTE: Not using observation tensor for CNN, using internal map buffer
+        # Put into training mode      
+        if self.actor_critic_architecture == 'cnn':
+            self.agent.pi.train() # Actor
+            self.agent.critic.train() # Critic # TODO will need to be moved for global critic         
+
+        # Reset gradients 
+        self.agent_optimizer.pi_optimizer.zero_grad()
+        self.agent_optimizer.critic_optimizer.zero_grad()              
 
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
         # TODO get this working for CNN
@@ -545,7 +575,7 @@ class AgentPPO:
         kk = 0
         term = False
 
-        # Train Actor-Critic policy with multiple steps of gradient descent
+        # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
         update_results = {}
         while not term and kk < self.train_pi_iters:
             # Early stop training if KL-div above certain threshold
@@ -681,120 +711,134 @@ class AgentPPO:
     def update_a2c(
         self, data: dict[str, torch.Tensor], minibatch: int) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
         
-        # Set initial variables
-        # TODO make a named tuple and pass these that way instead of hardcoded indexes
-        observation_idx = 11
-        action_idx = 14
-        logp_old_idx = 13
-        advantage_idx = 11
-        return_idx = 12
-        source_loc_idx = 15
-
-        ep_form = data["ep_form"]
-        
-        # Policy info buffer
-        # KL is for KL divergence
-        # ent is entropy (randomness)
-        # val is state-value from critic
-        # val-loss is the loss from the critic model
-        pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
-        
-        # Sample a random tensor
-        # TODO check this is sampling the correct dimension
-        ep_select = np.random.choice(
-            np.arange(0, len(ep_form)), size=int(minibatch), replace=False
-        )
-        ep_form = [ep_form[idx] for idx in ep_select]
-        
-        # Loss storage buffer(s)
-        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
-        loss_arr: torch.Tensor = torch.autograd.Variable(
-            torch.tensor([], dtype=torch.float32)
-        )
-
-        for ep in ep_form:
-            # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]
-            hidden = self.reset_neural_nets() 
-            obs, act, logp_old, adv, ret, src_tar = (
-                trajectories[:, :observation_idx],
-                trajectories[:, action_idx],
-                trajectories[:, logp_old_idx],
-                trajectories[:, advantage_idx],
-                trajectories[:, return_idx, None],
-                trajectories[:, source_loc_idx:].clone(),
-            )
+        if self.actor_critic_architecture == 'cnn':
+            map_buffer_observations =  [item[0].tolist() for item in self.agent.maps.observation_buffer]
+            map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
             
-            # Calculate new action log probabilities
-            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':    
+            # Check that maps match observations (need to round due to floating point precision in python)
+            for data_obs, map_obs in zip(data['obs'], map_buffer_observations):
+                obs = data_obs.tolist()
+                rounded_obs = list(map(lambda x: round(x, 6), obs))
+                rounded_map_obs = list(map(lambda x: round(x, 6), map_obs))   
+                assert rounded_obs == rounded_map_obs
+                            
+            pi_l_old, pi_info_old = self.compute_loss_pi(data=data, map_stacks=map_buffer_maps)
+            pi_l_old = pi_l_old.item()
+            v_l_old = compute_loss_v(data).item()
+            pass
+        
+        elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            # Set initial variables
+            # TODO make a named tuple and pass these that way instead of hardcoded indexes
+            observation_idx = 11
+            action_idx = 14
+            logp_old_idx = 13
+            advantage_idx = 11
+            return_idx = 12
+            source_loc_idx = 15
+
+            ep_form = data["ep_form"]
+            
+            # Policy info buffer
+            # KL is for KL divergence
+            # ent is entropy (randomness)
+            # val is state-value from critic
+            # val-loss is the loss from the critic model
+            pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
+            
+            # Sample a random tensor
+            # TODO check this is sampling the correct dimension
+            ep_select = np.random.choice(
+                np.arange(0, len(ep_form)), size=int(minibatch), replace=False
+            )
+            ep_form = [ep_form[idx] for idx in ep_select]
+            
+            # Loss storage buffer(s)
+            loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
+            loss_arr: torch.Tensor = torch.autograd.Variable(
+                torch.tensor([], dtype=torch.float32)
+            )
+
+            for ep in ep_form:
+                # For each set of episodes per process from an epoch, compute loss
+                trajectories = ep[0]
+                hidden = self.reset_neural_nets() 
+                obs, act, logp_old, adv, ret, src_tar = (
+                    trajectories[:, :observation_idx],
+                    trajectories[:, action_idx],
+                    trajectories[:, logp_old_idx],
+                    trajectories[:, advantage_idx],
+                    trajectories[:, return_idx, None],
+                    trajectories[:, source_loc_idx:].clone(),
+                )
+                
+                # Calculate new action log probabilities
+
                 pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
+                    
+                logp_diff: torch.Tensor = logp_old - logp
+                ratio = torch.exp(logp - logp_old)
+
+                clip_adv = (
+                    torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
+                )
+                clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
+
+                # Useful extra info
+                clipfrac = (
+                    torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
+                )
+                approx_kl = logp_diff.detach().mean().item()
+                ent = pi.entropy().detach().mean().item()
+                
+                val_loss = self.agent_optimizer.loss(val, ret) # MSE critc loss TODO does this need to be adjusted?
+
+                # TODO: More descriptive name
+                new_loss: torch.Tensor = -(
+                    torch.min(ratio * adv, clip_adv).mean()
+                    - 0.01 * val_loss
+                    + self.alpha * ent
+                )
+                loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
+
+                new_loss_sto: torch.Tensor = torch.tensor(
+                    [approx_kl, ent, clipfrac, val_loss.detach()]
+                )
+                loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
+
+            mean_loss = loss_arr.mean()
+            means = loss_sto.mean(axis=0)
+            loss_pi, approx_kl, ent, clipfrac, loss_val = (
+                mean_loss,
+                means[0].detach(),
+                means[1].detach(),
+                means[2].detach(),
+                means[3].detach(),
+            )
+            pi_info["kl"].append(approx_kl)
+            pi_info["ent"].append(ent)
+            pi_info["cf"].append(clipfrac)
+            pi_info["val_loss"].append(loss_val)
+
+            kl = pi_info["kl"][-1].mean()
+            if kl.item() < 1.5 * self.target_kl:
+                self.agent_optimizer.pi_optimizer.zero_grad()
+                loss_pi.backward()
+                self.agent_optimizer.pi_optimizer.step()
+                term = False
             else:
-                results = self.agent.gradient_step(obs, act, hidden)
-                
-                
-            logp_diff: torch.Tensor = logp_old - logp
-            ratio = torch.exp(logp - logp_old)
+                term = True
 
-            clip_adv = (
-                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
+            pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
+                pi_info["kl"][0].numpy(),
+                pi_info["ent"][0].numpy(),
+                pi_info["cf"][0].numpy(),
+                pi_info["val_loss"][0].numpy(),
             )
-            clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
-
-            # Useful extra info
-            clipfrac = (
-                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            )
-            approx_kl = logp_diff.detach().mean().item()
-            ent = pi.entropy().detach().mean().item()
-            
-            val_loss = self.agent_optimizer.loss(val, ret) # MSE critc loss TODO does this need to be adjusted?
-
-            # TODO: More descriptive name
-            new_loss: torch.Tensor = -(
-                torch.min(ratio * adv, clip_adv).mean()
-                - 0.01 * val_loss
-                + self.alpha * ent
-            )
-            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
-
-            new_loss_sto: torch.Tensor = torch.tensor(
-                [approx_kl, ent, clipfrac, val_loss.detach()]
-            )
-            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
-
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)
-        loss_pi, approx_kl, ent, clipfrac, loss_val = (
-            mean_loss,
-            means[0].detach(),
-            means[1].detach(),
-            means[2].detach(),
-            means[3].detach(),
-        )
-        pi_info["kl"].append(approx_kl)
-        pi_info["ent"].append(ent)
-        pi_info["cf"].append(clipfrac)
-        pi_info["val_loss"].append(loss_val)
-
-        kl = pi_info["kl"][-1].mean()
-        if kl.item() < 1.5 * self.target_kl:
-            self.agent_optimizer.pi_optimizer.zero_grad()
-            loss_pi.backward()
-            self.agent_optimizer.pi_optimizer.step()
-            term = False
-        else:
-            term = True
-
-        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-            pi_info["kl"][0].numpy(),
-            pi_info["ent"][0].numpy(),
-            pi_info["cf"][0].numpy(),
-            pi_info["val_loss"][0].numpy(),
-        )
-        loss_sum_new = loss_pi
-        return (
-            loss_sum_new,
-            pi_info,
-            term,
-            (self.env_height * loc - (src_tar)).square().mean().sqrt(),
-        )  
+            loss_sum_new = loss_pi
+            return (
+                loss_sum_new,
+                pi_info,
+                term,
+                (self.env_height * loc - (src_tar)).square().mean().sqrt(),
+            )  

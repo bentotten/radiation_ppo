@@ -484,7 +484,7 @@ class train_PPO:
                                 (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
                             )     
                             for id, ac in self.agents.items():
-                                results = ac.step(standardized_observations, hiddens=hiddens)
+                                results = ac.step(standardized_observations, hiddens=hiddens, save_map=False)  # Ensure next map is not buffered when going to compare to logger for update
                                 value = results.state_value
  
                         if epoch_ended:
