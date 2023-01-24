@@ -635,7 +635,7 @@ class AgentPPO:
                     update_results['pi_info'], 
                     update_results['term'], 
                     update_results['loc_loss']
-                ) = self.update_a2c(data, min_iterations)  # pi_l = policy loss
+                ) = self.update_a2c(data, min_iterations, logger=logger)  # pi_l = policy loss
                 kk += 1
         else:
             # Due to global critic, looping for k_epochs done inside update_a2c()
@@ -647,7 +647,7 @@ class AgentPPO:
                 update_results['pi_info'], 
                 update_results['term'], 
                 update_results['loc_loss']
-            ) = self.update_a2c(data, min_iterations)  # pi_l = policy loss
+            ) = self.update_a2c(data, min_iterations, logger=logger)  #TODO get logger out of PPO
         
         
         # Reduce learning rate
@@ -770,11 +770,12 @@ class AgentPPO:
         return model_loss
 
     def update_a2c(
-        self, data: dict[str, torch.Tensor], min_iterations: int, minibatch: Union[int, None] = None) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
+            self, data: dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
+        ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
         ''' Adapted from Spinning up by OpenAI and Pytorch-PPO'''
         
         def compute_batched_losses_pi(self):
-            ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation '''
+            ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation so must be done manually '''
             # Randomize and sample observation batch indexes
             ep_length = data["ep_len"].item()
             indexes = np.arange(0, ep_length, dtype=np.int32)
@@ -783,30 +784,30 @@ class AgentPPO:
             
             # TODO make more concise 
             # Due to linear layer in CNN, this must be run fully online (read: every map)
-            pi_loss_old_list = []
-            kl_old_list = []
-            entropy_old_list = []
-            clip_fraction_old_list = []
+            pi_loss_list = []
+            kl_list = []
+            entropy_list = []
+            clip_fraction_list = []
             
             # Get sampled returns from actor and critic
             for index in sample:
-                single_pi_l_old, single_pi_info_old = self.compute_loss_pi(data=data, map_stack=map_buffer_maps[index], index=index)
-                pi_loss_old_list.append(single_pi_l_old)
-                kl_old_list.append(single_pi_info_old['kl'])
-                entropy_old_list.append(single_pi_info_old['entropy'])
-                clip_fraction_old_list.append(single_pi_info_old['clip_fraction'])
+                single_pi_l, single_pi_info = self.compute_loss_pi(data=data, map_stack=map_buffer_maps[index], index=index)
+                pi_loss_list.append(single_pi_l)
+                kl_list.append(single_pi_info['kl'])
+                entropy_list.append(single_pi_info['entropy'])
+                clip_fraction_list.append(single_pi_info['clip_fraction'])
                 
             #take mean of everything for batch update
             results = {
-                'pi_loss_old': torch.stack(pi_loss_old_list).mean().item(),
-                'kl_old': np.mean(kl_old_list),
-                'entropy_old': np.mean(entropy_old_list),
-                'clip_fraction_old': np.mean(clip_fraction_old_list),
+                'pi_loss': torch.stack(pi_loss_list).mean(),
+                'kl': np.mean(kl_list),
+                'entropy': np.mean(entropy_list),
+                'clip_fraction': np.mean(clip_fraction_list),
             }
             return results
         
         def compute_batched_losses_critic(self):
-            ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation '''
+            ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation so must be done manually '''
             # Randomize and sample observation batch indexes
             ep_length = data["ep_len"].item()
             indexes = np.arange(0, ep_length, dtype=np.int32)
@@ -815,19 +816,17 @@ class AgentPPO:
             
             # TODO make more concise 
             # Due to linear layer in CNN, this must be run fully online (read: every map)
-            critic_loss_old_list = []
+            critic_loss_list = []
             
             # Get sampled returns from actor and critic
             for index in sample:
-                critic_loss_old_list.append(self.compute_loss_critic(data=data, map_stack=map_buffer_maps[index], index=index))
+                critic_loss_list.append(self.compute_loss_critic(data=data, map_stack=map_buffer_maps[index], index=index))
 
             #take mean of everything for batch update
-            results = {
-                'critic_loss': np.mean(critic_loss_old_list)
-            }
+            results = {'critic_loss': torch.stack(critic_loss_list).mean()}
             return results
         
-        
+        # Start update
         if not minibatch:
             minibatch = self.minibatch
         
@@ -846,22 +845,26 @@ class AgentPPO:
             # Uncomment if running batched observation through nn at once instead of fully online (one at a time)
             #maps = torch.stack(map_stacks)
             
+            # Get old info for logging
+            old_actor_loss_results = compute_batched_losses_pi(self)
+            old_critic_loss_results = compute_batched_losses_critic(self)
+            
             # Train policy with multiple steps of gradient descent
             for k_pi in range(self.train_pi_iters):
                 self.agent_optimizer.pi_optimizer.zero_grad()
-                loss_pi, pi_info = compute_loss_pi(data)
-                kl = mpi_avg(pi_info['kl'])
-                if kl > 1.5 * target_kl:
-                    logger.log('Early stopping at step %d due to reaching max kl.'%i)
+                actor_loss_results = compute_batched_losses_pi(self)
+                
+                if actor_loss_results['kl'] > (1.5 * self.target_kl):
+                    # TODO Get logger out of PPO!
+                    logger.log(f'Update stopped early at step {k_pi} due to reaching max kl.')
                     break
-                loss_pi.backward()
-                mpi_avg_grads(ac.pi)    # average grads across MPI processes
-                pi_optimizer.step()
+                actor_loss_results['pi_loss'].backward()
+                self.agent_optimizer.pi_optimizer.step()  # TODO how does the optimizer know where this loss is?
 
             logger.store(StopIter=k_pi)
 
             # Value function learning
-            for i in range(self.train_v_iters):
+            for k_v in range(self.train_v_iters):
                 vf_optimizer.zero_grad()
                 loss_v = compute_loss_v(data)
                 loss_v.backward()
@@ -869,11 +872,15 @@ class AgentPPO:
                 vf_optimizer.step()
 
             # Log changes from update
-            kl, ent, cf = pi_info['kl'], pi_info_old['ent'], pi_info['cf']
-            logger.store(LossPi=pi_l_old, LossV=v_l_old,
-                        KL=kl, Entropy=ent, ClipFrac=cf,
-                        DeltaLossPi=(loss_pi.item() - pi_l_old),
-                        DeltaLossV=(loss_v.item() - v_l_old))
+            logger.store(
+                LossPi=old_actor_loss_results['pi_loss'],
+                LossV=old_critic_loss_results['critic_loss'],
+                KL=actor_loss_results['kl'], 
+                Entropy=old_actor_loss_results['entropy'], 
+                ClipFrac=actor_loss_results['clip_fraction'],
+                DeltaLossPi= (actor_loss_results['pi_loss'].item() - old_actor_loss_results['pi_loss']),
+                DeltaLossV= (loss_v.item() - old_critic_loss_results['critic_loss'])
+            )
             
             
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
