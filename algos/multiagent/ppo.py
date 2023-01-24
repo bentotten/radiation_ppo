@@ -633,10 +633,29 @@ class AgentPPO:
                 (
                     update_results['pi_l'], 
                     update_results['pi_info'], 
-                    update_results['term'], 
+                    update_results['term'],  
                     update_results['loc_loss']
                 ) = self.update_a2c(data, min_iterations, logger=logger)  # pi_l = policy loss
                 kk += 1
+                
+            # Reduce learning rate
+            self.agent_optimizer.pi_scheduler.step()
+            self.agent_optimizer.critic_scheduler.step()            
+            self.agent_optimizer.pfgru_scheduler.step()
+
+            # Log changes from update
+            return UpdateResult(
+                StopIter=kk,
+                LossPi=update_results['pi_l'].item(),
+                LossV=update_results['pi_info']["val_loss"].item(),
+                LossModel=model_losses.item(),  # TODO if using the regression GRU
+                KL=update_results['pi_info']["kl"],
+                Entropy=update_results['pi_info']["ent"],
+                ClipFrac=update_results['pi_info']["cf"],
+                LocLoss=update_results['loc_loss'],
+                VarExplain=0
+            )
+                            
         else:
             # Due to global critic, looping for k_epochs done inside update_a2c()
             # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
@@ -644,29 +663,29 @@ class AgentPPO:
             update_results = {}
             (
                 update_results['pi_l'], 
+                update_results['critic_loss'],
                 update_results['pi_info'], 
                 update_results['term'], 
                 update_results['loc_loss']
             ) = self.update_a2c(data, min_iterations, logger=logger)  #TODO get logger out of PPO
         
-        
-        # Reduce learning rate
-        self.agent_optimizer.pi_scheduler.step()
-        self.agent_optimizer.critic_scheduler.step()            
-        self.agent_optimizer.pfgru_scheduler.step()
+            # Reduce learning rate
+            self.agent_optimizer.pi_scheduler.step()
+            self.agent_optimizer.critic_scheduler.step()            
+            self.agent_optimizer.pfgru_scheduler.step()
 
-        # Log changes from update
-        return UpdateResult(
-            StopIter=kk,
-            LossPi=update_results['pi_l'].item(),
-            LossV=update_results['pi_info']["val_loss"].item(),
-            LossModel=model_losses.item(),  # TODO if using the regression GRU
-            KL=update_results['pi_info']["kl"],
-            Entropy=update_results['pi_info']["ent"],
-            ClipFrac=update_results['pi_info']["cf"],
-            LocLoss=update_results['loc_loss'],
-            VarExplain=0
-        )
+            # Log changes from update
+            return UpdateResult(
+                StopIter=kk,
+                LossPi=update_results['pi_l'].item(),
+                LossV=update_results['critic_loss'].item(),
+                LossModel=model_losses.item(),  # TODO if using the regression GRU
+                KL=update_results['pi_info']["kl"],
+                Entropy=update_results['pi_info']["ent"],
+                ClipFrac=update_results['pi_info']["cf"],
+                LocLoss=update_results['loc_loss'],
+                VarExplain=0
+            )
 
     def update_model(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
         ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''      
@@ -850,6 +869,7 @@ class AgentPPO:
             old_critic_loss_results = compute_batched_losses_critic(self)
             
             # Train policy with multiple steps of gradient descent
+            terminate = False
             for k_pi in range(self.train_pi_iters):
                 self.agent_optimizer.pi_optimizer.zero_grad()
                 actor_loss_results = compute_batched_losses_pi(self)
@@ -857,6 +877,7 @@ class AgentPPO:
                 if actor_loss_results['kl'] > (1.5 * self.target_kl):
                     # TODO Get logger out of PPO!
                     logger.log(f'Update stopped early at step {k_pi} due to reaching max kl.')
+                    terminate = True
                     break
                 actor_loss_results['pi_loss'].backward()
                 self.agent_optimizer.pi_optimizer.step()  # TODO how does the optimizer know where this loss is?
@@ -864,24 +885,24 @@ class AgentPPO:
             logger.store(StopIter=k_pi)
 
             # Value function learning
-            for k_v in range(self.train_v_iters):
-                vf_optimizer.zero_grad()
-                loss_v = compute_loss_v(data)
-                loss_v.backward()
-                mpi_avg_grads(ac.v)    # average grads across MPI processes
-                vf_optimizer.step()
+            for _ in range(self.train_v_iters):
+                self.agent_optimizer.critic_optimizer.zero_grad()
+                critic_loss_results = compute_batched_losses_critic(self)
+                critic_loss_results['critic_loss'].backward()
+                self.agent_optimizer.critic_optimizer.step()
 
             # Log changes from update
             logger.store(
-                LossPi=old_actor_loss_results['pi_loss'],
+                LossPi=old_actor_loss_results['pi_loss'].item(),
                 LossV=old_critic_loss_results['critic_loss'],
                 KL=actor_loss_results['kl'], 
                 Entropy=old_actor_loss_results['entropy'], 
                 ClipFrac=actor_loss_results['clip_fraction'],
-                DeltaLossPi= (actor_loss_results['pi_loss'].item() - old_actor_loss_results['pi_loss']),
-                DeltaLossV= (loss_v.item() - old_critic_loss_results['critic_loss'])
-            )
+                DeltaLossPi= (actor_loss_results['pi_loss'].item() - old_actor_loss_results['pi_loss'].item()),
+                DeltaLossV= (critic_loss_results['critic_loss'].item() - old_critic_loss_results['critic_loss'])
+            )       
             
+            return (actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0) # TODO when PFGRU added, implement loc_loss where 0 is
             
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             # Set initial variables

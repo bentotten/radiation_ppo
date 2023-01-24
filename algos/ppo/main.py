@@ -124,7 +124,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--net-type",
         type=str,
-        default="rnn",
+        default="cnn",
         help="Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp",
     )
     parser.add_argument(
