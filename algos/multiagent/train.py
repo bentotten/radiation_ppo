@@ -152,7 +152,8 @@ class train_PPO:
     ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
     #actor_critic: Type[RADA2C_core.RNNModelActorCritic] = field(default=RADA2C_core.RNNModelActorCritic)
     actor_critic_architecture: str = field(default="cnn")
-    start_time: float = field(default_factory= lambda: time.time())
+    start_time: float = field(default_factory= lambda: time.time()),
+    minibatch: int = field(default=1)
     
     """
     Proximal Policy Optimization (by clipping),
@@ -224,6 +225,8 @@ class train_PPO:
 
         ac_kwargs (dict): Any kwargs appropriate for the Actor-Critic object
             provided to PPO.
+            
+        minibatch (int): How many observations to sample out of a batch. Used to reduce the impact of fully online learning
 
         actor_critic: The constructor method for a PyTorch Module with a
             ``step`` method, an ``act`` method, a ``pi`` module, and a ``v``
@@ -314,7 +317,8 @@ class train_PPO:
                 environment_scale=self.env_scale,                
                 env_height=self.env.search_area[2][1],
                 scaled_grid_bounds=scaled_grid_bounds,
-                seed=self.seed
+                seed=self.seed,
+                minibatch=self.minibatch
             ) for i in range(self.number_of_agents)
         }
         

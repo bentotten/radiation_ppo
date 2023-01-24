@@ -534,14 +534,17 @@ class Critic(nn.Module):
         state_value = self.critic(state_map_stack)
         return state_value
     
-    def evaluate(self, state_map_stack, action):       
+    def evaluate(self, state_map_stack):       
         self.critic.train()
         state_values = self.critic(state_map_stack)
             
-        return state_values        
+        return state_values    
 
     def _reset_state(self):
         raise NotImplementedError("Not implemented")
+    
+    def forward(self, observation = None, act = None):
+        raise NotImplementedError    
 
 
 @dataclass
@@ -585,6 +588,8 @@ class CCNBase:
         
         if not self.critic:
             self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
+            
+        self.MseLoss = nn.MSELoss()
         
         # For PFGRU (Developed from RAD-A2C https://github.com/peproctor/radiation_ppo)
         bpf_hsize: int = 64
