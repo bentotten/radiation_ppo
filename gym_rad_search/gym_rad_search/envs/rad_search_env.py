@@ -499,10 +499,18 @@ class RadSearch(gym.Env):
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
         assert action is None or type(action) == int or  type(action) == dict, 'Action not integer or a dictionary of actions.'
+
         if type(action) is int: 
+            # This is hard coded to translate an 8th "direction" into an idle action environment.
+            # TODO when migrating to arbritrary directions, change            
+            if action == 8: 
+                action = -1  
             assert action in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
         elif type(action) is dict:
-            for a in action.values(): assert a in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+            for i, a in action.items():
+                if a == 8: 
+                    action[i] = -1                 
+                assert action[i] in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
         action_list = action if type(action) is dict else None
 
         # TODO implement this natively to meet Gym environment requirements

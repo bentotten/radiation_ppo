@@ -416,7 +416,7 @@ class train_PPO:
                 
                 # Ensure no item is above 7 or below -1
                 for action in agent_action_decisions.values():
-                    assert -1 <= action and action < 8            
+                    assert -1 <= action and action < self.act_dim            
                 
                 # Take step in environment - Critical that this value is saved as "next" observation so we can link
                 #  rewards from this new state to the prior step/action
@@ -707,7 +707,7 @@ def train_scaffolding():
         number_of_agents = 1
         env: RadSearch = RadSearch(number_agents=number_of_agents, seed=random_seed, obstruction_count=obstruction_count)
         
-        resolution_accuracy = 1 * 1/env.scale  
+        resolution_accuracy = 0.025 * 1/env.scale  
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         if DEBUG:

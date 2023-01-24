@@ -1,4 +1,5 @@
 from os import stat, path, mkdir, getcwd
+import sys
 
 from numpy import dtype
 import numpy as np
@@ -161,7 +162,7 @@ class MapsBuffer:
 
     def __post_init__(self):      
         # Scaled maps
-        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy), int(self.grid_bounds[1] * self.resolution_accuracy))
+        self.map_dimensions = (max(int(self.grid_bounds[0] * self.resolution_accuracy)-1, 0), max(int(self.grid_bounds[1] * self.resolution_accuracy)-1, 0))
         self.x_limit_scaled: int = self.map_dimensions[0]
         self.y_limit_scaled: int = self.map_dimensions[1]    
         
@@ -351,31 +352,71 @@ class Actor(nn.Module):
                         nn.ReLU(),
                         nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                         nn.ReLU(),
-                        nn.Linear(in_features=16, out_features=5), # output tensor with shape (5)
+                        nn.Linear(in_features=16, out_features=action_dim), # output tensor with shape (5)
                         nn.Softmax(dim=0)  # Put in range [0,1]
                     )
 
     def test(self, state_map_stack): 
         print("Starting shape, ", state_map_stack.size())
+        torch.set_printoptions(threshold=sys.maxsize)
+        
+        with open('0_starting_mapstack.txt', 'w') as f:
+            print(state_map_stack, file=f)
+        
         x = self.step1(state_map_stack) # conv1
+        with open('1_1st_covl.txt', 'w') as f:
+            print(x, file=f)
+               
         x = self.relu(x)
+        with open('2_1st_relu.txt', 'w') as f:
+            print(x, file=f)              
         print("shape, ", x.size()) 
+        
         x = self.step2(x) # Maxpool
-        print("shape, ", x.size()) 
+        with open('3_maxpool.txt', 'w') as f:
+            print(x, file=f)                            
+        print("shape, ", x.size())
+        
         x = self.step3(x) # conv2
+        with open('4_2nd_convl.txt', 'w') as f:
+            print(x, file=f)          
+                   
         x = self.relu(x)
+        with open('5_2nd_relu.txt', 'w') as f:
+            print(x, file=f)           
         print("shape, ", x.size()) 
+        
         x = self.step4(x) # Flatten
+        with open('6_flatten.txt', 'w') as f:
+            print(x, file=f)           
         print("shape, ", x.size()) 
+        
         x = self.step5(x) # linear
+        with open('7_1st_linear.txt', 'w') as f:
+            print(x, file=f)           
+                                     
         x = self.relu(x) 
+        with open('8_3rd_relu_.txt', 'w') as f:
+            print(x, file=f)         
         print("shape, ", x.size()) 
+        
         x = self.step6(x) # linear
+        with open('9_2nd_linear.txt', 'w') as f:
+            print(x, file=f)           
+        
         x = self.relu(x)
+        with open('10_4th_relu.txt', 'w') as f:
+            print(x, file=f)              
         print("shape, ", x.size()) 
+        
         x = self.step7(x) # Output layer
+        with open('11_3rd_linear_output.txt', 'w') as f:
+            print(x, file=f)               
         print("shape, ", x.size()) 
+        
         x = self.softmax(x)
+        with open('11_softmax.txt', 'w') as f:
+            print(x, file=f)          
         
         print(x)
         pass
@@ -391,22 +432,18 @@ class Actor(nn.Module):
         
         return action, action_logprob
 
-    def forward(self, x, act):
-        """ forward through actor"""
-        action_logits = self.actor(x)
-        return action_logits
+    def forward(self, observation = None, act = None):
+        raise NotImplementedError
     
     def evaluate(self, state_map_stack, action):       
-        
         self.actor.train()
         
         action_probs = self.actor(state_map_stack)
         dist = Categorical(action_probs)
         action_logprobs = dist.log_prob(action)
         dist_entropy = dist.entropy()
-        state_values = self.critic(state_map_stack)
             
-        return action_logprobs, state_values, dist_entropy        
+        return action_logprobs, dist_entropy        
 
     def _reset_state(self):
         raise NotImplementedError("Not implemented")
