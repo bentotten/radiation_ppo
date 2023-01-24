@@ -537,6 +537,8 @@ class AgentPPO:
                 
             map_stacks (tensor): Either a single observations worth of maps, or a batch of maps
             index (int): If doing a single observation at a time, index for data[]
+            
+            Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
                 
         '''
         # NOTE: Not using observation tensor, using internal map buffer
@@ -558,7 +560,7 @@ class AgentPPO:
         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).item()
         pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
 
-        return loss_pi, pi_info    
+        return loss_pi, pi_info  
     
     #TODO Make this a Ray remote function 
     def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
@@ -744,8 +746,12 @@ class AgentPPO:
             #maps = torch.stack(map_stacks)
             
             # Due to linear layer in CNN, this must be run fully online (read: every map)
+            pi_loss_old = []
+            pi_info_old = []
             for i, maps in enumerate(map_buffer_maps):
-                pi_l_old, pi_info_old = self.compute_loss_pi(data=data, map_stack=maps, index=i)
+                single_pi_l_old, single_pi_info_old = self.compute_loss_pi(data=data, map_stack=maps, index=i)
+                pi_loss_old.append(single_pi_l_old)
+                pi_info_old.append(single_pi_info_old)
             
             #take mean of everything in pi_l_old and pi_info_old
             pi.mean()

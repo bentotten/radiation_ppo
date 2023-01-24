@@ -504,7 +504,7 @@ class RadSearch(gym.Env):
             # This is hard coded to translate an 8th "direction" into an idle action environment.
             # TODO when migrating to arbritrary directions, change            
             if action == 8: 
-                action = -1  
+                action = -1
             assert action in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
         elif type(action) is dict:
             for i, a in action.items():
@@ -532,13 +532,13 @@ class RadSearch(gym.Env):
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
-            for agent_id, action in action_list.items():
+            for agent_id, a in action_list.items():
                 (
                     aggregate_observation_result[agent_id], 
                     aggregate_reward_result[agent_id], 
                     aggregate_success_result[agent_id],
                     aggregate_info_result[agent_id],
-                ) = agent_step(agent=self.agents[agent_id], action=action, proposed_coordinates=proposed_coordinates)   
+                ) = agent_step(agent=self.agents[agent_id], action=a, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
         else:
@@ -566,6 +566,20 @@ class RadSearch(gym.Env):
         # To meet Gym compliance, must be in form observation, reward, done, info
         #return aggregate_step_result
         #return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
+        
+        # TODO make this an inherent part of the env instead of a conversion, after fully divorced from RADPPO code
+        # Reconvert idle action back to positive max value
+        if type(action) is int: 
+                # This is hard coded to translate an 8th "direction" into an idle action environment.
+                # TODO when migrating to arbritrary directions, change            
+                if action == -1: 
+                    action = 8  
+        elif type(action) is dict:
+            for i, a in action.items():
+                if a == -1: 
+                    action[i] = 8             
+        action_list = action if type(action) is dict else None        
+        
         return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
     def reset(self) -> StepResult:

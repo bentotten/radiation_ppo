@@ -414,9 +414,10 @@ class train_PPO:
                 # TODO the above does not include idle action. After working, add an additional state space for 9 potential actions and uncomment:                 
                 #agent_action_decisions = {id: int(action)-1 for id, action in agent_thoughts.items()} 
                 
-                # Ensure no item is above 7 or below -1
+                # Ensure no item is above max actions or below 0
+                # Idle action is max action dimension (here 8)
                 for action in agent_action_decisions.values():
-                    assert -1 <= action and action < self.act_dim            
+                    assert 0 <= action and action < self.act_dim            
                 
                 # Take step in environment - Critical that this value is saved as "next" observation so we can link
                 #  rewards from this new state to the prior step/action
@@ -652,7 +653,7 @@ def train_scaffolding():
         
         # For render
         render = True
-        save_gif_freq = 1
+        save_gif_freq = 1-1
 
         # log files for multiple runs are NOT overwritten
         log_dir = "PPO_logs"
