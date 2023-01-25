@@ -668,7 +668,8 @@ class AgentPPO:
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
             self.agent_optimizer.critic_scheduler.step()            
-            self.agent_optimizer.pfgru_scheduler.step()
+            # Uncomment after implementing PFGRU
+            #self.agent_optimizer.pfgru_scheduler.step()
 
             # Log changes from update
             return UpdateResult(
