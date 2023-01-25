@@ -589,7 +589,8 @@ class AgentPPO:
         # TODO add mapstack to PPO buffer instead of CNN
         true_return = data['ret'][index]
         predicted_value = self.agent.critic.evaluate(map_stack)
-        return self.agent.MseLoss(predicted_value, true_return)
+        critic_loss = self.agent.MseLoss(torch.squeeze(predicted_value), true_return)
+        return critic_loss
     
     #TODO Make this a Ray remote function 
     def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
@@ -600,11 +601,7 @@ class AgentPPO:
         # Get data from buffers
         data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
         
-        # NOTE: Not using observation tensor for CNN, using internal map buffer
-
-        # Reset gradients 
-        self.agent_optimizer.pi_optimizer.zero_grad()
-        self.agent_optimizer.critic_optimizer.zero_grad()              
+        # NOTE: Not using observation tensor for CNN, using internal map buffer          
 
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
         # TODO get this working for CNN
@@ -621,6 +618,9 @@ class AgentPPO:
 
         # RADPPO trains both actor and critic in same function/train_pi_iters, while TEAM-RAD needs to enable a global critic so iterates inside update_a2c() instead
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            # Reset gradients 
+            self.agent_optimizer.pi_optimizer.zero_grad()
+            self.agent_optimizer.critic_optimizer.zero_grad()                
             # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             while not term and kk < self.train_pi_iters:
                 # Early stop training if KL-div above certain threshold
