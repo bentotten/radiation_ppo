@@ -607,7 +607,10 @@ class AgentPPO:
         # TODO get this working for CNN
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             model_losses = self.update_model(data)
-
+        else:
+            # TODO remove after working for cnn
+            model_losses = torch.tensor(0)
+            
         # Update function if using the regression GRU
         # model_losses = update_loc_rnn(data,env,loss)
 
@@ -668,18 +671,20 @@ class AgentPPO:
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
             self.agent_optimizer.critic_scheduler.step()            
-            # Uncomment after implementing PFGRU
+            
+            # TODO Uncomment after implementing PFGRU
             #self.agent_optimizer.pfgru_scheduler.step()
+            
 
             # Log changes from update
             return UpdateResult(
                 StopIter=kk,
                 LossPi=update_results['pi_l'].item(),
                 LossV=update_results['critic_loss'].item(),
-                LossModel=model_losses.item(),  # TODO if using the regression GRU
+                LossModel=model_losses.item(),  
                 KL=update_results['pi_info']["kl"],
-                Entropy=update_results['pi_info']["ent"],
-                ClipFrac=update_results['pi_info']["cf"],
+                Entropy=update_results['pi_info']["entropy"],
+                ClipFrac=update_results['pi_info']["clip_fraction"],
                 LocLoss=update_results['loc_loss'],
                 VarExplain=0
             )
@@ -846,6 +851,7 @@ class AgentPPO:
         if not minibatch:
             minibatch = self.minibatch
         
+        # If CNN network
         if self.actor_critic_architecture == 'cnn':          
             map_buffer_observations =  [item[0].tolist() for item in self.agent.maps.observation_buffer]
             map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
@@ -891,7 +897,7 @@ class AgentPPO:
             # Log changes from update
             logger.store(
                 LossPi=old_actor_loss_results['pi_loss'].item(),
-                LossV=old_critic_loss_results['critic_loss'],
+                LossV=old_critic_loss_results['critic_loss'].detach().numpy(),
                 KL=actor_loss_results['kl'], 
                 Entropy=old_actor_loss_results['entropy'], 
                 ClipFrac=actor_loss_results['clip_fraction'],
@@ -900,7 +906,8 @@ class AgentPPO:
             )       
             
             return (actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0) # TODO when PFGRU added, implement loc_loss where 0 is
-            
+        
+        # If Philippes
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             # Set initial variables
             # TODO make a named tuple and pass these that way instead of hardcoded indexes
@@ -1013,4 +1020,7 @@ class AgentPPO:
                 pi_info,
                 term,
                 (self.env_height * loc - (src_tar)).square().mean().sqrt(),
-            )  
+            )
+            
+        else:
+            raise NotImplementedError("Alternative network updates not implemented")
