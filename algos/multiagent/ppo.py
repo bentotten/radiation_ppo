@@ -601,10 +601,6 @@ class AgentPPO:
         data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
         
         # NOTE: Not using observation tensor for CNN, using internal map buffer
-        # Put into training mode      
-        if self.actor_critic_architecture == 'cnn':
-            #self.agent.pi.train() # Actor NOTE: set in evaluate function
-            self.agent.critic.train() # Critic # TODO will need to be moved for global critic. also set to train in evaluate function
 
         # Reset gradients 
         self.agent_optimizer.pi_optimizer.zero_grad()
