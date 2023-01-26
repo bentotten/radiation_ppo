@@ -675,8 +675,7 @@ class AgentPPO:
             
             # TODO Uncomment after implementing PFGRU
             #self.agent_optimizer.pfgru_scheduler.step()
-            
-
+    
             # Log changes from update
             return UpdateResult(
                 StopIter=kk, # TODO pull from update_a2c
@@ -689,6 +688,10 @@ class AgentPPO:
                 LocLoss=update_results['loc_loss'],
                 VarExplain=0
             )
+            
+            # Clear mapstack buffer
+            # TODO Add mapstack to PPO buffer and do this in get()
+            
 
     def update_model(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
         ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''      
@@ -859,6 +862,8 @@ class AgentPPO:
             map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
             map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
             
+            assert len(self.agent.maps.observation_buffer) == data['obs'].shape[0]
+            
             # Check that maps match observations (need to round due to floating point precision in python)
             for index, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
                 test1 = data_obs.tolist()
@@ -907,6 +912,9 @@ class AgentPPO:
                 DeltaLossV= (critic_loss_results['critic_loss'].item() - old_critic_loss_results['critic_loss'])
             )       
             
+            # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
+            self.agent.clear()
+            
             return (actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0) # TODO when PFGRU added, implement loc_loss where 0 is
         
         # If Philippes
@@ -930,7 +938,6 @@ class AgentPPO:
             pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
             
             # Sample a random tensor
-            # TODO check this is sampling the correct dimension
             ep_select = np.random.choice(
                 np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
             )
@@ -1026,3 +1033,9 @@ class AgentPPO:
             
         else:
             raise NotImplementedError("Alternative network updates not implemented")
+        
+    def render(self, savepath: str=None, save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
+        print(f"Rendering heatmap for Agent {self.id}")
+        self.agent.render(
+            savepath=savepath, save_map=save_map, add_value_text=add_value_text, interpolation_method=interpolation_method, epoch_count=epoch_count
+        )

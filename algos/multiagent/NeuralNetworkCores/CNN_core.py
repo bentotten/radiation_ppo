@@ -176,6 +176,8 @@ class MapsBuffer:
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         del self.observation_buffer[:]
         
+        self.buffer.clear()
+        
     def observation_to_map(self, observation: dict[int, StepResult], id: int
                      ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
         '''
@@ -446,7 +448,7 @@ class Actor(nn.Module):
         return action_logprobs, dist_entropy        
 
     def _reset_state(self):
-        raise NotImplementedError("Not implemented")
+        raise NotImplementedError("Not implemented")   
 
 
 class Critic(nn.Module):
@@ -557,6 +559,7 @@ class CCNBase:
     steps_per_epoch: int
     random_seed: int = field(default=None)
     critic: Any = field(default=None)  # Eventually allows for a global critic
+    render_counter: int = field(init=False)
     
     # Moved to PPO Buffer    
     #steps_per_epoch    
@@ -575,7 +578,9 @@ class CCNBase:
     resolution_accuracy: How much to scale the convolution maps by (higher rate means more accurate, but more memory usage)
     lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
     '''
-    def __post_init__(self):      
+    def __post_init__(self):
+        # For render
+        self.render_counter = 0
         # Initialize buffers and neural networks
         self.maps = MapsBuffer(
                 observation_dimension = self.state_dim,
@@ -796,7 +801,7 @@ class CCNBase:
     def load(self, checkpoint_path):
         self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
         
-    def render(self, savepath=getcwd(), save_map=True, add_value_text=False, interpolation_method='nearest', epoch_count: int=0):
+    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         ''' Renders heatmaps from maps buffer '''
         if save_map:
             if not path.isdir(str(savepath) + "/heatmaps/"):
@@ -851,7 +856,10 @@ class CCNBase:
         
         self.render_counter += 1
         plt.close(fig)
-        
+
+    def clear(self):
+        self.maps.clear()
+
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):

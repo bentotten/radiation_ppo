@@ -681,13 +681,13 @@ class PPO:
         data: dict[str, torch.Tensor] = self.buf.get(self.logger)
 
         # Update function if using the PFGRU, fcn. performs multiple updates per call
-        self.ac.model.train() # PFGRU # TODO make multi-agent
+        self.ac.model.train() # PFGRU
         loss_mod = self.update_model(data, args)
 
         # Update function if using the regression GRU
         # loss_mod = update_loc_rnn(data,env,loss)
 
-        self.ac.model.eval() # PFGRU # TODO make multi-agent
+        self.ac.model.eval() # PFGRU 
         min_iters = len(data["ep_form"])
         kk = 0
         term = False

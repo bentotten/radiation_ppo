@@ -522,10 +522,17 @@ class train_PPO:
                     save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
                     time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
                     if (asked_to_save and save_first_epoch and time_to_save):
+                        # Render gif
                         env.render(
                             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                             epoch_count=epoch,
                         )
+                        # Render Agent heatmaps
+                        for id, ac in self.agents.items():
+                            ac.render(
+                                savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                                epoch_count=epoch
+                            )
 
                     # Reset the environment and counters
                     episode_return_buffer = []
