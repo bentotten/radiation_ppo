@@ -1160,14 +1160,24 @@ class RadSearch(gym.Env):
                     current_color = tuple(agent.marker_color)
                     markerline.set_markerfacecolor(current_color)
                     markerline.set_markeredgecolor(current_color)
-                ax2.legend(
-                    loc="lower center",
-                    fontsize=8,
-                    bbox_to_anchor=(0.5, -0.15),
-                    ncol=5, 
-                    fancybox=True, 
-                    shadow=True
-                )
+                if self.number_agents > 5:
+                    ax2.legend(
+                        loc="lower center",
+                        fontsize=8,
+                        bbox_to_anchor=(0.5, -0.25),
+                        ncol=5, 
+                        fancybox=True, 
+                        shadow=True
+                    )
+                else:     
+                    ax2.legend(
+                        loc="lower center",
+                        fontsize=8,
+                        bbox_to_anchor=(0.5, -0.15),
+                        ncol=5, 
+                        fancybox=True, 
+                        shadow=True
+                    )
                 
                 # Set up rewards graph
                 #flattened_rewards = [x for v in episode_rewards.values() for x in v]        

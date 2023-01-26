@@ -414,11 +414,10 @@ class train_PPO:
                     agent_thoughts[id] = ac.step(standardized_observations, hiddens)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                 
-                for id in self.agents.items():                                
+                for id in self.agents:                                
                     if self.DEBUG:
-                        if int(agent_thoughts[id].action.item()) == max(self.act_dim-1):
+                        if int(agent_thoughts[id].action.item()) == self.act_dim-1:
                             print("Max Action!")
-                            pass
                     
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 

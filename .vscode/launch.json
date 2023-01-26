@@ -44,9 +44,9 @@
       "justMyCode": false,
       "args": [
         "--agent-count",
-        "10",
+        "1",
         "--steps-per-epoch",
-        "5",
+        "1",
         "--steps-per-episode",
         "5",
         "--epochs",
