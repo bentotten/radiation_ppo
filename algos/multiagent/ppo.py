@@ -852,19 +852,23 @@ class AgentPPO:
             minibatch = self.minibatch
         
         # If CNN network
-        if self.actor_critic_architecture == 'cnn':          
-            map_buffer_observations =  [item[0].tolist() for item in self.agent.maps.observation_buffer]
+        if self.actor_critic_architecture == 'cnn':    
+            # Match observation type to data and seperate map stacks from observation key for processing
+            # TODO incorporate maps into PPO buffer and avoid this entire process      
+            map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
             map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
             
             # Check that maps match observations (need to round due to floating point precision in python)
             for data_obs, map_obs in zip(data['obs'], map_buffer_observations):
-                obs = data_obs.tolist()
-                rounded_obs = list(map(lambda x: round(x, 6), obs))
-                rounded_map_obs = list(map(lambda x: round(x, 6), map_obs))   
-                assert rounded_obs == rounded_map_obs
+                assert torch.equal(data_obs, map_obs)
+                # obs = data_obs.tolist()
+                # rounded_obs = list(map(lambda x: round(x, 5), obs))
+                # rounded_map_obs = list(map(lambda x: round(x, 5), map_obs))   
+                
+                #assert rounded_obs == rounded_map_obs
             
             # Stack the mapstack into a single tensor
-            # Uncomment if running batched observation through nn at once instead of fully online (one at a time)
+            # Uncomment if running batched observation through a compatible nn at once
             #maps = torch.stack(map_stacks)
             
             # Get old info for logging
