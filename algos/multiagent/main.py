@@ -41,6 +41,7 @@ class CliArgs:
     env_name: str
     save_freq: int
     save_gif_freq: int
+    DEBUG: bool
 
 ''' Function to parge command line arguments '''
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -70,6 +71,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         env_name=args.env_name,
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,
+        DEBUG=args.DEBUG
     )
 
 ''' Function to generate argument parser '''
@@ -77,6 +79,12 @@ def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     
     # General parameters
+    parser.add_argument(
+        "--DEBUG",
+        type=bool,
+        default=False,
+        help="Enable DEBUG mode - contains extra logging and set minimal setups",
+    )        
     parser.add_argument(
         "--steps-per-episode",
         type=int,
@@ -228,7 +236,8 @@ if __name__ == "__main__":
         'np_random': rng,
         'number_agents': args.agent_count,
         'save_gif': args.render,
-        'enforce_grid_boundaries': args.enforce_grid_boundaries
+        'enforce_grid_boundaries': args.enforce_grid_boundaries,
+        'DEBUG': args.DEBUG
     }
 
     env: RadSearch = gym.make(args.env_name,**intial_parameters)

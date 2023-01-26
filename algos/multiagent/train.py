@@ -154,6 +154,7 @@ class train_PPO:
     actor_critic_architecture: str = field(default="cnn")
     start_time: float = field(default_factory= lambda: time.time()),
     minibatch: int = field(default=1)
+    DEBUG: bool = field(default=False)
     
     """
     Proximal Policy Optimization (by clipping),
@@ -411,6 +412,9 @@ class train_PPO:
                 for id, ac in self.agents.items():
                     agent_thoughts[id] = ac.step(standardized_observations, hiddens)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
+                
+                if self.DEBUG and int(agent_thoughts[id].action.item()) == max(self.act_dim):
+                    pass
                 
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 

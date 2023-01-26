@@ -298,6 +298,7 @@ class PPOBuffer:
         total_episode_length = sum(episode_lengths)
         epLenTotal = sum(epLens)
         
+        # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
         assert number_episodes > 0
         assert numEps > 0
         
@@ -678,7 +679,7 @@ class AgentPPO:
 
             # Log changes from update
             return UpdateResult(
-                StopIter=kk,
+                StopIter=kk, # TODO pull from update_a2c
                 LossPi=update_results['pi_l'].item(),
                 LossV=update_results['critic_loss'].item(),
                 LossModel=model_losses.item(),  
@@ -859,7 +860,9 @@ class AgentPPO:
             map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
             
             # Check that maps match observations (need to round due to floating point precision in python)
-            for data_obs, map_obs in zip(data['obs'], map_buffer_observations):
+            for index, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
+                test1 = data_obs.tolist()
+                test2 = map_obs.tolist()
                 assert torch.equal(data_obs, map_obs)
             
             # Stack the mapstack into a single tensor
@@ -878,7 +881,7 @@ class AgentPPO:
                 
                 if actor_loss_results['kl'] > (1.5 * self.target_kl):
                     # TODO Get logger out of PPO!
-                    logger.log(f'Update stopped early at step {k_pi} due to reaching max kl.')
+                    logger.log(f'Agent {self.id} network Update stopped early at step {k_pi} due to reaching max kl {self.target_kl}.')
                     terminate = True
                     break
                 actor_loss_results['pi_loss'].backward()
