@@ -427,8 +427,8 @@ class PPO:
         start_time = time.time()
              
         # Obsertvation aka State: 11 dimensions, [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-        o = env.reset()[0].state  # TODO make multi-agent
-        ep_ret, ep_len, done_count, a = 0, 0, 0, -1 # TODO make multi-agent
+        o = env.reset()[0][0] # Get observation for first agent
+        ep_ret, ep_len, done_count, a = 0, 0, 0, -1 
         source_coordinates = np.array(env.src_coords, dtype="float32")
         stat_buff = core.StatBuff()
         stat_buff.update(o[0])
@@ -441,7 +441,7 @@ class PPO:
         print(f"Starting main training loop!", flush=True)
         for epoch in range(epochs):
             # Reset hidden state
-            hidden = self.ac.reset_hidden() # TODO make multi-agent
+            hidden = self.ac.reset_hidden() # NOTE: Only works with rnn nettype
             self.ac.pi.logits_net.v_net.eval() # Sets Actor into "eval" mode # TODO make multi-agent
             
             for t in range(steps_per_epoch):
@@ -458,7 +458,7 @@ class PPO:
                 a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?
                 
                 # Take step in environment
-                result = env.step(action=int(a)) # TODO make multi-agent # TODO figure out how to cast a to Action()
+                result = env.step(action=int(a))
                 
                 # Parse step result, since not currently multiagent
                 next_o = result[0].state

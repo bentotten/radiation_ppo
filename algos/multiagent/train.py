@@ -402,7 +402,7 @@ class train_PPO:
             
             # Start episode!
             for steps in range(self.steps_per_epoch):
-                # Standardize (make less than 1) prior observation of radiation intensity for the actor-critic input using running statistics per episode
+                # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 standardized_observations = {id: observations[id] for id in self.agents}
                 for id in self.agents:
                     standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
@@ -413,9 +413,12 @@ class train_PPO:
                     agent_thoughts[id] = ac.step(standardized_observations, hiddens)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                 
-                if self.DEBUG and int(agent_thoughts[id].action.item()) == max(self.act_dim):
-                    pass
-                
+                for id in self.agents.items():                                
+                    if self.DEBUG:
+                        if int(agent_thoughts[id].action.item()) == max(self.act_dim):
+                            print("Max Action!")
+                            pass
+                    
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 
                 

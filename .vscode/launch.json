@@ -14,6 +14,17 @@
       "cwd": "${workspaceFolder}"
     },
     {
+      "name": "RAD-A2C",
+      "type": "python",
+      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/ppo/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [],
+      "cwd": "${workspaceFolder}/algos/ppo"
+    },
+    {
       "name": "PLOT MULTI",
       "type": "python",
       //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
