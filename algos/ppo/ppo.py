@@ -447,12 +447,9 @@ class PPO:
             for t in range(steps_per_epoch):
                 
                 # Standardize input using running statistics per episode
-                # TODO I do not think this is needed for our environment
-                obs_std = o # NOTE this will be the prior state that is stored in the buffer # TODO make multi-agent
+                # TODO o is overwritten by obs_std; was this intentional? If so,why does it exist?
+                obs_std = o # NOTE this will be the prior state that is stored in the buffer.
                 obs_std[0] = np.clip((o[0] - stat_buff.mu) / stat_buff.sig_obs, -8, 8)
-                
-                for i in range(len(o)):
-                    assert obs_std[i] == o[i], "If this triggers, the above standardization was needed and should be left."
                     
                 # compute action and logp (Actor), compute value (Critic)
                 a, v, logp, hidden, out_pred = self.ac.step(obs_std, hidden=hidden) # TODO make multi-agent # TODO what is the hidden variable doing?
@@ -461,10 +458,10 @@ class PPO:
                 result = env.step(action=int(a))
                 
                 # Parse step result, since not currently multiagent
-                next_o = result[0].state
-                r = np.array(result[0].reward, dtype="float32")
-                d = result[0].done
-                msg = result[0].error
+                next_o = result[0][0]
+                r = np.array(result[1][0], dtype="float32")
+                d = result[2][0]
+                msg = result[3][0]
                 
                 ep_ret += r
                 ep_len += 1
@@ -532,7 +529,7 @@ class PPO:
                     if not env.epoch_end: # TODO make multi-agent
                         # Reset detector position and episode tracking
                         hidden = self.ac.reset_hidden() # TODO make multi-agent
-                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                        o, ep_ret, ep_len, a = env.reset()[0][0], 0, 0, -1 # TODO make multi-agent
                         source_coordinates = np.array(env.src_coords, dtype="float32")
                     else:
                         # Sample new environment parameters, log epoch results
@@ -541,7 +538,7 @@ class PPO:
                         logger.store(DoneCount=done_count, OutOfBound=oob)
                         done_count = 0
                         oob = 0
-                        o, ep_ret, ep_len, a = env.reset()[0].state, 0, 0, -1 # TODO make multi-agent
+                        o, ep_ret, ep_len, a = env.reset()[0][0], 0, 0, -1 # TODO make multi-agent
                         source_coordinates = np.array(env.src_coords, dtype="float32")
                         
                     stat_buff.update(o[0])
