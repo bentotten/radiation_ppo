@@ -295,6 +295,7 @@ class PPOBuffer:
         number_episodes = len(episode_lengths)
         numEps = len(epLens)
         
+        # TODO clear prior episode length buffer
         total_episode_length = sum(episode_lengths)
         epLenTotal = sum(epLens)
         
@@ -302,18 +303,18 @@ class PPOBuffer:
         assert number_episodes > 0
         assert numEps > 0
         
-        data = dict(
-            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
-            act=torch.as_tensor(self.act_buf, dtype=torch.float32),
-            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
-            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
-            logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
-            ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
-            ep_form = []
-        )           
+        # data = dict(
+        #     obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+        #     act=torch.as_tensor(self.act_buf, dtype=torch.float32),
+        #     ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+        #     adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+        #     logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
+        #     loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+        #     ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
+        #     ep_form = []
+        # )           
         
-        data_old = dict(
+        data = dict(
             obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
             act=torch.as_tensor(self.act_buf, dtype=torch.float32),
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
@@ -866,8 +867,6 @@ class AgentPPO:
             
             # Check that maps match observations (need to round due to floating point precision in python)
             for index, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
-                test1 = data_obs.tolist()
-                test2 = map_obs.tolist()
                 assert torch.equal(data_obs, map_obs)
             
             # Stack the mapstack into a single tensor
