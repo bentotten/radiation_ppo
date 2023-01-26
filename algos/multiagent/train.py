@@ -402,6 +402,9 @@ class train_PPO:
             
             # Start episode!
             for steps in range(self.steps_per_epoch):
+                # TODO DELETE
+                if epoch == 9 and steps == 9:
+                    print("breakpoint")
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 # TODO observation is overwritten by obs_std; was this intentional? If so,why does it exist?                
                 standardized_observations = {id: observations[id] for id in self.agents}

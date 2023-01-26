@@ -69,6 +69,10 @@ COLORS = [
     ]
 COLOR_FACTOR = 0.75  # How much to lighten previous rendered step by
 
+# Rendering
+ACTION_MAPPING: dict = {0: "Left", 1: "Up Left", 2: "Up", 3: "Up Right", 4: "Right", 5: "Down Right", 6: "Down", 7: "Down Left", 8: "Idle"}
+FPS = 5
+
 
 def sum_p(p1: Point, p2: Point) -> Point:
     """
@@ -175,7 +179,6 @@ def get_step(action: Action) -> Point:
     # TODO needs updated documentation for arbritrary angles
     """
     Return the step offset for the given action, scaled
-        -1: stay idle 
         0: left
         1: up left
         2: up
@@ -184,6 +187,7 @@ def get_step(action: Action) -> Point:
         5: down right
         6: down
         7: down left
+        8: Idle
     """
     if action == A_SIZE-1: # if max action
         return Point((0.0, 0.0))
@@ -237,6 +241,7 @@ class Agent():
     meas_sto: list[float] = field(init=False) # Measurement history for episode
     reward_sto: list[float] = field(init=False) # Reward history for epsisode
     cum_reward_sto: list = field(init=False)  # Cumulative rewards tracker for episode
+    action_sto: list = field(init=False)  # Stores actions for render
 
     def __post_init__(self):
         self.marker_color: Color = create_color(self.id)
@@ -250,6 +255,7 @@ class Agent():
         self.meas_sto: list[float] = [] # Measurement history for episode
         self.reward_sto: list[float] = [] # Reward history for epsisode
         self.cum_reward_sto: list = []  # Cumulative rewards tracker for episode
+        self.action_sto: list = []
                 
 
 @dataclass
@@ -493,6 +499,7 @@ class RadSearch(gym.Env):
             agent.meas_sto.append(meas)
             agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
+            agent.action_sto.append(action)
             info = {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'blocked': agent.obstacle_blocking, 'scale': 1 / self.search_area[2][1]}
             return state, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
@@ -513,16 +520,14 @@ class RadSearch(gym.Env):
         aggregate_info_result: dict = {_: None for _ in self.agents}
         
         if action_list:
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
             if self.DEBUG:  
                 test_step = get_step(action_list[0])
-                print("test step: ", test_step)
+                print("Test step: ", test_step)
+                print("Current coordinates: ", self.agents[0].det_coords)                
                 test = sum_p(self.agents[0].det_coords, test_step)
-                print("tentative coordinates: ", test)
-                test_scaled = scale_p(self.agents[0].det_coords, 1 / self.search_area[2][1])
+                print("Tentative coordinates: ", test)
+                test_scaled = scale_p(test, 1 / self.search_area[2][1])
                 print("Tentative scaled return coords: ", test_scaled)
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, a in action_list.items():
@@ -548,30 +553,15 @@ class RadSearch(gym.Env):
                 ) = agent_step(action=action, agent=agent)
             self.iter_count += 1
             
+        # To meet Gym compliance, must be in form observation, reward, done, info            
         if self.DEBUG:
+            print("Step New coordinates: ", self.agents[0].det_coords)            
+            print("Step Observation: ", aggregate_observation_result[0][0])
+            print(f"Step new scaled coords: ({aggregate_observation_result[0][1]}, {aggregate_observation_result[0][2]})")            
+            print("Step Reward: ", aggregate_reward_result[0])
+            print("Step Info: ", aggregate_info_result[0])
+            print("Step Terminal", aggregate_success_result[0])
             print()
-            print("Step result [state]: ", aggregate_observation_result)
-            #print("Step result [reward]: ", aggregate_step_result[0].reward)
-            #print("Step result [error]: ", aggregate_step_result[0].error)
-            #print("Step result [success]: ", aggregate_step_result[0].done)
-            print()
-        
-        # To meet Gym compliance, must be in form observation, reward, done, info
-        #return aggregate_step_result
-        #return StepResult(observation=aggregate_observation_result, reward=aggregate_reward_result, success=aggregate_success_result, info=aggregate_info_result)
-        
-        # TODO make this an inherent part of the env instead of a conversion, after fully divorced from RADPPO code
-        # Reconvert idle action back to positive max value
-        if type(action) is int: 
-                # This is hard coded to translate an 8th "direction" into an idle action environment.
-                # TODO when migrating to arbritrary directions, change            
-                if action == -1: 
-                    action = 8  
-        elif type(action) is dict:
-            for i, a in action.items():
-                if a == -1: 
-                    action[i] = 8             
-        action_list = action if type(action) is dict else None        
         
         return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
@@ -677,11 +667,11 @@ class RadSearch(gym.Env):
         # If boundaries are being enforced, do not take action        
         if self.enforce_grid_boundaries:
             if (
-                (tentative_coordinates[0] < self.search_area[0][0]
-                or tentative_coordinates[1] < self.search_area[0][1])
+                (tentative_coordinates[0] < self.bbox[0][0]
+                or tentative_coordinates[1] < self.bbox[0][1])
                 or 
-                (self.search_area[2][0] <= tentative_coordinates[0] 
-                or self.search_area[2][1] <= tentative_coordinates[1])
+                (self.bbox[2][0] <= tentative_coordinates[0] 
+                or self.bbox[2][1] <= tentative_coordinates[1])
             ):
                 agent.out_of_bounds = True  
                 agent.out_of_bounds_count += 1
@@ -1188,6 +1178,10 @@ class RadSearch(gym.Env):
                 ax3.set_xlabel("n")
                 ax3.set_ylabel("Cumulative Reward")
                 ax3.plot()
+                
+                # Add movement to bottom of figure
+                if self.DEBUG:
+                    fig.supxlabel("Start")                
                     
             else: # If not first frame
                 # TODO add this back now that multi-agent radppo is up
@@ -1239,6 +1233,7 @@ class RadSearch(gym.Env):
                         )
                         
                     # Plot radiation counts - stem graph
+                    assert agent.meas_sto[current_index] >= 0
                     current_color = tuple(agent.marker_color)
                     markerline, _, _ = ax2.stem(
                         [current_index], [agent.meas_sto[current_index]], use_line_collection=True, label=f"Detector {agent_id}"
@@ -1260,6 +1255,10 @@ class RadSearch(gym.Env):
                 #         c="magenta",
                 #         label="Loc. Pred.",
                 #     )
+
+                # Add movement to bottom of figure
+                if self.DEBUG:
+                    fig.supxlabel(f"Step {current_index}: {ACTION_MAPPING[agent.action_sto[current_index]]}")
 
         # Initialize render environment 
         if data or measurements:
@@ -1366,6 +1365,8 @@ class RadSearch(gym.Env):
                 1, 3, figsize=(15, 5), tight_layout=True
             )
             marker_size = 25
+            # fig.suptitle(
+            #     'Multi-Agent Radiation Localization', fontsize=16)       
 
             # Setup animation
             print("Frames to render ", reward_length-1)
@@ -1378,7 +1379,9 @@ class RadSearch(gym.Env):
                 fargs=(ax1, ax2, ax3, self.src_coords, self.search_area, measurements, flattened_rewards),
             )
             if self.save_gif:
-                writer = PillowWriter(fps=5)
+                if self.DEBUG:
+                    FPS = 1
+                writer = PillowWriter(fps=FPS)
                 if os.path.isdir(str(path) + "/gifs/"):
                     ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
                     print("")

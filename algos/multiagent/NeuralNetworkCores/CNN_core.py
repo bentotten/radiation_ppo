@@ -834,7 +834,7 @@ class CCNBase:
         visit_ax.invert_yaxis()
         
         obs_ax.imshow(obstacles_transposed, cmap='viridis', interpolation=interpolation_method)
-        obs_ax.set_title('Obstacles Detected (cm from Agent)') 
+        obs_ax.set_title('Obstacles Detected') 
         obs_ax.invert_yaxis()
         
         # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow

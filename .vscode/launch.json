@@ -46,15 +46,15 @@
         "--agent-count",
         "1",
         "--steps-per-epoch",
-        "1",
+        "20",
         "--steps-per-episode",
-        "5",
+        "20",
         "--epochs",
-        "3",
+        "100",
         "--render",
         "True",
         "--save-gif-freq",
-        "200",
+        "1",
         "--obstruct",
         "0",
         "--seed",
@@ -64,7 +64,9 @@
         "--exp-name",
         "TEAM-RAD",
         "--net-type",
-        "cnn"
+        "cnn",
+        "--DEBUG",
+        "True"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
