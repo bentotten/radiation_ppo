@@ -402,15 +402,15 @@ class train_PPO:
             
             # Start episode!
             for steps in range(self.steps_per_epoch):
-                # TODO DELETE
-                if epoch == 9 and steps == 9:
-                    print("breakpoint")
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
-                # TODO observation is overwritten by obs_std; was this intentional? If so,why does it exist?                
-                standardized_observations = {id: observations[id] for id in self.agents}
-                for id in self.agents:
-                    standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
-                    
+                if self.actor_critic_architecture == 'cnn':
+                    standardized_observations = observations
+                else:
+                    # TODO observation is overwritten by obs_std; was this intentional? If so,why does it exist?                
+                    standardized_observations = {id: observations[id] for id in self.agents}
+                    for id in self.agents:
+                        standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
+                        
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts = {id: None for id in self.agents}
                 for id, ac in self.agents.items():
@@ -492,15 +492,18 @@ class train_PPO:
                         )
 
                     if timeout or epoch_ended:
-                        # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics 
-                        standardized_observations = {id: observations[id] for id in self.agents}
-                        for id in self.agents:
-                            standardized_observations[id][0] = np.clip(
-                                (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
-                            )     
-                            for id, ac in self.agents.items():
-                                results = ac.step(standardized_observations, hiddens=hiddens, save_map=False)  # Ensure next map is not buffered when going to compare to logger for update
-                                value = results.state_value
+                        # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics
+                        if self.actor_critic_architecture == 'cnn':
+                            standardized_observations = observations
+                        else:
+                            standardized_observations = {id: observations[id] for id in self.agents}
+                            for id in self.agents:
+                                standardized_observations[id][0] = np.clip(
+                                    (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
+                                )     
+                        for id, ac in self.agents.items():
+                            results = ac.step(standardized_observations, hiddens=hiddens, save_map=False)  # Ensure next map is not buffered when going to compare to logger for update
+                            value = results.state_value
  
                         if epoch_ended:
                             # Set flag to sample new environment parameters
@@ -533,7 +536,8 @@ class train_PPO:
                         for id, ac in self.agents.items():
                             ac.render(
                                 savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                                epoch_count=epoch
+                                epoch_count=epoch,
+                                add_value_text=True
                             )
 
                     # Reset the environment and counters

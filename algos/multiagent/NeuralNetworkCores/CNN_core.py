@@ -233,7 +233,10 @@ class MapsBuffer:
             assert len(self.buffer.readings[unscaled_coordinates]) > 0
             # TODO onsider using a particle filter for resampling            
             estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
-            self.readings_map[x][y] = estimated_reading  # Initial agents begin at same location
+            if estimated_reading > 0:
+                self.readings_map[x][y] = estimated_reading  # Initial agents begin at same location
+            else:
+                assert estimated_reading >= 0
 
         # Process observation for visit_counts_map
         for agent_id in observation:

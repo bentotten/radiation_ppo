@@ -323,7 +323,7 @@ class RadSearch(gym.Env):
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # For debugging
     DEBUG: bool = field(default=False)
-    DEBUG_SOURCE_LOCATION: Point = field(default=Point((1.0, 1.0)))
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((100.0, 100.0)))
     DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -425,6 +425,8 @@ class RadSearch(gym.Env):
                     if agent.intersect
                     else self.intensity / agent.euc_dist + self.bkg_intensity
                 )
+                
+                assert meas >= 0
 
                 # Reward logic
                 if agent.sp_dist < 110:
@@ -561,6 +563,8 @@ class RadSearch(gym.Env):
             print("Step Reward: ", aggregate_reward_result[0])
             print("Step Info: ", aggregate_info_result[0])
             print("Step Terminal", aggregate_success_result[0])
+            if aggregate_info_result[0]['out_of_bounds'] == True:
+                print('out of bounds')
             print()
         
         return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
