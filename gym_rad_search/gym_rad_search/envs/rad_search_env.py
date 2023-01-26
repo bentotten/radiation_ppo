@@ -47,7 +47,7 @@ Metadata: TypeAlias = TypedDict(
 # 5: down and right
 # 6: down
 # 7: down and left
-Action: TypeAlias = Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
+Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8] # TODO update to have max action be the idle step
 Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
 A_SIZE = len(get_args(Action))
@@ -148,12 +148,11 @@ def get_step_size(action: Action) -> float:
     Return the step size for the given action.
     """
 
-    #return DET_STEP if action % 2 == 0 else DET_STEP_FRAC  # TODO obsolete with arbritrary step angles
-    return DET_STEP
+    return DET_STEP if action % 2 == 0 else DET_STEP_FRAC  # TODO obsolete with arbritrary step angles
 
 
 # TODO Get the new Y for an arbritrary action angle to work
-def get_y_step_coeff(action: Action, idle_action: Action = None) -> float:
+def get_y_step_coeff(action: Action) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
@@ -163,12 +162,12 @@ def get_y_step_coeff(action: Action, idle_action: Action = None) -> float:
 
 # TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
-def get_x_step_coeff(action: Action, idle_action: Action = None) -> float:
+def get_x_step_coeff(action: Action, ) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
     '''
-    #return math.cos(2 * math.pi * action / idle_action) if action != idle_action else 0
+    #return math.cos(2 * math.pi * action / idle_action)
     return get_y_step_coeff((action + 6) % 8) 
 
 
@@ -186,12 +185,12 @@ def get_step(action: Action) -> Point:
         6: down
         7: down left
     """
-    if action == -1:
+    if action == A_SIZE-1: # if max action
         return Point((0.0, 0.0))
     else:
         return scale_p(
             # TODO update once no longer using -1 as idle
-            Point((get_x_step_coeff(action=action, idle_action=-1), get_y_step_coeff(action=action, idle_action=-1))),
+            Point((get_x_step_coeff(action=action), get_y_step_coeff(action=action))),
             get_step_size(action),
         )
 
@@ -429,7 +428,7 @@ class RadSearch(gym.Env):
                     reward = 0.1
                     agent.prev_det_dist = agent.sp_dist
                 else:
-                    if action == -1:
+                    if action == max(get_args(Action)):
                         reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
                     else:
                         reward = -0.5 * agent.sp_dist / self.max_dist
@@ -501,16 +500,10 @@ class RadSearch(gym.Env):
         assert action is None or type(action) == int or  type(action) == dict, 'Action not integer or a dictionary of actions.'
 
         if type(action) is int: 
-            # This is hard coded to translate an 8th "direction" into an idle action environment.
-            # TODO when migrating to arbritrary directions, change            
-            if action == 8: 
-                action = -1
-            assert action in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+            assert action in get_args(Action)
         elif type(action) is dict:
-            for i, a in action.items():
-                if a == 8: 
-                    action[i] = -1                 
-                assert action[i] in [-1, 0, 1, 2, 3, 4, 5, 6, 7]
+            for i, a in action.items():             
+                assert action[i] in get_args(Action)
         action_list = action if type(action) is dict else None
 
         # TODO implement this natively to meet Gym environment requirements
@@ -656,7 +649,6 @@ class RadSearch(gym.Env):
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
         will be reset to the prior position.
-        -1: idle
         0: left
         1: up left
         2: up
@@ -665,6 +657,7 @@ class RadSearch(gym.Env):
         5: down right
         6: down
         7: down left
+        8: idle 
         
         Return success of action: True if moved, false if stalled.
         """
@@ -706,10 +699,6 @@ class RadSearch(gym.Env):
         else:
             # If we're not in an obstacle, update the detector coordinates
             agent.det_coords = from_vis_p(agent.detector)
-            
-        ##### TEST
-        if self.enforce_grid_boundaries:
-            assert agent.det_coords[0] > 0 and agent.det_coords[1] > 0   # TODO DELETE ME
 
         return False if roll_back_action else True
 
@@ -1151,9 +1140,8 @@ class RadSearch(gym.Env):
                 ax1.yaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax1.set_xlabel("X[m]")
                 ax1.set_ylabel("Y[m]")
-                leg = ax1.legend(loc="lower right", fontsize=8)
-                leg.set_draggable(False)  # freeze legend
-
+                ax1.legend(loc="lower right", fontsize=8)  # TODO get agent labels to stay put
+            
                 # Set up radiation graph
                 # TODO make this less terrible
                 count_max: float = 0.0
@@ -1168,10 +1156,18 @@ class RadSearch(gym.Env):
                 ax2.set_xlabel("n")
                 ax2.set_ylabel("Counts")                
                 for agent_id, agent in self.agents.items():
-                    markerline, _, _ = ax2.stem([0], [agent.meas_sto[0]], use_line_collection=True, label=f"{agent_id}_Detector")
+                    markerline, _, _ = ax2.stem([0], [agent.meas_sto[0]], use_line_collection=True, label=f"Detector {agent_id}")
                     current_color = tuple(agent.marker_color)
                     markerline.set_markerfacecolor(current_color)
                     markerline.set_markeredgecolor(current_color)
+                ax2.legend(
+                    loc="lower center",
+                    fontsize=8,
+                    bbox_to_anchor=(0.5, -0.15),
+                    ncol=5, 
+                    fancybox=True, 
+                    shadow=True
+                )
                 
                 # Set up rewards graph
                 #flattened_rewards = [x for v in episode_rewards.values() for x in v]        
@@ -1235,14 +1231,14 @@ class RadSearch(gym.Env):
                     # Plot radiation counts - stem graph
                     current_color = tuple(agent.marker_color)
                     markerline, _, _ = ax2.stem(
-                        [current_index], [agent.meas_sto[current_index]], use_line_collection=True, label=f"{agent_id}_Detector"
+                        [current_index], [agent.meas_sto[current_index]], use_line_collection=True, label=f"Detector {agent_id}"
                         )
                     markerline.set_markerfacecolor(current_color)
                     markerline.set_markeredgecolor(current_color)
                     
                     # Plot rewards graph - line graph, previous reading connects to current reading   
-                    ax3.scatter(current_index, agent.reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current state reward              
-                    ax3.plot([current_index-1, current_index], agent.cum_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"{agent_id}_Detector")  # Cumulative line graph
+                    #ax3.scatter(current_index, agent.reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current state reward              
+                    ax3.plot([current_index-1, current_index], agent.cum_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"Detector {agent_id}")  # Cumulative line graph
                         
                 
                 # TODO make multi-agent and fix
@@ -1313,7 +1309,7 @@ class RadSearch(gym.Env):
                     c=[agent.marker_color],
                     #c="black",
                     marker=MarkerStyle("^"),
-                    label=f"{agent_id}_Detector",
+                    label=f"Detector {agent_id}",
                 )
             # Plot Obstacles
             ax1.grid()
@@ -1338,8 +1334,7 @@ class RadSearch(gym.Env):
             ax1.set_ylim(0, self.search_area[2][1] / 100)
             ax1.set_xlabel("X[m]")
             ax1.set_ylabel("Y[m]")
-            leg = ax1.legend(loc="lower right", fontsize=8)
-            leg.set_draggable(False) 
+            ax1.legend(loc="lower right", fontsize=8) # TODO get agent labels to stay put
         
             # Save
             if self.save_gif:
@@ -1363,7 +1358,7 @@ class RadSearch(gym.Env):
             marker_size = 25
 
             # Setup animation
-            print("Frames to render ", reward_length)
+            print("Frames to render ", reward_length-1)
 
             ani = animation.FuncAnimation(
                 fig,

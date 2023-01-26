@@ -289,7 +289,7 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        episode_lengths: list[int] = self.episode_lengths
+        episode_lengths: list[int] = self.episode_lengths # TODO this needs to be cleared before can be used
         epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         
         number_episodes = len(episode_lengths)
@@ -667,7 +667,8 @@ class AgentPPO:
                 update_results['critic_loss'],
                 update_results['pi_info'], 
                 update_results['term'], 
-                update_results['loc_loss']
+                update_results['loc_loss'],
+                update_results['stop_iteration']
             ) = self.update_a2c(data, min_iterations, logger=logger)  #TODO get logger out of PPO
         
             # Reduce learning rate
@@ -679,7 +680,7 @@ class AgentPPO:
     
             # Log changes from update
             return UpdateResult(
-                StopIter=kk, # TODO pull from update_a2c
+                StopIter=update_results['stop_iteration'],  # TODO this is updated in several places
                 LossPi=update_results['pi_l'].item(),
                 LossV=update_results['critic_loss'].item(),
                 LossModel=model_losses.item(),  
@@ -689,10 +690,6 @@ class AgentPPO:
                 LocLoss=update_results['loc_loss'],
                 VarExplain=0
             )
-            
-            # Clear mapstack buffer
-            # TODO Add mapstack to PPO buffer and do this in get()
-            
 
     def update_model(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
         ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''      
@@ -891,7 +888,7 @@ class AgentPPO:
                 actor_loss_results['pi_loss'].backward()
                 self.agent_optimizer.pi_optimizer.step()  # TODO how does the optimizer know where this loss is?
 
-            logger.store(StopIter=k_pi)
+            stopping_step=k_pi
 
             # Value function learning
             for _ in range(self.train_v_iters):
@@ -914,7 +911,9 @@ class AgentPPO:
             # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
             self.agent.clear()
             
-            return (actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0) # TODO when PFGRU added, implement loc_loss where 0 is
+            return (
+                actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0, stopping_step
+                ) # TODO when PFGRU added, implement loc_loss where 0 is
         
         # If Philippes
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':

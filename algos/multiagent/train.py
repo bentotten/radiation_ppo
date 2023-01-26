@@ -416,7 +416,7 @@ class train_PPO:
                 
                 for id in self.agents.items():                                
                     if self.DEBUG:
-                        if int(agent_thoughts[id].action.item()) == max(self.act_dim):
+                        if int(agent_thoughts[id].action.item()) == max(self.act_dim-1):
                             print("Max Action!")
                             pass
                     
@@ -581,6 +581,7 @@ class train_PPO:
                 update_results = ac.update_agent(self.loggers[id])
                 
                 # Store results
+                # TODO some of these are getting updated within the update_agent function
                 self.loggers[id].store(
                     StopIter=update_results.StopIter,
                     LossPi=update_results.LossPi,
