@@ -861,11 +861,6 @@ class AgentPPO:
             # Check that maps match observations (need to round due to floating point precision in python)
             for data_obs, map_obs in zip(data['obs'], map_buffer_observations):
                 assert torch.equal(data_obs, map_obs)
-                # obs = data_obs.tolist()
-                # rounded_obs = list(map(lambda x: round(x, 5), obs))
-                # rounded_map_obs = list(map(lambda x: round(x, 5), map_obs))   
-                
-                #assert rounded_obs == rounded_map_obs
             
             # Stack the mapstack into a single tensor
             # Uncomment if running batched observation through a compatible nn at once
