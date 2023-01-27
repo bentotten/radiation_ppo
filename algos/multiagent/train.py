@@ -409,7 +409,7 @@ class train_PPO:
             for steps_in_epoch in range(self.steps_per_epoch):
             
                 for ac in self.agents.values():
-                    if max(ac.maps.location_map) !=0 or max(ac.maps.readings_map) !=0 or max(ac.maps.visit_counts_map) !=0:
+                    if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
                         raise ValueError("Maps did not reset")                
                 
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
