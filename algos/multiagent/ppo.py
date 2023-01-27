@@ -383,6 +383,7 @@ class AgentPPO:
     env_height: int
     environment_scale: int
     scaled_grid_bounds: tuple # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
+    bounds_offset: tuple # Unscaled "observation area" to match map size to actual boundaries
     steps_per_epoch: int = field(default= 480)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic_architecture: str = field(default="cnn")  
@@ -417,11 +418,13 @@ class AgentPPO:
         match self.actor_critic_architecture:
             case 'ff':
                 self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
-            case 'cnn':
+            case 'cnn':                
                 # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
                 #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
-                #  number being multiplied by the 1/env_scale             
-                resolution_accuracy = 0.01 * 1/self.environment_scale
+                #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
+                max_boundary = max(self.bounds_offset)  # Get maximum unscaled boundary modifier             
+                multiplier = 0.01
+                resolution_accuracy = multiplier * (1/self.environment_scale + max_boundary)
                 
                 # Initialize Agents                
                 self.agent = RADCNN_core.CCNBase(
