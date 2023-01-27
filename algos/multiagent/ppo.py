@@ -509,7 +509,7 @@ class AgentPPO:
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             hiddens = self.agent.reset_hidden()
         else:
-            # TODO implement reset function to help avoid local minima
+            # TODO implement reset function that has return values
             # actor_hidden = self.agent.pi._reset_state()
             # critic_hidden = self.agent.critic._reset_state()
             #pfgru_hidden = self.agent.model.init_hidden(batch_size)

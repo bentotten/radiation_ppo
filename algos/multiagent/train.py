@@ -371,7 +371,7 @@ class train_PPO:
         # Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]        
         observations, _,  _, _ = env.reset()
         for id in self.agents: 
-            self.agents[id].reset()
+            self.agents[id].reset_neural_nets()  # NOTE: buffers are cleared during update
         source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         episode_return = {id: 0 for id in self.agents}
         episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
@@ -401,6 +401,7 @@ class train_PPO:
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?                
             else:
                 for ac in self.agents.values():
+                    #ac.model.eval()  # TODO add PFGRU
                     ac.agent.pi.eval()
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
             

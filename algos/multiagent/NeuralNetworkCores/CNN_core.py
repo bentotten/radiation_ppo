@@ -106,19 +106,15 @@ class ActionChoice():
 @dataclass
 class RolloutBuffer:      
     # Buffers
-    mapstacks: list = field(init=False)
     coordinate_buffer: list = field(init=False)
     readings: Dict[Any, list] =field(init=False)
     
-    
     def __init__(self):
-        self.mapstacks: List = []  # TODO Change to numpy arrays
         self.coordinate_buffer: CoordinateStorage = []    
         self.readings: Dict[Any, list] = {} # For heatmap resampling        
     
     def clear(self):
-        # Reset readings, mapstacks, and buffer pointers
-        del self.mapstacks[:]
+        # Reset readings and coordinates buffers
         del self.coordinate_buffer[:]     
         self.readings.clear()
 
@@ -158,14 +154,13 @@ class MapsBuffer:
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
-    observation_buffer: list = field(default_factory=lambda: list())  # TODO should this be in the PPO buffer?
+    observation_buffer: list = field(default_factory=lambda: list())  # TODO move to PPO buffer
 
     def __post_init__(self):      
         # Scaled maps
         self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy)+1, int(self.grid_bounds[1] * self.resolution_accuracy)+1)
         self.x_limit_scaled: int = self.map_dimensions[0]
         self.y_limit_scaled: int = self.map_dimensions[1]    
-        
         self.clear()
 
     def clear_maps(self):
@@ -175,12 +170,12 @@ class MapsBuffer:
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        self.buffer.clear()
         
     def clear(self):
         ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
-        self.clear_maps()
         del self.observation_buffer[:]
-        self.buffer.clear()
+        self.clear_maps()        
         
     def observation_to_map(self, observation: dict[int, StepResult], id: int
                      ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
