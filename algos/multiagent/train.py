@@ -367,7 +367,11 @@ class train_PPO:
     def train(self):
         # Prepare environment variables and reset
         env = self.env
-        observations, _,  _, _ = env.reset()  # Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
+        
+        # Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]        
+        observations, _,  _, _ = env.reset()
+        for id in self.agents: 
+            self.agents[id].reset()
         source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         episode_return = {id: 0 for id in self.agents}
         episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
@@ -390,7 +394,7 @@ class train_PPO:
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
         for epoch in range(self.total_epochs):
-            # Reset hidden layers and sets Actor into "eval" mode 
+            # Reset hidden layers and sets Actor into "eval" mode. For CNN, resets maps
             hiddens = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 for ac in self.agents.values():
@@ -562,7 +566,7 @@ class train_PPO:
                             out_of_bounds_count[id] = 0
                     
                     # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-                    observations, _,  _, _ = env.reset()                          
+                    observations, _,  _, _ = env.reset()                                         
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}
                     episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging

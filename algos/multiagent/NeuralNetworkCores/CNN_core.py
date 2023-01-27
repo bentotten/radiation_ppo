@@ -168,14 +168,18 @@ class MapsBuffer:
         
         self.clear()
 
-    def clear(self):
+    def clear_maps(self):
+        ''' Clear maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
         self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch?
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
-        del self.observation_buffer[:]
         
+    def clear(self):
+        ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
+        self.clear_maps()
+        del self.observation_buffer[:]
         self.buffer.clear()
         
     def observation_to_map(self, observation: dict[int, StepResult], id: int
@@ -257,48 +261,6 @@ class MapsBuffer:
                     
                     # Inflate to actual distance, then convert and round with resolution_accuracy
                     inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
-                    
-                    # scaled_obstacle_distance = int(inflated_distance / self.resolution_accuracy)
-                    # step: int = field(init=False)
-                    # match index:
-                        # Access the obstacle detection portion of observation and see what direction an obstacle is in
-                        # These offset indexes correspond to:
-                        # 0: left
-                        # 1: up and left
-                        # 2: up
-                        # 3: up and right
-                        # 4: right
-                        # 5: down and right
-                        # 6: down
-                        # 7: down and left                    
-                    #     # 0: Left
-                    #     case 0:
-                    #         step = (-1 ,0)
-                    #     # 1: up and left
-                    #     case 1:
-                    #         step = (-scaled_obstacle_distance, scaled_obstacle_distance)
-                    #     # 2: up
-                    #     case 2:
-                    #         step = (0, scaled_obstacle_distance)
-                    #     # 3: up and right
-                    #     case 3:
-                    #         step = (scaled_obstacle_distance, scaled_obstacle_distance)
-                    #     # 4: right
-                    #     case 4:
-                    #         step = (scaled_obstacle_distance, 0)                        
-                    #     # 5: down and right
-                    #     case 5:
-                    #         step = (scaled_obstacle_distance, -scaled_obstacle_distance)                           
-                    #     # 6: down
-                    #     case 6:
-                    #         step = (0, -scaled_obstacle_distance)                           
-                    #     # 7: down and left
-                    #     case 7:
-                    #         step = (-scaled_obstacle_distance, -scaled_obstacle_distance)                                                     
-                    #     case _:
-                    #         raise Exception('Obstacle index is not within valid [0,7] range.')                         
-                    # x = int(scaled_agent_coordinates[0] + step[0])
-                    # y = int(scaled_agent_coordinates[1] + step[1])
                     x = int(scaled_coordinates[0])
                     y = int(scaled_coordinates[1])
                     
@@ -862,8 +824,11 @@ class CCNBase:
         self.render_counter += 1
         plt.close(fig)
 
-    def clear(self):
+    def reset(self):
         self.maps.clear()
+        
+    def clear_maps(self):
+        self.maps.clear_maps()        
 
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo

@@ -505,7 +505,7 @@ class AgentPPO:
         return results         
     
     def reset_neural_nets(self, batch_size: int = 1):
-        ''' Reset the neural networks at the end of an epoch '''
+        ''' Reset the neural networks at the end of an episode'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             hiddens = self.agent.reset_hidden()
         else:
@@ -516,8 +516,9 @@ class AgentPPO:
             actor_hidden = 0
             critic_hidden = 0
             pfgru_hidden = 0
-            
             hiddens = (actor_hidden, critic_hidden, pfgru_hidden)
+            
+            self.agent.clear_maps()
         
         return hiddens
     
@@ -869,6 +870,9 @@ class AgentPPO:
             # Stack the mapstack into a single tensor
             # Uncomment if running batched observation through a compatible nn at once
             #maps = torch.stack(map_stacks)
+            
+            # Reset existing episode maps
+            self.reset_neural_nets()             
             
             # Get old info for logging
             old_actor_loss_results = compute_batched_losses_pi(self)
