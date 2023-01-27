@@ -53,7 +53,6 @@ Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 A_SIZE = len(get_args(Action))
 DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
 MAX_CREATION_TRIES = 1000
-FPS = 50
 DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
@@ -1139,15 +1138,17 @@ class RadSearch(gym.Env):
             
                 # Set up radiation graph
                 # TODO make this less terrible
-                count_max: float = 0.0
-                for agent in self.agents.values():
-                    for measurement in agent.meas_sto:
-                        if count_max < measurement:
-                            count_max = measurement
+                count_max = max(agent.meas_sto)
+                # count_max: float = 0.0
+                # for agent in self.agents.values():
+                #     for measurement in agent.meas_sto:
+                #         if count_max < measurement:
+                #             count_max = measurement
                 ax2.cla()
                 ax2.set_xlim(0, self.iter_count)
                 ax2.xaxis.set_major_formatter(FormatStrFormatter("%d"))
                 ax2.set_ylim(0, count_max)
+                #ax2.set_ylim(0, self.intensity)
                 ax2.set_xlabel("n")
                 ax2.set_ylabel("Counts")                
                 for agent_id, agent in self.agents.items():
@@ -1374,19 +1375,22 @@ class RadSearch(gym.Env):
             #     'Multi-Agent Radiation Localization', fontsize=16)       
 
             # Setup animation
-            print("Frames to render ", reward_length-1)
+            print(f"Rendering in {str(path)}/gifs/")
+            print(f"Frames to render: ", reward_length-1)
 
             ani = animation.FuncAnimation(
                 fig,
                 update,
                 #frames=reward_length,
                 frames=data_length,
-                fargs=(ax1, ax2, ax3, self.src_coords, self.search_area, measurements, flattened_rewards),
+                fargs=(ax1, ax2, ax3, self.src_coords, self.bbox, measurements, flattened_rewards),
             )
             if self.save_gif:
                 if self.DEBUG:
-                    FPS = 1
-                writer = PillowWriter(fps=FPS)
+                    fps = 1
+                else:
+                    fps = FPS
+                writer = PillowWriter(fps=fps)
                 if os.path.isdir(str(path) + "/gifs/"):
                     ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
                     print("")

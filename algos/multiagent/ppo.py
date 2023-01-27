@@ -403,6 +403,7 @@ class AgentPPO:
     lam: float = field(default= 0.9)
     seed: int = field(default= 0)
     minibatch: int = field(default=1)
+    enforce_boundaries: bool = field(default=False)  # Informs how large maps need to be to accomodate out-of-grid steps
 
     bp_args: BpArgs = field(init=False)
 
@@ -424,10 +425,12 @@ class AgentPPO:
                 # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
                 #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
                 #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
-                max_boundary = max(self.bounds_offset)  # Get maximum unscaled boundary modifier       
-                offset = max_boundary + (self.steps_per_episode * self.detector_step_size)      
                 multiplier = 0.01
-                resolution_accuracy = multiplier * (1/self.environment_scale + offset)
+                resolution_accuracy = multiplier * 1/self.environment_scale
+                if self.enforce_boundaries:
+                    scaled_offset = self.environment_scale * max(self.bounds_offset)                    
+                else:
+                    scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))                
                 
                 # Initialize Agents                
                 self.agent = RADCNN_core.CCNBase(
@@ -437,7 +440,8 @@ class AgentPPO:
                     resolution_accuracy=resolution_accuracy,
                     steps_per_epoch=self.steps_per_epoch,
                     id=self.id,
-                    random_seed=self.seed,                      
+                    random_seed=self.seed,
+                    scaled_offset = scaled_offset                    
                     )
                 
                 # Initialize learning opitmizers                           
@@ -684,7 +688,10 @@ class AgentPPO:
             
             # TODO Uncomment after implementing PFGRU
             #self.agent_optimizer.pfgru_scheduler.step()
-    
+
+            if max(self.agent.maps.location_map) !=0 or max(self.agent.maps.readings_map) !=0 or max(self.agent.maps.visit_counts_map) !=0:
+                raise ValueError("Maps did not reset")
+            
             # Log changes from update
             return UpdateResult(
                 StopIter=update_results['stop_iteration'],  # TODO this is updated in several places

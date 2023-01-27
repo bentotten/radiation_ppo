@@ -137,6 +137,7 @@ class MapsBuffer:
     grid_bounds: tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
     resolution_accuracy: int = field(default=100) # How much to multiply grid bounds and state coordinates by. 100 will return to full accuracy for RADPPO
     obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords
+    offset: float = field(default=0)  # Offset for when boundaries are different than "search area"
     
     # Initialized elsewhere
     x_limit_scaled: int = field(init=False)  # maximum x value in maps
@@ -158,7 +159,10 @@ class MapsBuffer:
 
     def __post_init__(self):      
         # Scaled maps
-        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy)+3, int(self.grid_bounds[1] * self.resolution_accuracy)+3)
+        self.map_dimensions = (
+            int(self.grid_bounds[0] * self.resolution_accuracy) + int(self.offset  * self.resolution_accuracy),
+            int(self.grid_bounds[1] * self.resolution_accuracy) + + int(self.offset  * self.resolution_accuracy)
+        )
         self.x_limit_scaled: int = self.map_dimensions[0]
         self.y_limit_scaled: int = self.map_dimensions[1]    
         self.clear()
@@ -203,7 +207,6 @@ class MapsBuffer:
         self.location_map[x][y] = 1.0 
         
         # Process observation for other agent's locations map
-
         for other_agent_id in observation:
             # Do not add current agent to other_agent map
             if other_agent_id != id:
@@ -519,6 +522,7 @@ class CCNBase:
     grid_bounds: tuple[float]
     resolution_accuracy: float
     steps_per_epoch: int
+    scaled_offset: float = field(default=0)    
     random_seed: int = field(default=None)
     critic: Any = field(default=None)  # Eventually allows for a global critic
     render_counter: int = field(init=False)
@@ -548,7 +552,8 @@ class CCNBase:
                 observation_dimension = self.state_dim,
                 max_size=self.steps_per_epoch,                  
                 grid_bounds=self.grid_bounds, 
-                resolution_accuracy=self.resolution_accuracy
+                resolution_accuracy=self.resolution_accuracy,
+                offset=self.scaled_offset
             )
 
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)

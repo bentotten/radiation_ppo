@@ -39,16 +39,9 @@ import NeuralNetworkCores.RADA2C_core as RADA2C_core
 # Data Management Utility
 from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
 
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-DEBUG = True
-CNN = True  # TODO remove after done
-SCOOPERS_IMPLEMENTATION = False
-# !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 # Scaling
 # TODO get from env instead, remove from global
-DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
 DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
@@ -154,7 +147,8 @@ class train_PPO:
     actor_critic_architecture: str = field(default="cnn")
     start_time: float = field(default_factory= lambda: time.time()),
     minibatch: int = field(default=1)
-    DEBUG: bool = field(default=False)
+    DEBUG: bool = field(default=False),
+    enforce_boundaries: bool = field(default=False)
     
     """
     Proximal Policy Optimization (by clipping),
@@ -324,7 +318,8 @@ class train_PPO:
                 env_height=self.env.search_area[2][1],
                 scaled_grid_bounds=scaled_grid_bounds,
                 seed=self.seed,
-                minibatch=self.minibatch
+                minibatch=self.minibatch,
+                enforce_boundaries=self.enforce_boundaries
             ) for i in range(self.number_of_agents)
         }
         
@@ -411,7 +406,12 @@ class train_PPO:
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
             
             # Start episode!
-            for steps in range(self.steps_per_epoch):
+            for steps_in_epoch in range(self.steps_per_epoch):
+            
+                for ac in self.agents.values():
+                    if max(ac.maps.location_map) !=0 or max(ac.maps.readings_map) !=0 or max(ac.maps.visit_counts_map) !=0:
+                        raise ValueError("Maps did not reset")                
+                
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 if self.actor_critic_architecture == 'cnn':
                     # TODO add back in for PFGRU
@@ -427,11 +427,6 @@ class train_PPO:
                 for id, ac in self.agents.items():
                     agent_thoughts[id] = ac.step(standardized_observations, hiddens)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
-                
-                for id in self.agents:                                
-                    if self.DEBUG:
-                        if int(agent_thoughts[id].action.item()) == self.act_dim-1:
-                            print("Max Action!")
                     
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 
@@ -486,28 +481,26 @@ class train_PPO:
                 # Check if some agents went out of bounds
                 for id in infos:
                     if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
-                        #if DEBUG: 
-                            #print(f"Agent out of bounds at ({observations[id][1]}, {observations[id][2]})")
                         out_of_bounds_count[id] += infos[id]['out_of_bounds_count']
                                     
                 # Stopping conditions for episode
                 timeout = steps_in_episode == self.steps_per_episode
                 terminal = terminal_reached_flag or timeout
-                epoch_ended = steps == self.steps_per_epoch - 1
+                epoch_ended = steps_in_epoch == self.steps_per_epoch - 1
 
                 if terminal or epoch_ended:
                     if epoch_ended and not (terminal):
                         print(
-                            f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps}.",
+                            f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.",
                             flush=True,
                         )
 
                     if timeout or epoch_ended:
-                        # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics
                         if self.actor_critic_architecture == 'cnn':
                             # TODO add back in for PFGRU
                             standardized_observations = observations
                         else:
+                            # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics                            
                             standardized_observations = {id: observations[id] for id in self.agents}
                             for id in self.agents:
                                 standardized_observations[id][0] = np.clip(
@@ -558,8 +551,7 @@ class train_PPO:
                          self.stat_buffers[id].reset()
                          
                     # If not at the end of an epoch, reset hidden layers for incoming new episode    
-                    # TODO why not reset hidden layers at the end of an epoch?                  
-                    if not env.epoch_end:
+                    if timeout and not epoch_ended: # not env.epoch_end:
                         for id, ac in self.agents.items():                        
                             hiddens[id] = ac.reset_neural_nets()
                     # Else log epoch results                    

@@ -264,6 +264,7 @@ if __name__ == "__main__":
             hidden=[[args.hid_gru]],
             net_type=args.net_type,
             batch_s=args.minibatches,
+            enforce_boundaries=args.enforce_grid_boundaries
         ),
         gamma=args.gamma,
         alpha=args.alpha,
@@ -277,6 +278,7 @@ if __name__ == "__main__":
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,
         actor_critic_architecture=args.net_type,
+        enforce_boundaries=args.enforce_grid_boundaries
     )
     
     simulation.train()
