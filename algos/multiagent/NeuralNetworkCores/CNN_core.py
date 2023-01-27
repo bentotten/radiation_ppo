@@ -491,6 +491,7 @@ class Critic(nn.Module):
         #nn.ReLU()
         self.step7 = nn.Linear(in_features=16, out_features=1) # output tensor with shape (1)
         #nn.ReLU()
+        self.tanh = nn.Tanh()
         
         self.critic = nn.Sequential(
                     # Starting shape (batch_size, 4, Height, Width)
@@ -505,7 +506,8 @@ class Critic(nn.Module):
                     nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                     nn.ReLU(),
                     nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
-                    nn.ReLU(),
+                    #nn.ReLU(),
+                    nn.Tanh(),
                 )
 
     def test(self, state_map_stack): 
@@ -528,7 +530,7 @@ class Critic(nn.Module):
         print("shape, ", x.size()) 
         x = self.step7(x) # Output layer
         print("shape, ", x.size()) 
-        x = self.relu(x)
+        x = self.tanh(x)
         
         print(x)
         pass

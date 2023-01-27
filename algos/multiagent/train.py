@@ -404,6 +404,7 @@ class train_PPO:
             for steps in range(self.steps_per_epoch):
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 if self.actor_critic_architecture == 'cnn':
+                    # TODO add back in for PFGRU
                     standardized_observations = observations
                 else:
                     # TODO observation is overwritten by obs_std; was this intentional? If so,why does it exist?                
@@ -494,6 +495,7 @@ class train_PPO:
                     if timeout or epoch_ended:
                         # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics
                         if self.actor_critic_architecture == 'cnn':
+                            # TODO add back in for PFGRU
                             standardized_observations = observations
                         else:
                             standardized_observations = {id: observations[id] for id in self.agents}
