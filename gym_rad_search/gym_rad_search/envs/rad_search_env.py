@@ -296,7 +296,8 @@ class RadSearch(gym.Env):
 
     # Detector
     agents: dict[int, Agent] = field(init=False)
-    
+    step_size = DET_STEP
+
     # Source
     # TODO move into own class to easily handle multi-source
     src_coords: Point = field(init=False)

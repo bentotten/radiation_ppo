@@ -158,7 +158,7 @@ class MapsBuffer:
 
     def __post_init__(self):      
         # Scaled maps
-        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy)+2, int(self.grid_bounds[1] * self.resolution_accuracy)+2)
+        self.map_dimensions = (int(self.grid_bounds[0] * self.resolution_accuracy)+3, int(self.grid_bounds[1] * self.resolution_accuracy)+3)
         self.x_limit_scaled: int = self.map_dimensions[0]
         self.y_limit_scaled: int = self.map_dimensions[1]    
         self.clear()

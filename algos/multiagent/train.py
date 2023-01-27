@@ -293,6 +293,7 @@ class train_PPO:
         self.act_dim: int = rad_search_env.A_SIZE
         self.env_scale: int = self.env.scale
         self.bounds_offset: tuple = self.env.observation_area
+        self.step_size: int = self.env.step_size
         scaled_grid_bounds = (1, 1)  # Scaled to match current return from env.step(). Can be reinflated with resolution_accuracy        
         
         # For logging
@@ -306,6 +307,8 @@ class train_PPO:
                 observation_space=self.obs_dim, 
                 action_space=self.act_dim,
                 bounds_offset=self.bounds_offset,
+                steps_per_episode=self.steps_per_episode,
+                detector_step_size=self.step_size,
                 actor_critic_args=self.ac_kwargs,
                 actor_learning_rate=self.pi_lr,
                 critic_learning_rate=self.critic_learning_rate,
