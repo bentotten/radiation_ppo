@@ -688,9 +688,8 @@ class AgentPPO:
             
             # TODO Uncomment after implementing PFGRU
             #self.agent_optimizer.pfgru_scheduler.step()
-
-            if max(self.agent.maps.location_map) !=0 or max(self.agent.maps.readings_map) !=0 or max(self.agent.maps.visit_counts_map) !=0:
-                raise ValueError("Maps did not reset")
+            if self.agent.maps.location_map.max() !=0.0 or self.agent.maps.readings_map.max() !=0.0 or self.agent.maps.visit_counts_map.max() !=0.0:
+                raise ValueError("Maps did not reset")   
             
             # Log changes from update
             return UpdateResult(

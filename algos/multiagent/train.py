@@ -404,13 +404,13 @@ class train_PPO:
                     #ac.model.eval()  # TODO add PFGRU
                     ac.agent.pi.eval()
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
+                    
+            for ac in self.agents.values():
+                if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
+                    raise ValueError("Maps did not reset")                       
             
             # Start episode!
-            for steps_in_epoch in range(self.steps_per_epoch):
-            
-                for ac in self.agents.values():
-                    if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
-                        raise ValueError("Maps did not reset")                
+            for steps_in_epoch in range(self.steps_per_epoch):             
                 
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 if self.actor_critic_architecture == 'cnn':
