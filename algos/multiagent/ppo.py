@@ -796,7 +796,24 @@ class AgentPPO:
     def update_a2c(
             self, data: dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
         ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
-        ''' Adapted from Spinning up by OpenAI and Pytorch-PPO'''
+        '''   
+            Follows general PPO algorithm:
+            Compute the new policy and log probabilities
+                new_policy, log_probs = actor(states)
+
+            Compute the advantages
+                advantages = rewards + gamma * critic(next_states) - critic(states)
+
+            Compute the PPO loss
+                loss = ppo_loss(old_policy, new_policy, actions, rewards, advantages, epsilon)
+
+            Perform the backpropagation
+                actor_optimizer.zero_grad()
+                loss.backward()
+
+            Update the network's parameters
+                actor_optimizer.step()            
+        '''
         
         def compute_batched_losses_pi(self):
             ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation so must be done manually '''
@@ -913,7 +930,7 @@ class AgentPPO:
             )       
             
             # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
-            self.agent.clear()
+            self.agent.reset()
             
             return (
                 actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0, stopping_step

@@ -610,23 +610,6 @@ class CCNBase:
         #return action.item(), action_logprob.item(), state_value.item()
     
     def update(self):
-        '''   
-            Compute the new policy and log probabilities
-                new_policy, log_probs = actor(states)
-
-            Compute the advantages
-                advantages = rewards + gamma * critic(next_states) - critic(states)
-
-            Compute the PPO loss
-                loss = ppo_loss(old_policy, new_policy, actions, rewards, advantages, epsilon)
-
-            Perform the backpropagation
-                actor_optimizer.zero_grad()
-                loss.backward()
-
-            Update the network's parameters
-                actor_optimizer.step()            
-        '''
         # Rewards have already been normalized and advantages already calculated with finish_path() function
         
         # Get data from buffers for old policy    
@@ -706,57 +689,7 @@ class CCNBase:
 
             return loss_pi, pi_info            
          
-    def update_old(self):
-        # TODO I believe this is wrong; see vanilla_PPO.py TODO comment
-        # Monte Carlo estimate of returns
-        rewards = []
-        discounted_reward = 0
-        for reward, is_terminal in zip(reversed(self.maps.buffer.rewards), reversed(self.maps.buffer.is_terminals)):
-            if is_terminal:
-                discounted_reward = 0
-            discounted_reward = reward + (self.gamma * discounted_reward)
-            rewards.insert(0, discounted_reward)  # Puts back in correct order
-            
-        # Normalizing the rewards
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(device)
-        rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-7)
-
-        # convert list to tensor
-        old_states = torch.squeeze(torch.stack(self.buffer.states, dim=0)).detach().to(device)
-        old_actions = torch.squeeze(torch.stack(self.buffer.actions, dim=0)).detach().to(device)
-        old_logprobs = torch.squeeze(torch.stack(self.buffer.logprobs, dim=0)).detach().to(device)
-
-        # Optimize policy for K epochs
-        for _ in range(self.K_epochs):
-
-            # Evaluating old actions and values
-            logprobs, state_values, dist_entropy = self.policy.evaluate(old_states, old_actions) # Actor-critic
-
-            # match state_values tensor dimensions with rewards tensor
-            state_values = torch.squeeze(state_values)
-            
-            # Finding the ratio (pi_theta / pi_theta__old)
-            ratios = torch.exp(logprobs - old_logprobs.detach())
-
-            # Finding Surrogate Loss
-            advantages = rewards - state_values.detach()   
-            surr1 = ratios * advantages
-            surr2 = torch.clamp(ratios, 1-self.eps_clip, 1+self.eps_clip) * advantages
-
-            # final loss of clipped objective PPO
-            loss = -torch.min(surr1, surr2) + 0.5*self.MseLoss(state_values, rewards) - 0.01*dist_entropy
-            
-            # take gradient step
-            self.optimizer.zero_grad()
-            loss.mean().backward()
-            self.optimizer.step()
-            
-        # Copy new weights into old policy
-        self.policy_old.load_state_dict(self.policy.state_dict()) # Actor-critic
-
-        # clear buffer
-        self.buffer.clear()
-   
+  
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
    
@@ -820,9 +753,11 @@ class CCNBase:
         plt.close(fig)
 
     def reset(self):
+        ''' Reset entire CNN '''
         self.maps.clear()
         
     def clear_maps(self):
+        ''' Just clear maps and buffer for new episode'''
         self.maps.clear_maps()        
 
 
