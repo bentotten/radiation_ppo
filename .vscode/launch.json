@@ -54,7 +54,7 @@
         "--render",
         "True",
         "--save-gif-freq",
-        "10",
+        "1",
         "--obstruct",
         "0",
         "--seed",
@@ -64,9 +64,9 @@
         "--exp-name",
         "TEAM-RAD",
         "--net-type",
-        "cnn"
-        // "--DEBUG",
-        // "True"
+        "cnn",
+        "--DEBUG",
+        "True"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

@@ -323,8 +323,8 @@ class RadSearch(gym.Env):
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # For debugging
     DEBUG: bool = field(default=False)
-    DEBUG_SOURCE_LOCATION: Point = field(default=Point((100.0, 100.0)))
-    DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))  
+    DEBUG_SOURCE_LOCATION: Point = field(default=Point((500.0, 500.0)))
+    DEBUG_DETECTOR_LOCATION: Point = Point((0.0, 0.0))  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self):
@@ -405,14 +405,6 @@ class RadSearch(gym.Env):
             agent.collision = False
                      
             if self.take_action(agent, action, proposed_coordinates):
-                # Check if out of bounds
-                if (
-                    agent.det_coords < self.search_area[0]
-                    or self.search_area[2] < agent.det_coords
-                ):
-                    agent.out_of_bounds = True  
-                    agent.out_of_bounds_count += 1 
-
                 # Returns the length of a Polyline, which is a double
                 # https://github.com/tsaoyu/PyVisiLibity/blob/80ce1356fa31c003e29467e6f08ffdfbd74db80f/visilibity.cpp#L1398
                 agent.sp_dist: float = self.world.shortest_path(  # type: ignore
@@ -451,7 +443,7 @@ class RadSearch(gym.Env):
                     agent.intersect = self.is_intersect(agent)
                     meas: float = self.np_random.poisson(
                         self.bkg_intensity
-                        if agent.intersect
+                        if agent.intersect # checks if the line of sight is blocked by any obstructions in the environment.
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
                 else:
@@ -460,20 +452,20 @@ class RadSearch(gym.Env):
                     agent.intersect = self.is_intersect(agent)
                     meas: float = self.np_random.poisson(
                         self.bkg_intensity
-                        if agent.intersect
+                        if agent.intersect # checks if the line of sight is blocked by any obstructions in the environment.
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
                     
-                    if action == -1:
+                    if action == max(get_args(Action)):
                         raise ValueError("Take Action function returned false, but 'Idle' indicated")
                     else:
-                        reward = -0.5 * agent.sp_dist / self.max_dist
+                        reward = -0.5 * agent.sp_dist / self.max_dist # No extra penalty for initial state
 
-                if action == -1 and not agent.collision:
+                if action == max(get_args(Action)) and not agent.collision:
                     reward = -0.5 * agent.sp_dist / self.max_dist
                     raise ValueError("Agent should not return false if the tentative step is an idle step")
                 else:
-                    reward = -0.5 * agent.sp_dist / self.max_dist
+                    reward = -0.1 * agent.sp_dist / self.max_dist  # Extra penalty for collisions and obstacle denys
 
             # If detector coordinate noise is desired
             noise: Point = Point(
@@ -613,9 +605,6 @@ class RadSearch(gym.Env):
             agent.prev_det_dist: float = self.world.shortest_path(  # type: ignore
                 self.source, agent.detector, self.vis_graph, EPSILON
             ).length()
-            
-            ##### TEST
-            assert agent.det_coords[0] > 0 and agent.det_coords[1] > 0   # TODO DELETE ME
         
         self.intensity = self.np_random.integers(self.radiation_intensity_bounds[0], self.radiation_intensity_bounds[1])  # type: ignore
         self.bkg_intensity = self.np_random.integers(self.background_radiation_bounds[0], self.background_radiation_bounds[1])  # type: ignore
@@ -660,7 +649,7 @@ class RadSearch(gym.Env):
             return False
 
         roll_back_action: bool = False
-        step = get_step(action)
+        step = get_step(action) # TODO redudant calculation
         tentative_coordinates = sum_p(agent.det_coords, step)  # TODO can delete and use value from proposed coords
         
         # If proposed move will collide with another agents proposed move, 
@@ -668,7 +657,11 @@ class RadSearch(gym.Env):
             agent.collision = True
             return False
         
-        # If boundaries are being enforced, do not take action        
+        agent.detector = to_vis_p(tentative_coordinates)
+        
+        # If boundaries are being enforced, do not take action
+        # Do not return here, to make compatible for future when agents have dimensions
+        # TODO make agents have dimensions like obstacles
         if self.enforce_grid_boundaries:
             if (
                 (tentative_coordinates[0] < self.bbox[0][0]
@@ -679,9 +672,15 @@ class RadSearch(gym.Env):
             ):
                 agent.out_of_bounds = True  
                 agent.out_of_bounds_count += 1
-                return False              
-        
-        agent.detector = to_vis_p(tentative_coordinates)
+                roll_back_action = True
+        # If grid boundaries are not enforced, out of bounds is the search area
+        else:
+            if (
+                agent.det_coords < self.search_area[0]
+                or self.search_area[2] < agent.det_coords
+            ):
+                agent.out_of_bounds = True  
+                agent.out_of_bounds_count += 1                               
 
         if self.in_obstruction(agent=agent):
             roll_back_action = True
