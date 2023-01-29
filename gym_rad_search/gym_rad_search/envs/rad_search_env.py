@@ -411,7 +411,7 @@ class RadSearch(gym.Env):
                     self.source, agent.detector, self.vis_graph, EPSILON
                 ).length()
                 agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
-                agent.intersect = self.is_intersect(agent)
+                agent.intersect = self.is_intersect(agent)  # checks if the line of sight is blocked by any obstructions in the environment.
                 meas: float = self.np_random.poisson(
                     self.bkg_intensity
                     if agent.intersect
@@ -436,16 +436,23 @@ class RadSearch(gym.Env):
             else:
                 # If detector starts on obs. edge, it won't have the shortest path distance calculated
                 if self.iter_count > 0:
-                    agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
-                    agent.sp_dist: float = self.world.shortest_path(  # type: ignore
-                        self.source, agent.detector, self.vis_graph, EPSILON
-                    ).length()
-                    agent.intersect = self.is_intersect(agent)
+                    #TODO remove, already calculated, Agent isnt moving
+                    # agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
+                    # agent.sp_dist: float = self.world.shortest_path(  # type: ignore
+                    #     self.source, agent.detector, self.vis_graph, EPSILON
+                    # ).length()
+                    agent.intersect = self.is_intersect(agent)  # checks if the line of sight is blocked by any obstructions in the environment.
                     meas: float = self.np_random.poisson(
                         self.bkg_intensity
                         if agent.intersect # checks if the line of sight is blocked by any obstructions in the environment.
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
+
+                    # Reward logic for no action taken
+                    if action == max(get_args(Action)) and not agent.collision:
+                        raise ValueError("Agent should not return false if the tentative step is an idle step")
+                    else:
+                        reward = -1.0 * agent.sp_dist / self.max_dist  # Extra penalty for collisions and obstacle denys                    
                 else:
                     agent.sp_dist = agent.prev_det_dist  # Set in reset function with current coordinates
                     agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
@@ -459,13 +466,7 @@ class RadSearch(gym.Env):
                     if action == max(get_args(Action)):
                         raise ValueError("Take Action function returned false, but 'Idle' indicated")
                     else:
-                        reward = -0.5 * agent.sp_dist / self.max_dist # No extra penalty for initial state
-
-                if action == max(get_args(Action)) and not agent.collision:
-                    reward = -0.5 * agent.sp_dist / self.max_dist
-                    raise ValueError("Agent should not return false if the tentative step is an idle step")
-                else:
-                    reward = -0.1 * agent.sp_dist / self.max_dist  # Extra penalty for collisions and obstacle denys
+                        reward = -0.5 * agent.sp_dist / self.max_dist # No abnormal penalty for initial state
 
             # If detector coordinate noise is desired
             noise: Point = Point(
