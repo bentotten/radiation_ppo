@@ -405,9 +405,9 @@ class train_PPO:
                     ac.agent.pi.eval()
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
                     
-            for ac in self.agents.values():
-                if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
-                    raise ValueError("Maps did not reset")                       
+                for ac in self.agents.values():
+                    if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
+                        raise ValueError("Maps did not reset")                       
             
             # Start episode!
             for steps_in_epoch in range(self.steps_per_epoch):             
@@ -513,7 +513,7 @@ class train_PPO:
                             # Set flag to sample new environment parameters
                             env.epoch_end = True 
                     else:
-                        value = 0
+                        value = 0  # State value 
                     # Finish the trajectory and compute advantages. See function comments for more information                        
                     for id, ac in self.agents.items():
                         ac.ppo_buffer.finish_path(value)
@@ -537,13 +537,29 @@ class train_PPO:
                                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                                 epoch_count=epoch,
                             )
+                           
                         # Render Agent heatmaps
-                        for id, ac in self.agents.items():
-                            ac.render(
-                                savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                        if self.actor_critic_architecture == 'cnn':
+                            for id, ac in self.agents.items():
+                                ac.render(
+                                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                                    epoch_count=epoch,
+                                    add_value_text=True
+                                )
+                    # Always render last epoch's episode
+                    if self.DEBUG and epoch == self.total_epochs-1:
+                        for ac, id in self.agents.items():
+                            # Render gif
+                            env.render(
+                                path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                                 epoch_count=epoch,
-                                add_value_text=True
                             )
+                            if self.actor_critic_architecture == 'cnn':
+                                ac.render(
+                                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                                    epoch_count=epoch,
+                                    add_value_text=True
+                                )                            
 
                     # Reset the environment and counters
                     episode_return_buffer = []
@@ -572,7 +588,6 @@ class train_PPO:
                     episode_return = {id: 0 for id in self.agents}
                     episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
                     steps_in_episode = 0
-                    source_coordinates = np.array(env.src_coords, dtype="float32")
 
                     # Update stat buffers for all agent observations for later observation normalization
                     for id in self.agents:
@@ -582,7 +597,6 @@ class train_PPO:
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
                 for id in self.agents:
                     self.loggers[id].save_state({}, None)
-                pass
 
             # Reduce localization module training iterations after 100 epochs to speed up training
             if epoch > 99:
@@ -630,4 +644,3 @@ class train_PPO:
                 self.loggers[id].log_tabular("StopIter", average_only=True)
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
-

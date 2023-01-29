@@ -241,6 +241,7 @@ class Agent():
     reward_sto: list[float] = field(init=False) # Reward history for epsisode
     cum_reward_sto: list = field(init=False)  # Cumulative rewards tracker for episode
     action_sto: list = field(init=False)  # Stores actions for render
+    terminal_sto: list = field(init=False)
 
     def __post_init__(self):
         self.marker_color: Color = create_color(self.id)
@@ -255,6 +256,7 @@ class Agent():
         self.reward_sto: list[float] = [] # Reward history for epsisode
         self.cum_reward_sto: list = []  # Cumulative rewards tracker for episode
         self.action_sto: list = []
+        self.terminal_sto: list = []
                 
 
 @dataclass
@@ -324,7 +326,7 @@ class RadSearch(gym.Env):
     # For debugging
     DEBUG: bool = field(default=False)
     DEBUG_SOURCE_LOCATION: Point = field(default=Point((500.0, 500.0)))
-    DEBUG_DETECTOR_LOCATION: Point = Point((0.0, 0.0))  
+    DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     def __post_init__(self):
@@ -424,16 +426,20 @@ class RadSearch(gym.Env):
                 if agent.sp_dist < 110:
                     reward = 0.1
                     self.done = True
+                    agent.terminal_sto.append(True)
                 elif agent.sp_dist < agent.prev_det_dist:
                     reward = 0.1
                     agent.prev_det_dist = agent.sp_dist
+                    agent.terminal_sto.append(False)                    
                 else:
+                    agent.terminal_sto.append(False)                    
                     if action == max(get_args(Action)):
-                        reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
+                        reward = -0.5 * agent.sp_dist / self.max_dist  # If idle, extra penalty
                     else:
                         reward = -0.5 * agent.sp_dist / self.max_dist
             # If take_action is false, usually due to agent being in obstacle or empty action on env reset.
             else:
+                agent.terminal_sto.append(False)                                    
                 # If detector starts on obs. edge, it won't have the shortest path distance calculated
                 if self.iter_count > 0:
                     #TODO remove, already calculated, Agent isnt moving
@@ -452,7 +458,7 @@ class RadSearch(gym.Env):
                     if action == max(get_args(Action)) and not agent.collision:
                         raise ValueError("Agent should not return false if the tentative step is an idle step")
                     else:
-                        reward = -1.0 * agent.sp_dist / self.max_dist  # Extra penalty for collisions and obstacle denys                    
+                        reward = -2.0 * agent.sp_dist / self.max_dist  # Extra penalty for collisions, boundary hit, and obstacle denys                    
                 else:
                     agent.sp_dist = agent.prev_det_dist  # Set in reset function with current coordinates
                     agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
@@ -518,14 +524,14 @@ class RadSearch(gym.Env):
         aggregate_info_result: dict = {_: None for _ in self.agents}
         
         if action_list:
-            if self.DEBUG:  
-                test_step = get_step(action_list[0])
-                print(f"Test step {ACTION_MAPPING[action_list[0]]}: {test_step}")
-                print("Current coordinates: ", self.agents[0].det_coords)                
-                test = sum_p(self.agents[0].det_coords, test_step)
-                print("Tentative coordinates: ", test)
-                test_scaled = scale_p(test, 1 / self.search_area[2][1])
-                print("Tentative scaled return coords: ", test_scaled)
+            # if self.DEBUG:  
+            #     test_step = get_step(action_list[0])
+                # print(f"Test step {ACTION_MAPPING[action_list[0]]}: {test_step}")
+                # print("Current coordinates: ", self.agents[0].det_coords)                
+                # test = sum_p(self.agents[0].det_coords, test_step)
+                # print("Tentative coordinates: ", test)
+                # test_scaled = scale_p(test, 1 / self.search_area[2][1])
+                # print("Tentative scaled return coords: ", test_scaled)
 
             proposed_coordinates = [sum_p(self.agents[agent_id].det_coords, get_step(action)) for agent_id, action in action_list.items()]
             for agent_id, a in action_list.items():
@@ -552,17 +558,17 @@ class RadSearch(gym.Env):
             self.iter_count += 1
             
         # To meet Gym compliance, must be in form observation, reward, done, info            
-        if self.DEBUG:
-            print("-----")
-            print("Step New coordinates: ", self.agents[0].det_coords)            
-            print("Step Observation: ", aggregate_observation_result[0][0])
-            print(f"Step new scaled coords: ({aggregate_observation_result[0][1]}, {aggregate_observation_result[0][2]})")            
-            print("Step Reward: ", aggregate_reward_result[0])
-            print("Step Info: ", aggregate_info_result[0])
-            print("Step Terminal", aggregate_success_result[0])
-            if aggregate_info_result[0]['out_of_bounds'] == True:
-                print('out of bounds')
-            print()
+        # if self.DEBUG:
+        #     print("-----")
+        #     print("Step New coordinates: ", self.agents[0].det_coords)            
+        #     print("Step Observation: ", aggregate_observation_result[0][0])
+        #     print(f"Step new scaled coords: ({aggregate_observation_result[0][1]}, {aggregate_observation_result[0][2]})")            
+        #     print("Step Reward: ", aggregate_reward_result[0])
+        #     print("Step Info: ", aggregate_info_result[0])
+        #     print("Step Terminal", aggregate_success_result[0])
+        #     if aggregate_info_result[0]['out_of_bounds'] == True:
+        #         print('out of bounds')
+        #     print()
         
         return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
@@ -1264,11 +1270,16 @@ class RadSearch(gym.Env):
                 #         marker_size * 0.8,
                 #         c="magenta",
                 #         label="Loc. Pred.",
-                #     )
-
+                #     )                        
+                        
                 # Add movement to bottom of figure
                 if self.DEBUG:
-                    fig.supxlabel(f"Step {current_index}: {ACTION_MAPPING[agent.action_sto[current_index]]}")
+                    fig.supxlabel(f"Step {current_index}: {ACTION_MAPPING[agent.action_sto[current_index]]}") 
+                # If last step, indicate if terminal or not
+                if current_index == len(agent.det_sto)-2:
+                    for agent_id, agent in self.agents.items():
+                        if agent.terminal_sto[current_index]:
+                            fig.supxlabel(f"Success!")                         
 
         # Initialize render environment 
         if data or measurements:

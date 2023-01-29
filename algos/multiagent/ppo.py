@@ -459,6 +459,7 @@ class AgentPPO:
                     )                         
                 
             case 'rnn':
+                del self.actor_critic_args['enforce_boundaries']
                 # Initialize Agents                
                 self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)
                 
