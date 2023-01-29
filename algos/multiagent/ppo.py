@@ -562,7 +562,7 @@ class AgentPPO:
         #self.agent.pi.test(map_stack)
         #pi, logp = self.agent.pi.evaluate(map_stack, act)
         action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
-        action_logprobs = action_logprobs.cpu()
+        action_logprobs = action_logprobs.cpu() # TODO do we need this on the CPU here?
         ratio = torch.exp(action_logprobs - logp_old[index])
         clip_adv = torch.clamp(ratio, 1-self.clip_ratio, 1+self.clip_ratio) * adv[index]
         loss_pi = -(torch.min(ratio * adv[index], clip_adv))
@@ -833,7 +833,7 @@ class AgentPPO:
             ep_length = data["ep_len"].item()
             indexes = np.arange(0, ep_length, dtype=np.int32)
             number_of_samples = int((ep_length / minibatch))
-            sample = np.random.choice(indexes, size=number_of_samples)            
+            sample = np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform        
             
             # TODO make more concise 
             # Due to linear layer in CNN, this must be run fully online (read: every map)

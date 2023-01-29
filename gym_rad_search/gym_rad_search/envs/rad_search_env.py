@@ -488,15 +488,18 @@ class RadSearch(gym.Env):
             sensor_meas: npt.NDArray[np.float64] = self.dist_sensors(agent=agent) if self.num_obs > 0 else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
             # State is an 11-tuple ndarray
             # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
-            state: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
+            state_observation: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
             
             agent.det_sto.append(agent.det_coords)
             agent.meas_sto.append(meas)
             agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
             agent.action_sto.append(action)
-            info = {'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'blocked': agent.obstacle_blocking, 'scale': 1 / self.search_area[2][1]}
-            return state, round(reward, 2), self.done, info
+            info = {
+                'out_of_bounds': agent.out_of_bounds, 'out_of_bounds_count': agent.out_of_bounds_count, 'blocked': agent.obstacle_blocking, 
+                'scale': 1 / self.search_area[2][1]
+                }
+            return state_observation, round(reward, 2), self.done, info
             #~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~#
 
         assert action is None or type(action) == int or  type(action) == dict, 'Action not integer or a dictionary of actions.'
@@ -517,7 +520,7 @@ class RadSearch(gym.Env):
         if action_list:
             if self.DEBUG:  
                 test_step = get_step(action_list[0])
-                print("Test step: ", test_step)
+                print(f"Test step {ACTION_MAPPING[action_list[0]]}: {test_step}")
                 print("Current coordinates: ", self.agents[0].det_coords)                
                 test = sum_p(self.agents[0].det_coords, test_step)
                 print("Tentative coordinates: ", test)
@@ -550,6 +553,7 @@ class RadSearch(gym.Env):
             
         # To meet Gym compliance, must be in form observation, reward, done, info            
         if self.DEBUG:
+            print("-----")
             print("Step New coordinates: ", self.agents[0].det_coords)            
             print("Step Observation: ", aggregate_observation_result[0][0])
             print(f"Step new scaled coords: ({aggregate_observation_result[0][1]}, {aggregate_observation_result[0][2]})")            
