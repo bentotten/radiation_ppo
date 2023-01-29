@@ -865,7 +865,7 @@ class AgentPPO:
             ep_length = data["ep_len"].item()
             indexes = np.arange(0, ep_length, dtype=np.int32)
             number_of_samples = int((ep_length / minibatch))
-            sample = np.random.choice(indexes, size=number_of_samples)            
+            sample = np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform            
             
             # TODO make more concise 
             # Due to linear layer in CNN, this must be run fully online (read: every map)

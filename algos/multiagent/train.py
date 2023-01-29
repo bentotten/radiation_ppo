@@ -411,7 +411,6 @@ class train_PPO:
             
             # Start episode!
             for steps_in_epoch in range(self.steps_per_epoch):             
-                
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 if self.actor_critic_architecture == 'cnn':
                     # TODO add back in for PFGRU
@@ -481,7 +480,7 @@ class train_PPO:
                 # Check if some agents went out of bounds
                 for id in infos:
                     if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
-                        out_of_bounds_count[id] += infos[id]['out_of_bounds_count']
+                        out_of_bounds_count[id] += 1
                                     
                 # Stopping conditions for episode
                 timeout = steps_in_episode == self.steps_per_episode
@@ -558,13 +557,16 @@ class train_PPO:
                     # Else log epoch results                    
                     else:
                         for id in self.agents:
-                            if 'out_of_bounds_count' in infos[id]:
-                                out_of_bounds_count[id] += infos[id]['out_of_bounds_count']  # TODO this was already done above, is this being done twice?
+                            # TODO this was already done above, is this being done twice?                            
+                            # if 'out_of_bounds_count' in infos[id]:
+                            #     out_of_bounds_count[id] += infos[id]['out_of_bounds_count'] 
                             self.loggers[id].store(DoneCount=terminal_counter[id], OutOfBound=out_of_bounds_count[id])
                             terminal_counter[id] = 0
                             out_of_bounds_count[id] = 0
                     
                     # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
+                    if self.DEBUG:
+                        print("Resetting environment")
                     observations, _,  _, _ = env.reset()                                         
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}
