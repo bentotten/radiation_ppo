@@ -369,7 +369,7 @@ class train_PPO:
         env = self.env
         
         # Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]        
-        observations, _,  _, _ = env.reset()
+        observations, _,  _, infos = env.reset()
         for id in self.agents: 
             self.agents[id].reset_neural_nets()  # NOTE: buffers are cleared during update
         source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
@@ -398,7 +398,9 @@ class train_PPO:
             hiddens = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 for ac in self.agents.values():
-                    ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?                
+                    ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
+            elif self.actor_critic_architecture == 'uniform':
+                pass
             else:
                 for ac in self.agents.values():
                     #ac.model.eval()  # TODO add PFGRU
@@ -424,7 +426,7 @@ class train_PPO:
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts = {id: None for id in self.agents}
                 for id, ac in self.agents.items():
-                    agent_thoughts[id] = ac.step(standardized_observations, hiddens)
+                    agent_thoughts[id] = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                     
                 # Create action list to send to environment
@@ -506,7 +508,7 @@ class train_PPO:
                                     (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
                                 )     
                         for id, ac in self.agents.items():
-                            results = ac.step(standardized_observations, hiddens=hiddens, save_map=False)  # Ensure next map is not buffered when going to compare to logger for update
+                            results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update
                             value = results.state_value
  
                         if epoch_ended:

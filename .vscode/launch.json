@@ -44,17 +44,17 @@
       "justMyCode": false,
       "args": [
         "--agent-count",
-        "1",
-        "--steps-per-epoch",
-        "10",
-        "--steps-per-episode",
-        "10",
+        "3",
+        // "--steps-per-epoch",
+        // "10",
+        // "--steps-per-episode",
+        // "10",
         "--epochs",
         "20",
         "--render",
         "True",
         "--save-gif-freq",
-        "1",
+        "5",
         "--obstruct",
         "0",
         "--seed",
@@ -64,9 +64,9 @@
         "--exp-name",
         "TEAM-RAD",
         "--net-type",
-        "cnn",
-        "--DEBUG",
-        "True"
+        "uniform",
+        // "--DEBUG",
+        // "True"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

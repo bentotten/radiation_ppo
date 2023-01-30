@@ -169,7 +169,7 @@ def create_parser() -> argparse.ArgumentParser:
         "--net-type",
         type=str,
         default="rnn",
-        help="Choose between convolutional neural network, recurrent neural network, or MLP Actor-Critic (A2C), or feed forward option: cnn, rnn, mlp, ff",
+        help="Choose between convolutional neural network, recurrent neural network, MLP Actor-Critic (A2C), feed forward, or uniform option: cnn, rnn, mlp, ff, uniform",
     )    
     parser.add_argument(
         "--hid-pol", type=int, default=32, help="Actor linear layer size (Policy Hidden Layer Size)"

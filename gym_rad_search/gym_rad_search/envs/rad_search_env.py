@@ -47,7 +47,7 @@ Metadata: TypeAlias = TypedDict(
 # 5: down and right
 # 6: down
 # 7: down and left
-Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8] # TODO update to have max action be the idle step
+Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8] 
 Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
 A_SIZE = len(get_args(Action))
@@ -469,7 +469,7 @@ class RadSearch(gym.Env):
                         else self.intensity / agent.euc_dist + self.bkg_intensity
                     )
                     
-                    if action == max(get_args(Action)):
+                    if action == max(get_args(Action)) and not agent.collision:
                         raise ValueError("Take Action function returned false, but 'Idle' indicated")
                     else:
                         reward = -0.5 * agent.sp_dist / self.max_dist # No abnormal penalty for initial state

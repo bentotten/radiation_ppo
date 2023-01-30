@@ -15,6 +15,7 @@ from epoch_logger import EpochLogger
 import NeuralNetworkCores.FF_core as RADFF_core
 import NeuralNetworkCores.CNN_core as RADCNN_core
 import NeuralNetworkCores.RADA2C_core as RADA2C_core
+import NeuralNetworkCores.uniform_search as UNIFORM
 
 
 Shape: TypeAlias = int | tuple[int, ...]
@@ -419,6 +420,27 @@ class AgentPPO:
                 
         # Initialize agents
         match self.actor_critic_architecture:
+            case 'uniform':
+                # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
+                #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
+                #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
+                multiplier = 0.01
+                resolution_accuracy = multiplier * 1/self.environment_scale
+                if self.enforce_boundaries:
+                    scaled_offset = self.environment_scale * max(self.bounds_offset)                    
+                else:
+                    scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))                
+                                
+                self.agent = UNIFORM.Core(
+                    state_dim=self.observation_space, 
+                    action_dim=self.action_space,
+                    grid_bounds=self.scaled_grid_bounds,
+                    resolution_accuracy=resolution_accuracy,
+                    steps_per_epoch=self.steps_per_epoch,
+                    id=self.id,
+                    random_seed=self.seed,
+                    scaled_offset = scaled_offset                    
+                    )                      
             case 'ff':
                 self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
             case 'cnn':                
@@ -507,9 +529,11 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, standardized_observations: npt.NDArray, hiddens = None, save_map = True):
+    def step(self, standardized_observations: npt.NDArray, hiddens: dict = None, save_map: bool = True, message: dict =None):
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
+        elif self.actor_critic_architecture == 'uniform':
+            results = self.agent.select_action(observation=standardized_observations, message=message, id=self.id)         
         else:
             results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
 
