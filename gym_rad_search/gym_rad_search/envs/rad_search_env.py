@@ -1273,13 +1273,16 @@ class RadSearch(gym.Env):
                 #     )                        
                         
                 # Add movement to bottom of figure
+                action_label = 'fStep {current_index}:'
+                for id, agent in self.agents.items():
+                    action_label += f' A{id}: {ACTION_MAPPING[agent.action_sto[current_index]]}\n'
                 if self.DEBUG:
-                    fig.supxlabel(f"Step {current_index}: {ACTION_MAPPING[agent.action_sto[current_index]]}") 
+                    fig.supxlabel(action_label) 
                 # If last step, indicate if terminal or not
                 if current_index == len(agent.det_sto)-2:
                     for agent_id, agent in self.agents.items():
                         if agent.terminal_sto[current_index]:
-                            fig.supxlabel(f"Success!")                         
+                            fig.supxlabel(f"Success! Agent {agent_id} found the source!")                         
 
         # Initialize render environment 
         if data or measurements:
