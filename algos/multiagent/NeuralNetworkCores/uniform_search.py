@@ -13,7 +13,15 @@ from torchinfo import summary
 
 Action: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7, 8]  # 8 is idle step
 ACTION_MAPPING: dict = {"left": 0,"up left": 1, "up": 2, "up right": 3, "right": 4,"down right": 5,"down": 6, "down left": 7, "idle": 8}
-STATES: dict = {"search": 0, "wall left": 1, "wall right": 2, "wall up": 3, "wall down": 4}
+STATES: dict = {
+    "search": 0, 
+    "wall left": 1, 
+    "wall right": 2, 
+    "corner upper left": 3, 
+    "corner upper right": 4, 
+    "corner lower left": 5, 
+    "corner lower right": 6
+    }
 
 @dataclass()
 class ActionChoice():
@@ -81,13 +89,15 @@ class Core:
     def select_action(self, observation: dict[int, StepResult], message: dict[str, Any], id: int, save_map=True) -> ActionChoice:         
         # Inflate current coordinates
         scaled_coordinates = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))
-        action = 8
+        action = self.search_direction
         
         # Handle wall
         if message[id]['out_of_bounds']:
-            self.handle_boundary(scaled_coordinates)
+            action = self.handle_boundary(scaled_coordinates)
         
-        # Finish U-Turns and reset state marker
+        # TODO Finish U-Turns and reset state marker
+        
+        return action
             
             
     def handle_boundary(self, scaled_coordinates: tuple):
@@ -96,38 +106,41 @@ class Core:
         def handle_wall(self, wall: str):
             match wall:
                 case 'left':
-                    
+                    self.state = STATES['wall left']
+                    return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']
+
                 case 'right':
+                    self.state = STATES['wall right']
+                    return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']
                     
                 case 'up':
+                    self.state = STATES['wall up']
+                    # TODO handle corner
                     
                 case 'down':
+                    self.state = STATES['wall down']
+                    # TODO handle corner
                     
                 case _:
                     raise ValueError(f"Invalid wall direction: {wall}")
-            pass
         
         def handle_corner(Self):
-            pass
-        
-        def handle_inversion(self):
             pass
         
         if self.state == STATES['search']:
             ''' Find which boundary was violated '''
             if scaled_coordinates[0] == 0:
-                handle_wall(self, 'left')
+                action: int = handle_wall(self, 'left')
             elif scaled_coordinates[0] == self.x_limit_scaled:
-                handle_wall(self, 'right')
+                action: int = handle_wall(self, 'right')
             elif scaled_coordinates[1] == 0:
-                handle_wall(self, 'down')
+                action: int = handle_wall(self, 'down')
             elif scaled_coordinates[1] == self.y_limit_scaled:
-                handle_wall(self, 'up')
-           
-        
-
-
-        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
+                action: int = handle_wall(self, 'up')
+        else:
+            # TODO Handle corner
+            pass   
+        return action
     
     def update(self):
         print("Filler for update()")     
