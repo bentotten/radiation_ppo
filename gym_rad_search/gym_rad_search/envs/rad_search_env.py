@@ -993,7 +993,7 @@ class RadSearch(gym.Env):
             
             # Check up
             if self.bbox[2][1] <= agent.det_coords[1] + DIST_TH:
-                distance = abs(self.bbox[0][0] - agent.det_coords[0])
+                distance = abs(self.bbox[2][1] - agent.det_coords[0])
                 line_distance = (DIST_TH - distance) / DIST_TH
                 assert dists[2] == 0.0
                 dists[2] = line_distance                   
