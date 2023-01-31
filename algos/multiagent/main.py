@@ -36,7 +36,7 @@ class CliArgs:
     alpha: float
     render: bool
     agent_count: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    enforce_grid_boundaries: bool
+    enforce_boundaries: bool
     minibatches: int
     env_name: str
     save_freq: int
@@ -66,7 +66,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         alpha=args.alpha,
         render=args.render,
         agent_count=args.agent_count,
-        enforce_grid_boundaries=args.enforce_grid_boundaries,
+        enforce_boundaries=args.enforce_boundaries,
         minibatches=args.minibatches,
         env_name=args.env_name,
         save_freq=args.save_freq,
@@ -147,7 +147,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
     )  
     parser.add_argument(
-        "--enforce_grid_boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
+        "--enforce-boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
     )   
               
     # Hyperparameters and PPO parameters
@@ -236,7 +236,7 @@ if __name__ == "__main__":
         'np_random': rng,
         'number_agents': args.agent_count,
         'save_gif': args.render,
-        'enforce_grid_boundaries': args.enforce_grid_boundaries,
+        'enforce_grid_boundaries': args.enforce_boundaries,
         'DEBUG': args.DEBUG
     }
 
@@ -264,7 +264,7 @@ if __name__ == "__main__":
             hidden=[[args.hid_gru]],
             net_type=args.net_type,
             batch_s=args.minibatches,
-            enforce_boundaries=args.enforce_grid_boundaries
+            enforce_boundaries=args.enforce_boundaries
         ),
         gamma=args.gamma,
         alpha=args.alpha,
@@ -278,7 +278,7 @@ if __name__ == "__main__":
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,
         actor_critic_architecture=args.net_type,
-        enforce_boundaries=args.enforce_grid_boundaries
+        enforce_boundaries=args.enforce_boundaries
     )
     
     simulation.train()

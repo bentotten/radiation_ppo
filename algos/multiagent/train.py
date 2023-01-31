@@ -508,7 +508,10 @@ class train_PPO:
                                     (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
                                 )     
                         for id, ac in self.agents.items():
-                            results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update
+                            if self.actor_critic_architecture == 'uniform':
+                                results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update
+                            else:
+                                results = ac.step(standardized_observations, hiddens=hiddens, save_map=False)  # Ensure next map is not buffered when going to compare to logger for update
                             value = results.state_value
  
                         if epoch_ended:
@@ -533,12 +536,11 @@ class train_PPO:
                     save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
                     time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
                     if (asked_to_save and save_first_epoch and time_to_save):
-                        if not self.DEBUG:
-                            # Render gif
-                            env.render(
-                                path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-                                epoch_count=epoch,
-                            )
+                        # Render gif
+                        env.render(
+                            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
+                            epoch_count=epoch,
+                        )
                            
                         # Render Agent heatmaps
                         if self.actor_critic_architecture == 'cnn':

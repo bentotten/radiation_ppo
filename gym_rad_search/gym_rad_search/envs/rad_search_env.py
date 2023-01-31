@@ -490,7 +490,7 @@ class RadSearch(gym.Env):
             # TODO: State should really be better organized. If there are distinct components to it, why not make it
             # a named tuple?
 
-            # Sensor measurement for obstacles directly around agent
+            # Sensor measurement for obstacles and boundaries directly around agent
             sensor_meas: npt.NDArray[np.float64] = self.dist_sensors(agent=agent) if self.num_obs > 0 else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
             # State is an 11-tuple ndarray
             # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
@@ -684,6 +684,7 @@ class RadSearch(gym.Env):
                 agent.out_of_bounds = True  
                 agent.out_of_bounds_count += 1
                 roll_back_action = True
+                
         # If grid boundaries are not enforced, out of bounds is the search area
         else:
             if (
@@ -917,12 +918,7 @@ class RadSearch(gym.Env):
                 ]
             )
         else:
-            return False
-
-    def collision_check(self, agent: Agent):
-        """
-        Method that checks if the new detector position will conflict with another detectors new position
-        """        
+            return False    
 
     def dist_sensors(self, agent: Agent) -> list[float]:
         """
@@ -930,6 +926,8 @@ class RadSearch(gym.Env):
         This detects obstructions within 1.1m of itself. 0 means no obstructions were detected.
         Currently supports 8 directions
         """
+
+        # Check for obstacles
         detector_p: Point = from_vis_p(agent.detector)
         
         segs: list[vis.Line_Segment] = [
@@ -968,7 +966,37 @@ class RadSearch(gym.Env):
                 argmax = max(zip(obs_idx_ls, self.poly))[1]  # Gets the line coordinates for the obstacle that is intersecting TODO rename!
                 dists = self.correct_coords(poly=argmax, agent=agent)
         
-        assert len(dists) == DETECTABLE_DIRECTIONS  # Sanity check - if this is wrong it will mess up the step return shape of "state" and make training fail
+        assert len(dists) == DETECTABLE_DIRECTIONS  # Sanity check - if this is wrong it will mess up the step return shape of "state" and make training fail much later down the line
+        
+        # Check for boundaries
+        if self.enforce_grid_boundaries:
+            # Check left
+            if (agent.det_coords[0] - DIST_TH < self.bbox[0][0]):
+                distance = abs(agent.det_coords[0] - self.bbox[0][0])
+                line_distance = (DIST_TH - distance) / DIST_TH
+                assert dists[0] == 0.0
+                dists[0] = line_distance
+            
+            # Check down
+            if agent.det_coords[1] - DIST_TH < self.bbox[0][1]:
+                distance = abs(agent.det_coords[1] - self.bbox[0][1])
+                line_distance = (DIST_TH - distance) / DIST_TH
+                assert dists[6] == 0.0
+                dists[6] = line_distance                
+            
+            # Check right
+            if self.bbox[2][0] <= agent.det_coords[0] + DIST_TH:
+                distance = abs(self.bbox[2][0] - agent.det_coords[0])
+                line_distance = (DIST_TH - distance) / DIST_TH
+                assert dists[4] == 0.0
+                dists[4] = line_distance                   
+            
+            # Check up
+            if self.bbox[2][1] <= agent.det_coords[1] + DIST_TH:
+                distance = abs(self.bbox[0][0] - agent.det_coords[0])
+                line_distance = (DIST_TH - distance) / DIST_TH
+                assert dists[2] == 0.0
+                dists[2] = line_distance                   
 
         return dists
 
@@ -990,7 +1018,7 @@ class RadSearch(gym.Env):
                 # Gets slight offset to remove effects of being "on" an obstruction
                 step = scale_p(
                     # TODO update once no longer using -1 as idle            
-                    Point((get_x_step_coeff(action=action, idle_action=-1), get_y_step_coeff(action=action, idle_action=-1))),
+                    Point((get_x_step_coeff(action=action), get_y_step_coeff(action=action))),
                     dist * length,
                 )
                 qs[action] = sum_p(qs[action], step)
@@ -1273,11 +1301,10 @@ class RadSearch(gym.Env):
                 #     )                        
                         
                 # Add movement to bottom of figure
-                action_label = 'fStep {current_index}:'
+                action_label = f'Step {current_index}:\n'
                 for id, agent in self.agents.items():
-                    action_label += f' A{id}: {ACTION_MAPPING[agent.action_sto[current_index]]}\n'
-                if self.DEBUG:
-                    fig.supxlabel(action_label) 
+                    action_label += f'A{id}: {ACTION_MAPPING[agent.action_sto[current_index]]} - {agent.det_sto[current_index]} \n'
+                fig.supxlabel(action_label) 
                 # If last step, indicate if terminal or not
                 if current_index == len(agent.det_sto)-2:
                     for agent_id, agent in self.agents.items():
