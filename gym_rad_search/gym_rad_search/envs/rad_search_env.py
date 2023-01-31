@@ -491,7 +491,7 @@ class RadSearch(gym.Env):
             # a named tuple?
 
             # Sensor measurement for obstacles and boundaries directly around agent
-            sensor_meas: npt.NDArray[np.float64] = self.dist_sensors(agent=agent) if self.num_obs > 0 else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
+            sensor_meas: npt.NDArray[np.float64] = self.obstruction_sensors(agent=agent) if self.num_obs > 0 or self.enforce_grid_boundaries else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
             # State is an 11-tuple ndarray
             # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
             state_observation: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
@@ -920,7 +920,7 @@ class RadSearch(gym.Env):
         else:
             return False    
 
-    def dist_sensors(self, agent: Agent) -> list[float]:
+    def obstruction_sensors(self, agent: Agent) -> list[float]:
         """
         Method that generates detector-obstruction range measurements with values between 0-1. 
         This detects obstructions within 1.1m of itself. 0 means no obstructions were detected.
@@ -993,7 +993,7 @@ class RadSearch(gym.Env):
             
             # Check up
             if self.bbox[2][1] <= agent.det_coords[1] + DIST_TH:
-                distance = abs(self.bbox[2][1] - agent.det_coords[0])
+                distance = abs(self.bbox[2][1] - agent.det_coords[1])
                 line_distance = (DIST_TH - distance) / DIST_TH
                 assert dists[2] == 0.0
                 dists[2] = line_distance                   
@@ -1304,7 +1304,7 @@ class RadSearch(gym.Env):
                 action_label = f'Step {current_index}:\n'
                 for id, agent in self.agents.items():
                     action_label += f'A{id}: {ACTION_MAPPING[agent.action_sto[current_index]]} - {agent.det_sto[current_index]} \n'
-                fig.supxlabel(action_label) 
+                fig.supxlabel(action_label, fontsize=8) 
                 # If last step, indicate if terminal or not
                 if current_index == len(agent.det_sto)-2:
                     for agent_id, agent in self.agents.items():
