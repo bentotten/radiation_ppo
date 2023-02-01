@@ -64,7 +64,7 @@
         "--exp-name",
         "TEAM-RAD",
         "--net-type",
-        "rnn",
+        "cnn",
         "--DEBUG",
         "True"
       ],

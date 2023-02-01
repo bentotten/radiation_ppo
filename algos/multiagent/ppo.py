@@ -529,17 +529,20 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, standardized_observations: npt.NDArray, hiddens: dict = None, save_map: bool = True, message: dict =None):
+    def step(self, standardized_observations: npt.NDArray, hiddens: dict = None, save_map: bool = True, message: dict =None) -> RADCNN_core.ActionChoice:
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
         elif self.actor_critic_architecture == 'uniform':
             results = self.agent.select_action(observation=standardized_observations, message=message, id=self.id)         
+        elif self.actor_critic_architecture == 'cnn':
+            results: RADCNN_core.ActionChoice = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
+        elif self.actor_critic_architecture == 'ff':
+            results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)
         else:
-            results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
-
+            raise ValueError("Unknown architecture")
         return results         
     
-    def reset_neural_nets(self, batch_size: int = 1):
+    def reset_neural_nets(self, batch_size: int = 1) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         ''' Reset the neural networks at the end of an episode'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             hiddens = self.agent.reset_hidden()

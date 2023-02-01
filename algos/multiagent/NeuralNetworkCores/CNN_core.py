@@ -184,15 +184,18 @@ class MapsBuffer:
     def observation_to_map(self, observation: dict[int, StepResult], id: int
                      ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
         '''
-        observation: observations from environment for all agents
-        id: ID of agent to reference in observation object 
-        Returns a tuple of 2d map arrays
+        Convert an 11-element observation dictionary from all agents into maps.
+        
+        observation (dict): observations from environment for all agents
+            id (int): ID of agent to reference in observation object 
+            
+            Returns a tuple of 2d map arrays
         '''
         
         # TODO Remove redundant calculations
         
         # Process observation for current agent's locations map
-        scaled_coordinates = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
+        scaled_coordinates: tuple(int, int) = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
         # Capture current and reset previous location
         if self.buffer.coordinate_buffer:
             last_state = self.buffer.coordinate_buffer[-1][id]
@@ -202,9 +205,9 @@ class MapsBuffer:
             self.location_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
             assert self.location_map[x_old][y_old] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."
         # Set new location
-        x = int(scaled_coordinates[0])
-        y = int(scaled_coordinates[1])
-        self.location_map[x][y] = 1.0 
+        x: int = int(scaled_coordinates[0])
+        y: int = int(scaled_coordinates[1])
+        self.location_map[x][y]: int = 1
         
         # Process observation for other agent's locations map
         for other_agent_id in observation:
@@ -221,19 +224,20 @@ class MapsBuffer:
                     assert self.others_locations_map[x_old][y_old] > -1, "Location map grid coordinate reset where agent was not present"
         
                 # Set new location
-                x = int(others_scaled_coordinates[0])
-                y = int(others_scaled_coordinates[1])
-                self.others_locations_map[x][y] += 1.0  # Initial agents begin at same location        
+                x: int = int(others_scaled_coordinates[0])
+                y: int = int(others_scaled_coordinates[1])
+                self.others_locations_map[x][y] += 1  # Initial agents begin at same location        
                  
         # Process observation for readings_map
         for agent_id in observation:
-            scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
-            x = int(scaled_coordinates[0])
-            y = int(scaled_coordinates[1])
-            unscaled_coordinates = (observation[agent_id][1], observation[agent_id][2])
-                        
+            scaled_coordinates: tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
+            x: int = int(scaled_coordinates[0])
+            y: int = int(scaled_coordinates[1])
+            
+            # Average existing readings
+            unscaled_coordinates: tuple(float, float) = (observation[agent_id][1], observation[agent_id][2])
             assert len(self.buffer.readings[unscaled_coordinates]) > 0
-            # TODO onsider using a particle filter for resampling            
+            # TODO consider using a particle filter for resampling            
             estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
             if estimated_reading > 0:
                 self.readings_map[x][y] = estimated_reading  # Initial agents begin at same location
@@ -386,21 +390,20 @@ class Actor(nn.Module):
         print(x)
         pass
    
-    def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
-
-        # Select Action from Actor
-        #self.test(state_map_stack=state_map_stack)
-        action_probs = self.actor(state_map_stack)
-        dist = Categorical(action_probs)
-        action = dist.sample()
-        action_logprob = dist.log_prob(action)
+    def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
+        ''' Select action from action probabilities returned by actor.'''
+        action_probs: torch.Tensor = self.actor(state_map_stack)
+        dist: torch.Tensor = Categorical(action_probs)
+        action: torch.Tensor = dist.sample()
+        action_logprob: torch.Tensor = dist.log_prob(action)
         
         return action, action_logprob
 
     def forward(self, observation = None, act = None):
         raise NotImplementedError
     
-    def evaluate(self, state_map_stack, action):       
+    def evaluate(self, state_map_stack: torch.Tensor, action: torch.Tensor):
+        ''' Put actor into "train" mode and get action logprobabilities for an observation mapstack. Then calculate a particular actions entropy.'''
         self.actor.train()
         
         action_probs = self.actor(state_map_stack)
@@ -570,16 +573,21 @@ class CCNBase:
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         self.model = PFGRUCell(bpf_num_particles, self.state_dim - 8, self.state_dim - 8, bpf_hsize, bpf_alpha, True, "relu") 
         
-    def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:         
-        # Add intensity readings to a list if reading has not been seen before at that location. 
+    def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
+        ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
+            to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
+            action (and returns action logprobabilities) and the critic network to calculate state-value. 
+        '''
         # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
+             
+        # Add intensity readings to a list if reading has not been seen before at that location. 
         for observation in state_observation.values():
-            key = (observation[1], observation[2])
+            key: tuple(float, float) = (observation[1], observation[2])
             if key in self.maps.buffer.readings:
                 if observation[0] not in self.maps.buffer.readings[key]:
                     self.maps.buffer.readings[key].append(observation[0])
             else:
-                self.maps.buffer.readings[key] = [observation[0]]
+                self.maps.buffer.readings[key]: list[tuple] = [observation[0]]
             assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
 
         with torch.no_grad():
@@ -591,7 +599,8 @@ class CCNBase:
                 obstacles_map
             ) = self.maps.observation_to_map(state_observation, id)
             
-            map_stack = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
+            # Convert to tensor
+            map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
             
             # Add to mapstack buffer to eventually be converted into tensor with minibatches
             #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
@@ -605,10 +614,10 @@ class CCNBase:
                 self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
             
             # Add single batch tensor dimension for action selection
-            map_stack = torch.unsqueeze(map_stack, dim=0) 
+            map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
             
             # Get actions and values                          
-            action, action_logprob,  = self.pi.act(map_stack) # Choose action
+            action, action_logprob  = self.pi.act(map_stack) # Choose action
             state_value = self.critic.act(map_stack)  # Should be a pointer to either local critic or global critic
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())

@@ -329,7 +329,7 @@ class train_PPO:
             ac.agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
         
         # Setup statistics buffers for normalizing returns from environment
-        self.stat_buffers = {i: StatBuff() for i in range(self.number_of_agents)}
+        self.stat_buffers: dict[int, StatBuff] = {i: StatBuff() for i in range(self.number_of_agents)}
                 
         # Count variables for actor/policy (pi) and PFGRU (model)
         self.pi_var_count, self.model_var_count = {}, {}
@@ -339,7 +339,7 @@ class train_PPO:
             )   
             
         # Instatiate loggers and set up model saving                 
-        logger_kwargs_set = {
+        logger_kwargs_set: dict[int, Any] = {
             id: setup_logger_kwargs(
                 exp_name=f"{self.logger_kwargs['exp_name']}_agent{id}",
                 seed=self.logger_kwargs['seed'],
@@ -348,7 +348,7 @@ class train_PPO:
             ) for id in self.agents
         }
         
-        self.loggers = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
+        self.loggers: dict[int, EpochLogger] = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
         
         for id in self.agents:
             self.loggers[id].save_config(config_json)    
@@ -373,14 +373,14 @@ class train_PPO:
         observations, _,  _, infos = env.reset()
         for id in self.agents: 
             self.agents[id].reset_neural_nets()  # NOTE: buffers are cleared during update
-        source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-        episode_return = {id: 0 for id in self.agents}
-        episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
-        steps_in_episode = 0
+        source_coordinates: npt.NDArray = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+        episode_return: dict[int, float] = {id: 0.0 for id in self.agents}
+        episode_return_buffer: list = []  # TODO can probably get rid of this, unless want to keep for logging
+        steps_in_episode: int = 0
         
         # Prepare epoch variables
-        out_of_bounds_count = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
-        terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
+        out_of_bounds_count: dict[int, int] = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
+        terminal_counter: dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
         # Update stat buffers for all agent observations for later observation normalization
         for id in self.agents:
@@ -390,13 +390,14 @@ class train_PPO:
         #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
         print(f"Starting main training loop!", flush=True)
-        self.start_time = time.time()        
+        self.start_time:float = time.time()        
+        
         # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
         for epoch in range(self.total_epochs):
             # Reset hidden layers and sets Actor into "eval" mode. For CNN, resets maps
-            hiddens = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
+            hiddens: dict[int, tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]] = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 for ac in self.agents.values():
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
@@ -404,6 +405,7 @@ class train_PPO:
                 pass
             else:
                 for ac in self.agents.values():
+                    # Put actor and critic into eval mode
                     #ac.model.eval()  # TODO add PFGRU
                     ac.agent.pi.eval()
                     ac.agent.critic.eval() # TODO will need to be changed for global critic
@@ -427,7 +429,7 @@ class train_PPO:
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts = {id: None for id in self.agents}
                 for id, ac in self.agents.items():
-                    agent_thoughts[id] = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
+                    agent_thoughts[id]: RADCNN_core.ActionChoice = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                     
                 # Create action list to send to environment
