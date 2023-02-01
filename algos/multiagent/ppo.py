@@ -530,6 +530,7 @@ class AgentPPO:
             self.reduce_pfgru_iters = False     
     
     def step(self, standardized_observations: npt.NDArray, hiddens: dict = None, save_map: bool = True, message: dict =None) -> RADCNN_core.ActionChoice:
+        ''' Wrapper for neural network action selection'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
         elif self.actor_critic_architecture == 'uniform':
@@ -559,86 +560,24 @@ class AgentPPO:
             self.agent.clear_maps()
         
         return hiddens
-    
-    def compute_loss_pi(self, data: dict[torch.Tensor, list], map_stack: torch.Tensor, index:int = None):
-        ''' Compute loss for actor network
-            The difference between the probability of taking the action according to the current policy
-            and the probability of taking the action according to the old policy, multiplied by the 
-            advantage of the action.
-            
-            data (array): data from PPO buffer
-                obs (tensor): Unused - batch of observations from the PPO buffer. Currently only used to ensure
-                    map buffer observations are correct.
-                act (tensor): batch of actions taken
-                adv (tensor): batch of advantages cooresponding to actions. 
-                    These are the difference between the expected reward for taking that action and the baseline expected reward
-                logp (tensor): batch of action logprobabilities
-                loc_pred (tensor): batch of predicted location by PFGRU
-                ep_len (tensor[int]): single dimension int of length of episode
-                ep_form (tensor): 
-                
-            map_stacks (tensor): Either a single observations worth of maps, or a batch of maps
-            index (int): If doing a single observation at a time, index for data[]
-            
-            Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
-                
-        '''
-        # NOTE: Not using observation tensor, using internal map buffer
-        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
-
-        # Policy loss 
-        #self.agent.pi.test(map_stack)
-        #pi, logp = self.agent.pi.evaluate(map_stack, act)
-        action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
-        action_logprobs = action_logprobs.cpu() # TODO do we need this on the CPU here?
-        ratio = torch.exp(action_logprobs - logp_old[index])
-        clip_adv = torch.clamp(ratio, 1-self.clip_ratio, 1+self.clip_ratio) * adv[index]
-        loss_pi = -(torch.min(ratio * adv[index], clip_adv))
-
-        # Useful extra info
-        approx_kl = (logp_old[index] - action_logprobs).item()
-        ent = dist_entropy.item()
-        clipped = ratio.gt(1+self.clip_ratio) | ratio.lt(1-self.clip_ratio)
-        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).item()
-        pi_info = dict(kl=approx_kl, entropy=ent, clip_fraction=clipfrac)
-
-        return loss_pi, pi_info  
-
-    def compute_loss_critic(self, data: dict[torch.Tensor, list], map_stack: torch.Tensor, index: int = None):
-        ''' Compute loss for state-value approximator (critic network) using MSE. Calculates the MSE of the 
-            predicted state value from the critic and the true state value
-        
-            data (array): data from PPO buffer
-                obs (tensor): Unused - batch of observations from the PPO buffer. Currently only used to ensure
-                    map buffer observations are correct.
-                act (tensor): batch of actions taken
-                ret (tensor): batch of returns
-                adv (tensor): batch of advantages cooresponding to actions. 
-                    These are the difference between the expected reward for taking that action and the baseline expected reward
-                logp (tensor): batch of action logprobabilities
-                loc_pred (tensor): batch of predicted location by PFGRU
-                ep_len (tensor[int]): single dimension int of length of episode
-                ep_form (tensor): 
-                
-            map_stack (tensor): Either a single observations worth of maps, or a batch of maps
-            index (int): If doing a single observation at a time, index for data[]
-            
-            Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
-                
-        '''    
-        # NOTE: Using mapstack from map buffer instead of observation
-        # TODO add mapstack to PPO buffer instead of CNN
-        true_return = data['ret'][index]
-        predicted_value = self.agent.critic.evaluate(map_stack)
-        critic_loss = self.agent.MseLoss(torch.squeeze(predicted_value), true_return)
-        return critic_loss
-    
+     
     #TODO Make this a Ray remote function 
     def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
         """
         Update for the localization (PFGRU) and A2C modules
         Note: update functions perform multiple updates per call
-        """      
+        """     
+        
+        def sample(self, data, minibatch=None):
+            ''' Get sample indexes of episodes to train on'''
+            if not minibatch:
+                minibatch = self.minibatch
+            # Randomize and sample observation batch indexes
+            ep_length = data["ep_len"].item()
+            indexes = np.arange(0, ep_length, dtype=np.int32)
+            number_of_samples = int((ep_length / minibatch))
+            return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
+         
         # Get data from buffers
         data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
         
@@ -697,18 +636,52 @@ class AgentPPO:
             )
                             
         else:
-            # Due to global critic, looping for k_epochs done inside update_a2c()
-            # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
-            # Early stop training if KL-div above certain threshold
-            update_results = {}
-            (
-                update_results['pi_l'], 
-                update_results['critic_loss'],
-                update_results['pi_info'], 
-                update_results['term'], 
-                update_results['loc_loss'],
-                update_results['stop_iteration']
-            ) = self.update_a2c(data, min_iterations, logger=logger)  #TODO get logger out of PPO
+            # TODO incorporate maps into PPO buffer and avoid this entire process              
+            # Match observation type to data and seperate map stacks from observation key for processing
+            map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
+            map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
+            assert len(self.agent.maps.observation_buffer) == data['obs'].shape[0]
+            
+            # Check that maps match observations (round due to floating point precision in python)
+            for _, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
+                assert torch.equal(data_obs, map_obs)            
+            
+            # Reset gradients 
+            self.agent_optimizer.pi_optimizer.zero_grad()
+            self.agent_optimizer.critic_optimizer.zero_grad()     
+                
+            # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
+            for k_epoch in range(self.train_pi_iters):
+                # Reset gradients 
+                self.agent_optimizer.pi_optimizer.zero_grad()
+                self.agent_optimizer.critic_optimizer.zero_grad()                 
+                
+                # Get indexes of episodes that will be sampled
+                sample_indexes = sample(self, data=data)
+                actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
+                
+                # Check Actor KL Divergence
+                if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
+                    actor_loss_results['pi_loss'].backward() # TODO do we need to add entropy/lambda to this?
+                    self.agent_optimizer.pi_optimizer.step() 
+                else:
+                    break  # Skip remaining training
+                            
+                # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
+                self.agent.reset()                      
+                
+                # TODO Pull out for global critic
+                self.agent_optimizer.critic_optimizer.zero_grad()
+                critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps)
+                critic_loss_results['critic_loss'].backward()
+                self.agent_optimizer.critic_optimizer.step()
+                      
+            # # Value function learning
+            # for _ in range(self.train_v_iters):
+            #     self.agent_optimizer.critic_optimizer.zero_grad()
+            #     critic_loss_results = self.compute_batched_losses_critic(self)
+            #     critic_loss_results['critic_loss'].backward()
+            #     self.agent_optimizer.critic_optimizer.step()
         
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
@@ -718,19 +691,156 @@ class AgentPPO:
             #self.agent_optimizer.pfgru_scheduler.step()
             if self.agent.maps.location_map.max() !=0.0 or self.agent.maps.readings_map.max() !=0.0 or self.agent.maps.visit_counts_map.max() !=0.0:
                 raise ValueError("Maps did not reset")   
+        
+            # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
+            self.agent.reset()                
             
             # Log changes from update
             return UpdateResult(
-                StopIter=update_results['stop_iteration'],  # TODO this is updated in several places
-                LossPi=update_results['pi_l'].item(),
-                LossV=update_results['critic_loss'].item(),
-                LossModel=model_losses.item(),  
-                KL=update_results['pi_info']["kl"],
-                Entropy=update_results['pi_info']["entropy"],
-                ClipFrac=update_results['pi_info']["clip_fraction"],
-                LocLoss=update_results['loc_loss'],
+                StopIter=k_epoch,  
+                LossPi=actor_loss_results['pi_loss'].item(),
+                LossV=critic_loss_results['critic_loss'].item(),
+                LossModel=model_losses.item(),  # TODO implement when PFGRU is working for CNN
+                KL=actor_loss_results["kl"],
+                Entropy=actor_loss_results["entropy"],
+                ClipFrac=actor_loss_results["clip_fraction"],
+                LocLoss=0, # TODO implement when PFGRU is working for CNN
                 VarExplain=0
             )
+    
+    def compute_batched_losses_pi(self, sample, data, map_buffer_maps, minibatch = None):
+        ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
+                
+        if not minibatch:
+            minibatch = self.minibatch
+        
+        # TODO make more concise 
+        # Due to linear layer in CNN, this must be run individually
+        pi_loss_list = []
+        kl_list = []
+        entropy_list = []
+        clip_fraction_list = []
+        
+        # Get sampled returns from actor and critic
+        for index in sample:
+            # Reset existing episode maps
+            self.reset_neural_nets()                           
+            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, map_stack=map_buffer_maps[index], index=index)
+            
+            pi_loss_list.append(single_pi_l)
+            kl_list.append(single_pi_info['kl'])
+            entropy_list.append(single_pi_info['entropy'])
+            clip_fraction_list.append(single_pi_info['clip_fraction'])
+            
+        #take mean of everything for batch update
+        results = {
+            'pi_loss': torch.stack(pi_loss_list).mean(),
+            'kl': np.mean(kl_list),
+            'entropy': np.mean(entropy_list),
+            'clip_fraction': np.mean(clip_fraction_list),
+        }
+        return results
+
+    def compute_loss_pi(self, data: dict[torch.Tensor, list], map_stack: torch.Tensor, index:int = None):
+        ''' Compute loss for actor network
+            The difference between the probability of taking the action according to the current policy
+            and the probability of taking the action according to the old policy, multiplied by the 
+            advantage of the action.            
+            
+            data (array): data from PPO buffer
+                obs (tensor): Unused - batch of observations from the PPO buffer. Currently only used to ensure
+                    map buffer observations are correct.
+                act (tensor): batch of actions taken
+                adv (tensor): batch of advantages cooresponding to actions. 
+                    These are the difference between the expected reward for taking that action and the baseline expected reward
+                logp (tensor): batch of action logprobabilities
+                loc_pred (tensor): batch of predicted location by PFGRU
+                ep_len (tensor[int]): single dimension int of length of episode
+                ep_form (tensor): 
+                
+            map_stacks (tensor): Either a single observations worth of maps, or a batch of maps
+            index (int): If doing a single observation at a time, index for data[]
+            
+            Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
+            
+            Process:
+                Calculate how much the policy has changed: 
+                    ratio = policy_new / policy_old
+                Take log form of this: 
+                    ratio = [log(policy_new) - log(policy_old)].exp()
+                Calculate Actor loss as the minimum of two functions: 
+                    p1 = ratio * advantage
+                    p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
+                    actor_loss = min(p1, p2)   
+        '''
+        # NOTE: Not using observation tensor, using internal map buffer
+        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+
+        # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
+        action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
+        action_logprobs = action_logprobs.cpu() # TODO do we need this on the CPU here?
+        
+        # Get how much change is about to be made, then clip it if it exceeds our threshold (PPO-CLIP)
+        # NOTE: Loss will be averaged in the wrapper function, not here, as this is for a single observation/mapstack
+        ratio = torch.exp(action_logprobs - logp_old[index])
+        clip_adv = torch.clamp(ratio, 1-self.clip_ratio, 1+self.clip_ratio) * adv[index]  # Objective surrogate
+        loss_pi = -(torch.min(ratio * adv[index], clip_adv))
+
+        # Useful extra info
+        approx_kl = (logp_old[index] - action_logprobs).item()
+        ent = dist_entropy.item()
+        clipped = ratio.gt(1+self.clip_ratio) | ratio.lt(1-self.clip_ratio)
+        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).item()
+        pi_info = dict(kl=approx_kl, entropy=ent, clip_fraction=clipfrac)
+
+        return loss_pi, pi_info  
+
+    def compute_batched_losses_critic(self, data, map_buffer_maps):
+        ''' Simulates batched processing through CNN. Wrapper for single-batch computing critic loss'''
+        
+        # Randomize and sample observation batch indexes
+        ep_length = data["ep_len"].item()
+        indexes = np.arange(0, ep_length, dtype=np.int32)
+        number_of_samples = int((ep_length / self.minibatch))
+        sample = np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform            
+        
+        # TODO make more concise 
+        # Due to linear layer in CNN, this must be run fully online (read: every map)
+        critic_loss_list = []
+        
+        # Get sampled returns from actor and critic
+        for index in sample:
+            # Reset existing episode maps
+            self.reset_neural_nets()                           
+            critic_loss_list.append(self.compute_loss_critic(data=data, map_stack=map_buffer_maps[index], index=index))
+
+        #take mean of everything for batch update
+        results = {'critic_loss': torch.stack(critic_loss_list).mean()}
+        return results
+            
+    def compute_loss_critic(self, data: dict[torch.Tensor, list], map_stack: torch.Tensor, index: int = None):
+        ''' Compute loss for state-value approximator (critic network) using MSE. Calculates the MSE of the 
+            predicted state value from the critic and the true state value
+        
+            data (array): data from PPO buffer
+                ret (tensor): batch of returns
+                
+            map_stack (tensor): Either a single observations worth of maps, or a batch of maps
+            index (int): If doing a single observation at a time, index for data[]
+            
+            Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
+            
+            Calculate critic loss with MSE between returns and critic value
+                critic_loss = (R - V(s))^2            
+        '''    
+        # NOTE: Using mapstack from map buffer instead of observation
+        # TODO add mapstack to PPO buffer instead of CNN
+        true_return = data['ret'][index]
+        
+        # Compare predicted return with true return and use MSE to indicate loss
+        predicted_value = self.agent.critic.evaluate(map_stack)
+        critic_loss = self.agent.MseLoss(torch.squeeze(predicted_value), true_return)
+        return critic_loss
 
     def update_model(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
         ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''      
@@ -836,262 +946,122 @@ class AgentPPO:
     def update_a2c(
             self, data: dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
         ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
-        '''   
-            Follows general PPO algorithm:
-            Compute the new policy and log probabilities
-                new_policy, log_probs = actor(states)
-
-            Compute the advantages
-                advantages = rewards + gamma * critic(next_states) - critic(states)
-
-            Compute the PPO loss
-                loss = ppo_loss(old_policy, new_policy, actions, rewards, advantages, epsilon)
-
-            Perform the backpropagation
-                actor_optimizer.zero_grad()
-                loss.backward()
-
-            Update the network's parameters
-                actor_optimizer.step()            
-        '''
-        
-        def compute_batched_losses_pi(self):
-            ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation so must be done manually '''
-            # Randomize and sample observation batch indexes
-            ep_length = data["ep_len"].item()
-            indexes = np.arange(0, ep_length, dtype=np.int32)
-            number_of_samples = int((ep_length / minibatch))
-            sample = np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform        
-            
-            # TODO make more concise 
-            # Due to linear layer in CNN, this must be run fully online (read: every map)
-            pi_loss_list = []
-            kl_list = []
-            entropy_list = []
-            clip_fraction_list = []
-            
-            # Get sampled returns from actor and critic
-            for index in sample:
-                single_pi_l, single_pi_info = self.compute_loss_pi(data=data, map_stack=map_buffer_maps[index], index=index)
-                pi_loss_list.append(single_pi_l)
-                kl_list.append(single_pi_info['kl'])
-                entropy_list.append(single_pi_info['entropy'])
-                clip_fraction_list.append(single_pi_info['clip_fraction'])
-                
-            #take mean of everything for batch update
-            results = {
-                'pi_loss': torch.stack(pi_loss_list).mean(),
-                'kl': np.mean(kl_list),
-                'entropy': np.mean(entropy_list),
-                'clip_fraction': np.mean(clip_fraction_list),
-            }
-            return results
-        
-        def compute_batched_losses_critic(self):
-            ''' Simulates batched processing through CNN. Currently errors on linear layer for current implementation so must be done manually '''
-            # Randomize and sample observation batch indexes
-            ep_length = data["ep_len"].item()
-            indexes = np.arange(0, ep_length, dtype=np.int32)
-            number_of_samples = int((ep_length / minibatch))
-            sample = np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform            
-            
-            # TODO make more concise 
-            # Due to linear layer in CNN, this must be run fully online (read: every map)
-            critic_loss_list = []
-            
-            # Get sampled returns from actor and critic
-            for index in sample:
-                critic_loss_list.append(self.compute_loss_critic(data=data, map_stack=map_buffer_maps[index], index=index))
-
-            #take mean of everything for batch update
-            results = {'critic_loss': torch.stack(critic_loss_list).mean()}
-            return results
-        
+        ''' RAD-A2C Actor and Critic updates'''
         # Start update
         if not minibatch:
             minibatch = self.minibatch
         
-        # If CNN network
-        if self.actor_critic_architecture == 'cnn':    
-            # Match observation type to data and seperate map stacks from observation key for processing
-            # TODO incorporate maps into PPO buffer and avoid this entire process      
-            map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
-            map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
-            
-            assert len(self.agent.maps.observation_buffer) == data['obs'].shape[0]
-            
-            # Check that maps match observations (need to round due to floating point precision in python)
-            for index, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
-                assert torch.equal(data_obs, map_obs)
-            
-            # Stack the mapstack into a single tensor
-            # Uncomment if running batched observation through a compatible nn at once
-            #maps = torch.stack(map_stacks)
-            
-            # Reset existing episode maps
-            self.reset_neural_nets()             
-            
-            # Get old info for logging
-            old_actor_loss_results = compute_batched_losses_pi(self)
-            old_critic_loss_results = compute_batched_losses_critic(self)
-            
-            # Train policy with multiple steps of gradient descent
-            terminate = False
-            for k_pi in range(self.train_pi_iters):
-                self.agent_optimizer.pi_optimizer.zero_grad()
-                actor_loss_results = compute_batched_losses_pi(self)
-                
-                if actor_loss_results['kl'] > (1.5 * self.target_kl):
-                    # TODO Get logger out of PPO!
-                    logger.log(f'Agent {self.id} network Update stopped early at step {k_pi} due to reaching max kl {self.target_kl}.')
-                    terminate = True
-                    break
-                actor_loss_results['pi_loss'].backward()
-                self.agent_optimizer.pi_optimizer.step()  # TODO how does the optimizer know where this loss is?
+        # Set initial variables
+        # TODO make a named tuple and pass these that way instead of hardcoded indexes
+        observation_idx = 11
+        action_idx = 14
+        logp_old_idx = 13
+        advantage_idx = 11
+        return_idx = 12
+        source_loc_idx = 15
 
-            stopping_step=k_pi
-
-            # Value function learning
-            for _ in range(self.train_v_iters):
-                self.agent_optimizer.critic_optimizer.zero_grad()
-                critic_loss_results = compute_batched_losses_critic(self)
-                critic_loss_results['critic_loss'].backward()
-                self.agent_optimizer.critic_optimizer.step()
-
-            # Log changes from update
-            logger.store(
-                LossPi=old_actor_loss_results['pi_loss'].item(),
-                LossV=old_critic_loss_results['critic_loss'].detach().numpy(),
-                KL=actor_loss_results['kl'], 
-                Entropy=old_actor_loss_results['entropy'], 
-                ClipFrac=actor_loss_results['clip_fraction'],
-                DeltaLossPi= (actor_loss_results['pi_loss'].item() - old_actor_loss_results['pi_loss'].item()),
-                DeltaLossV= (critic_loss_results['critic_loss'].item() - old_critic_loss_results['critic_loss'])
-            )       
-            
-            # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
-            self.agent.reset()
-            
-            return (
-                actor_loss_results['pi_loss'], critic_loss_results['critic_loss'], actor_loss_results, terminate, 0, stopping_step
-                ) # TODO when PFGRU added, implement loc_loss where 0 is
+        ep_form = data["ep_form"]
         
-        # If Philippes
-        elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            # Set initial variables
-            # TODO make a named tuple and pass these that way instead of hardcoded indexes
-            observation_idx = 11
-            action_idx = 14
-            logp_old_idx = 13
-            advantage_idx = 11
-            return_idx = 12
-            source_loc_idx = 15
+        # Policy info buffer
+        # KL is for KL divergence
+        # ent is entropy (randomness)
+        # val is state-value from critic
+        # val-loss is the loss from the critic model
+        pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
+        
+        # Sample a random tensor
+        ep_select = np.random.choice(
+            np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
+        )
+        ep_form = [ep_form[idx] for idx in ep_select]
+        
+        # Loss storage buffer(s)
+        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
+        loss_arr: torch.Tensor = torch.autograd.Variable(
+            torch.tensor([], dtype=torch.float32)
+        )
 
-            ep_form = data["ep_form"]
-            
-            # Policy info buffer
-            # KL is for KL divergence
-            # ent is entropy (randomness)
-            # val is state-value from critic
-            # val-loss is the loss from the critic model
-            pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
-            
-            # Sample a random tensor
-            ep_select = np.random.choice(
-                np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
+        for ep in ep_form:
+            # For each set of episodes per process from an epoch, compute loss
+            trajectories = ep[0]
+            hidden = self.reset_neural_nets() 
+            obs, act, logp_old, adv, ret, src_tar = (
+                trajectories[:, :observation_idx],
+                trajectories[:, action_idx],
+                trajectories[:, logp_old_idx],
+                trajectories[:, advantage_idx],
+                trajectories[:, return_idx, None],
+                trajectories[:, source_loc_idx:].clone(),
             )
-            ep_form = [ep_form[idx] for idx in ep_select]
             
-            # Loss storage buffer(s)
-            loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
-            loss_arr: torch.Tensor = torch.autograd.Variable(
-                torch.tensor([], dtype=torch.float32)
-            )
+            # Calculate new action log probabilities
 
-            for ep in ep_form:
-                # For each set of episodes per process from an epoch, compute loss
-                trajectories = ep[0]
-                hidden = self.reset_neural_nets() 
-                obs, act, logp_old, adv, ret, src_tar = (
-                    trajectories[:, :observation_idx],
-                    trajectories[:, action_idx],
-                    trajectories[:, logp_old_idx],
-                    trajectories[:, advantage_idx],
-                    trajectories[:, return_idx, None],
-                    trajectories[:, source_loc_idx:].clone(),
-                )
+            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
                 
-                # Calculate new action log probabilities
+            logp_diff: torch.Tensor = logp_old - logp
+            ratio = torch.exp(logp - logp_old)
 
-                pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
-                    
-                logp_diff: torch.Tensor = logp_old - logp
-                ratio = torch.exp(logp - logp_old)
+            clip_adv = (torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv)
+            clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
 
-                clip_adv = (torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv)
-                clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
-
-                # Useful extra info
-                clipfrac = (
-                    torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-                )
-                approx_kl = logp_diff.detach().mean().item()
-                ent = pi.entropy().detach().mean().item()
-                
-                val_loss = self.agent_optimizer.loss(val, ret) # MSE critc loss 
-
-                # TODO: More descriptive name
-                new_loss: torch.Tensor = -(
-                    torch.min(ratio * adv, clip_adv).mean()  # Policy loss
-                    - 0.01 * val_loss
-                    + self.alpha * ent
-                )
-                loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
-
-                new_loss_sto: torch.Tensor = torch.tensor(
-                    [approx_kl, ent, clipfrac, val_loss.detach()]
-                )
-                loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
-
-            mean_loss = loss_arr.mean()
-            means = loss_sto.mean(axis=0)
-            loss_pi, approx_kl, ent, clipfrac, loss_val = (
-                mean_loss,
-                means[0].detach(),
-                means[1].detach(),
-                means[2].detach(),
-                means[3].detach(),
+            # Useful extra info
+            clipfrac = (
+                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
             )
-            pi_info["kl"].append(approx_kl)
-            pi_info["ent"].append(ent)
-            pi_info["cf"].append(clipfrac)
-            pi_info["val_loss"].append(loss_val)
-
-            kl = pi_info["kl"][-1].mean()
-            if kl.item() < 1.5 * self.target_kl:
-                self.agent_optimizer.pi_optimizer.zero_grad()
-                loss_pi.backward()
-                self.agent_optimizer.pi_optimizer.step()
-                term = False
-            else:
-                term = True
-
-            pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-                pi_info["kl"][0].numpy(),
-                pi_info["ent"][0].numpy(),
-                pi_info["cf"][0].numpy(),
-                pi_info["val_loss"][0].numpy(),
-            )
-            loss_sum_new = loss_pi
-            return (
-                loss_sum_new,
-                pi_info,
-                term,
-                (self.env_height * loc - (src_tar)).square().mean().sqrt(),
-            )
+            approx_kl = logp_diff.detach().mean().item()
+            ent = pi.entropy().detach().mean().item()
             
+            val_loss = self.agent_optimizer.loss(val, ret) # MSE critc loss 
+
+            # TODO: More descriptive name
+            new_loss: torch.Tensor = -(
+                torch.min(ratio * adv, clip_adv).mean()  # Policy loss
+                - 0.01 * val_loss
+                + self.alpha * ent
+            )
+            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
+
+            new_loss_sto: torch.Tensor = torch.tensor(
+                [approx_kl, ent, clipfrac, val_loss.detach()]
+            )
+            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
+
+        mean_loss = loss_arr.mean()
+        means = loss_sto.mean(axis=0)
+        loss_pi, approx_kl, ent, clipfrac, loss_val = (
+            mean_loss,
+            means[0].detach(),
+            means[1].detach(),
+            means[2].detach(),
+            means[3].detach(),
+        )
+        pi_info["kl"].append(approx_kl)
+        pi_info["ent"].append(ent)
+        pi_info["cf"].append(clipfrac)
+        pi_info["val_loss"].append(loss_val)
+
+        kl = pi_info["kl"][-1].mean()
+        if kl.item() < 1.5 * self.target_kl:
+            self.agent_optimizer.pi_optimizer.zero_grad()
+            loss_pi.backward()
+            self.agent_optimizer.pi_optimizer.step()
+            term = False
         else:
-            raise NotImplementedError("Alternative network updates not implemented")
+            term = True
+
+        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
+            pi_info["kl"][0].numpy(),
+            pi_info["ent"][0].numpy(),
+            pi_info["cf"][0].numpy(),
+            pi_info["val_loss"][0].numpy(),
+        )
+        loss_sum_new = loss_pi
+        return (
+            loss_sum_new,
+            pi_info,
+            term,
+            (self.env_height * loc - (src_tar)).square().mean().sqrt(),
+        )       
         
     def render(self, savepath: str=None, save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")

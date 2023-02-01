@@ -402,14 +402,14 @@ class Actor(nn.Module):
     def forward(self, observation = None, act = None):
         raise NotImplementedError
     
-    def evaluate(self, state_map_stack: torch.Tensor, action: torch.Tensor):
+    def evaluate(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         ''' Put actor into "train" mode and get action logprobabilities for an observation mapstack. Then calculate a particular actions entropy.'''
         self.actor.train()
         
-        action_probs = self.actor(state_map_stack)
-        dist = Categorical(action_probs)
-        action_logprobs = dist.log_prob(action)
-        dist_entropy = dist.entropy()
+        action_probs: torch.Tensor = self.actor(state_map_stack)
+        dist: torch.Tensor  = Categorical(action_probs)
+        action_logprobs: torch.Tensor  = dist.log_prob(action)
+        dist_entropy: torch.Tensor  = dist.entropy()
             
         return action_logprobs, dist_entropy        
 

@@ -104,7 +104,7 @@ class Core:
         ''' Negotiates walls and corners '''
         
         def handle_wall(self, wall: str):
-            match wall:
+            match wall: # type: ignore
                 case 'left':
                     self.state = STATES['wall left']
                     return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']

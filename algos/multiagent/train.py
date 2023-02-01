@@ -52,46 +52,6 @@ def count_variables(module: nn.Module) -> int:
     return sum(np.prod(p.shape) for p in module.parameters())
 
 
-def convert_nine_to_five_action_space(action):
-    ''' Converts 4 direction + idle action space to 9 dimensional equivelant
-        Environment action values:
-        -1: idle
-        0: left
-        1: up and left
-        2: upfrom gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
-        3: up and right
-        4: right
-        5: down and right
-        6: down
-        7: down and left
-
-        Cardinal direction action values:
-        -1: idle
-        0: left
-        1: up
-        2: right
-        3: down
-    '''
-    match action:
-        # Idle
-        case -1:
-            return -1
-        # Left
-        case 0:
-            return 0
-        # Up
-        case 1:
-            return 2
-        # Right
-        case 2:
-            return 4
-        # Down
-        case 3:
-            return 6
-        case _:
-            raise Exception('Action is not within valid [-1,3] range.')
-
-
 @dataclass
 class StatBuff:
     mu: float = 0.0
