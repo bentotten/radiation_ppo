@@ -50,7 +50,7 @@
         "--steps-per-episode",
         "120",
         "--epochs",
-        "200",
+        "100",
         "--render",
         "True",
         "--save-gif-freq",

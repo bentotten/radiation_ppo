@@ -16,7 +16,7 @@ from torchinfo import summary
 import pytorch_lightning as pl
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload
+from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union
 from typing_extensions import TypeAlias
 
 import matplotlib.pyplot as plt
@@ -109,14 +109,15 @@ class RolloutBuffer:
     coordinate_buffer: list = field(init=False)
     readings: Dict[Any, list] =field(init=False)
     
-    def __init__(self):
+    def __post_init__(self):
         self.coordinate_buffer: CoordinateStorage = []    
-        self.readings: Dict[Any, list] = {} # For heatmap resampling        
+        self.readings: Dict[Any, Union[int, list]] = {'max': 0, 'min': 0} # For heatmap resampling        
     
     def clear(self):
         # Reset readings and coordinates buffers
         del self.coordinate_buffer[:]     
         self.readings.clear()
+        self.readings: Dict[Any, Union[int, list]] = {'max': 0, 'min': 0} # For heatmap resampling                
 
 
 @dataclass()
@@ -237,10 +238,17 @@ class MapsBuffer:
             # Average existing readings
             unscaled_coordinates: tuple(float, float) = (observation[agent_id][1], observation[agent_id][2])
             assert len(self.buffer.readings[unscaled_coordinates]) > 0
-            # TODO consider using a particle filter for resampling            
+            
+            # Get estimated reading and save new max for later normalization
             estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
+            if estimated_reading > self.buffer.readings['max']:
+                self.buffer.readings['max'] = estimated_reading            
+            
+            # Normalize
+            normalized_reading = estimated_reading / self.buffer.readings['max']
+            
             if estimated_reading > 0:
-                self.readings_map[x][y] = estimated_reading  # Initial agents begin at same location
+                self.readings_map[x][y] = normalized_reading 
             else:
                 assert estimated_reading >= 0
 
@@ -623,85 +631,85 @@ class CCNBase:
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
         #return action.item(), action_logprob.item(), state_value.item()
     
-    def update(self):
-        # Rewards have already been normalized and advantages already calculated with finish_path() function
+    # def update(self):
+    #     # Rewards have already been normalized and advantages already calculated with finish_path() function
         
-        # Get data from buffers for old policy    
-        data: dict[str, torch.Tensor] = self.maps.buffer.get_buffers_for_epoch_and_reset()  
+    #     # Get data from buffers for old policy    
+    #     data: dict[str, torch.Tensor] = self.maps.buffer.get_buffers_for_epoch_and_reset()  
         
-        # Reset gradients (actor and critic will be set to train mode in evaluate())
-        self.optimizer_actor.zero_grad()
-        self.optimizer_critic.zero_grad()
+    #     # Reset gradients (actor and critic will be set to train mode in evaluate())
+    #     self.optimizer_actor.zero_grad()
+    #     self.optimizer_critic.zero_grad()
             
-        # Optimize policy for K epochs 
-        print(data['maps'])
-        print(data["act"])
+    #     # Optimize policy for K epochs 
+    #     print(data['maps'])
+    #     print(data["act"])
 
-        for _ in range(self.K_epochs):
-            for i, (observations, actions, advantages) in enumerate(train_loader):         
-                logprobs, state_values, dist_entropy = self.policy.evaluate(data['maps'], data['act']) # Actor-critic            
+    #     for _ in range(self.K_epochs):
+    #         for i, (observations, actions, advantages) in enumerate(train_loader):         
+    #             logprobs, state_values, dist_entropy = self.policy.evaluate(data['maps'], data['act']) # Actor-critic            
         
-        surrogate_loss = calculate_surrogate_loss()
-        actor_loss = calculate_policy_loss(self, data)
-        value_loss = calculate_critic_loss(self, data)
+    #     surrogate_loss = calculate_surrogate_loss()
+    #     actor_loss = calculate_policy_loss(self, data)
+    #     value_loss = calculate_critic_loss(self, data)
         
-        actor_loss.backward()
-        self.optimizer_actor.step()
+    #     actor_loss.backward()
+    #     self.optimizer_actor.step()
         
-        value_loss.backward()
-        self.optimizer_critic.step()        
+    #     value_loss.backward()
+    #     self.optimizer_critic.step()        
         
     
-        # critic
-        def calculate_value_loss(data):
-            obs, ret = data['obs'], data['ret']
-            obs = obs.to(self.maps.buffer.device)
-            ret = ret.to(self.maps.buffer.device)
-            return ((self.actor.local_critic(obs) - ret)**2).mean()    
+    #     # critic
+    #     def calculate_value_loss(data):
+    #         obs, ret = data['obs'], data['ret']
+    #         obs = obs.to(self.maps.buffer.device)
+    #         ret = ret.to(self.maps.buffer.device)
+    #         return ((self.actor.local_critic(obs) - ret)**2).mean()    
         
-        def calculate_policy_loss(self, data):
-            '''
-            Calculate how much the policy has changed: 
-                ratio = policy_new / policy_old
-            Take log form of this: 
-                ratio = [log(policy_new) - log(policy_old)].exp()
-            Calculate Actor loss as the minimum of two functions: 
-                p1 = ratio * advantage
-                p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
-                actor_loss = min(p1, p2)
+    #     def calculate_policy_loss(self, data):
+    #         '''
+    #         Calculate how much the policy has changed: 
+    #             ratio = policy_new / policy_old
+    #         Take log form of this: 
+    #             ratio = [log(policy_new) - log(policy_old)].exp()
+    #         Calculate Actor loss as the minimum of two functions: 
+    #             p1 = ratio * advantage
+    #             p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
+    #             actor_loss = min(p1, p2)
                 
-            Calculate critic loss with MSE between returns and critic value
-                critic_loss = (R - V(s))^2
+    #         Calculate critic loss with MSE between returns and critic value
+    #             critic_loss = (R - V(s))^2
                 
-            Caculcate total loss:
-                total_loss = critic_loss * critic_discount + actor_loss - entropy
-            '''            
-            obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+    #         Caculcate total loss:
+    #             total_loss = critic_loss * critic_discount + actor_loss - entropy
+    #         '''            
+    #         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
             
-            # Policy loss
+    #         # Policy loss
             
-            pi, logp = self.policy.actor(obs.to(self.maps.buffer.device), act.to(self.maps.buffer.device))
-            logp = logp.cpu()
-            ratio = torch.exp(logp - logp_old)
-            clip_adv = torch.clamp(ratio, 1-self.eps_clip, 1+self.eps_clip) * adv  # clipped ratio
-            loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+    #         pi, logp = self.policy.actor(obs.to(self.maps.buffer.device), act.to(self.maps.buffer.device))
+    #         logp = logp.cpu()
+    #         ratio = torch.exp(logp - logp_old)
+    #         clip_adv = torch.clamp(ratio, 1-self.eps_clip, 1+self.eps_clip) * adv  # clipped ratio
+    #         loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
 
-            # TODO why not using surrogate?
-            # surrogate = torch.exp(ratio) * advantages
-            # surrogate_clipped = torch.clamp(surrogate, 1 - epsilon, 1 + epsilon) * advantages
-            # surrogate_loss = -torch.min(surrogate, surrogate_clipped)
-            # entropy = new_policy.entropy()
-            # entropy_loss = -entropy_coef * entropy
-            # loss = surrogate_loss + entropy_loss
+    #         # TODO why not using surrogate?
+    #         # surrogate = torch.exp(ratio) * advantages
+    #         # surrogate_clipped = torch.clamp(surrogate, 1 - epsilon, 1 + epsilon) * advantages
+    #         # surrogate_loss = -torch.min(surrogate, surrogate_clipped)
+    #         # entropy = new_policy.entropy()
+    #         # entropy_loss = -entropy_coef * entropy
+    #         # loss = surrogate_loss + entropy_loss
 
-            # Useful extra info
-            approx_kl = (logp_old - logp).mean().item()
-            ent = pi.entropy().mean().item()
-            clipped = ratio.gt(1+self.eps_clip) | ratio.lt(1-self.eps_clip)
-            clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-            pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+    #         # Useful extra info
+    #         approx_kl = (logp_old - logp).mean().item()
+    #         ent = pi.entropy().mean().item()
+    #         clipped = ratio.gt(1+self.eps_clip) | ratio.lt(1-self.eps_clip)
+    #         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
+    #         pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
 
-            return loss_pi, pi_info            
+    #         return loss_pi, pi_info            
          
   
     def save(self, checkpoint_path):
