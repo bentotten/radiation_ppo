@@ -284,7 +284,8 @@ class train_PPO:
 
         # Get environment information
         self.obs_dim: int = self.env.observation_space.shape[0]
-        self.act_dim: int = rad_search_env.A_SIZE
+        #self.act_dim: int = rad_search_env.A_SIZE # Includes idle action
+        self.act_dim: int = rad_search_env.DETECTABLE_DIRECTIONS
         self.env_scale: int = self.env.scale
         self.bounds_offset: tuple = self.env.observation_area
         self.step_size: int = self.env.step_size
@@ -552,7 +553,7 @@ class train_PPO:
                                 )
                     # Always render last epoch's episode
                     if self.DEBUG and epoch == self.total_epochs-1:
-                        for ac, id in self.agents.items():
+                        for id, ac in self.agents.items():
                             # Render gif
                             env.render(
                                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
@@ -585,8 +586,6 @@ class train_PPO:
                             out_of_bounds_count[id] = 0
                     
                     # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-                    if self.DEBUG:
-                        print("Resetting environment")
                     observations, _,  _, _ = env.reset()                                         
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}

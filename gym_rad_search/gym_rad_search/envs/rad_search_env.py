@@ -424,7 +424,7 @@ class RadSearch(gym.Env):
 
                 # Reward logic
                 if agent.sp_dist < 110:
-                    reward = 0.1
+                    reward = 0.1  # TODO should this be higher?
                     self.done = True
                     agent.terminal_sto.append(True)
                 elif agent.sp_dist < agent.prev_det_dist:
@@ -434,7 +434,7 @@ class RadSearch(gym.Env):
                 else:
                     agent.terminal_sto.append(False)                    
                     if action == max(get_args(Action)):
-                        reward = -0.5 * agent.sp_dist / self.max_dist  # If idle, extra penalty
+                        reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
                     else:
                         reward = -0.5 * agent.sp_dist / self.max_dist
             # If take_action is false, usually due to agent being in obstacle or empty action on env reset.
@@ -458,7 +458,7 @@ class RadSearch(gym.Env):
                     if action == max(get_args(Action)) and not agent.collision:
                         raise ValueError("Agent should not return false if the tentative step is an idle step")
                     else:
-                        reward = -2.0 * agent.sp_dist / self.max_dist  # Extra penalty for collisions, boundary hit, and obstacle denys                    
+                        reward = -0.5 * agent.sp_dist / self.max_dist                    
                 else:
                     agent.sp_dist = agent.prev_det_dist  # Set in reset function with current coordinates
                     agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
@@ -472,7 +472,7 @@ class RadSearch(gym.Env):
                     if action == max(get_args(Action)) and not agent.collision:
                         raise ValueError("Take Action function returned false, but 'Idle' indicated")
                     else:
-                        reward = -0.5 * agent.sp_dist / self.max_dist # No abnormal penalty for initial state
+                        reward = -0.5 * agent.sp_dist / self.max_dist 
 
             # If detector coordinate noise is desired
             noise: Point = Point(
