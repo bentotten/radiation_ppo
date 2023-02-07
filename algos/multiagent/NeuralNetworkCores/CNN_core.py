@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 import scipy.signal
+from math import log
 
 import torch
 import torch.nn as nn
@@ -28,12 +29,12 @@ from matplotlib.streamplot import Grid
 from gym_rad_search.envs import StepResult
 
 # Maps
-Point: TypeAlias = NewType("Point", tuple[float, float])  # Array indicies to access a GridSquare
+Point: TypeAlias = NewType("Point", Tuple[float, float])  # Array indicies to access a GridSquare
 Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
 CoordinateStorage: TypeAlias = NewType("Storage", list[dict, Point])
 
 # Helpers
-Shape: TypeAlias = int | tuple[int, ...]
+Shape: TypeAlias = int | Tuple[int, ...]
 
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 
@@ -44,7 +45,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(int, shape)
         return (length, shape)
     else:
-        shape = cast(tuple[int, ...], shape)
+        shape = cast(Tuple[int, ...], shape)
         return (length, *shape)
 
 
@@ -132,21 +133,20 @@ class MapsBuffer:
     '''
     # Inputs
     observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
-    max_size: int  # steps_per_epoch   
+    max_size: int  # steps_per_epoch
+    steps_per_episode: int # Used for normalizing visits count in visits map
             
     # Parameters
-    grid_bounds: tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
+    grid_bounds: Tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
     resolution_accuracy: int = field(default=100) # How much to multiply grid bounds and state coordinates by. 100 will return to full accuracy for RADPPO
     obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords
-    offset: float = field(default=0)  # Offset for when boundaries are different than "search area"
+    offset: float = field(default=0)  # Offset for when boundaries are different than "search area".
     
     # Initialized elsewhere
     x_limit_scaled: int = field(init=False)  # maximum x value in maps
     y_limit_scaled: int = field(init=False)  # maximum y value in maps
     map_dimensions: Tuple = field(init=False)  # Scaled dimensions of each map - used to create the CNNs
-    
-    # TODO make work with max_step_count so boundaries dont need to be enforced on grid. Basically take the grid bounds and add the max step count to make the map sizes
-    
+        
     # Maps
     location_map: Map = field(init=False)  # Location Map: a 2D matrix showing the individual agent's location.
     others_locations_map: Map = field(init=False)  # Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
@@ -183,20 +183,20 @@ class MapsBuffer:
         self.clear_maps()        
         
     def observation_to_map(self, observation: dict[int, StepResult], id: int
-                     ) -> tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
+                     ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
         '''
-        Convert an 11-element observation dictionary from all agents into maps.
+        Convert an 11-element observation dictionary from all agents into maps. Normalize Data
         
         observation (dict): observations from environment for all agents
             id (int): ID of agent to reference in observation object 
             
-            Returns a tuple of 2d map arrays
+            Returns a Tuple of 2d map arrays
         '''
         
-        # TODO Remove redundant calculations
+        # TODO Remove redundant calculations and massively consolidate
         
         # Process observation for current agent's locations map
-        scaled_coordinates: tuple(int, int) = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
+        scaled_coordinates: Tuple(int, int) = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
         # Capture current and reset previous location
         if self.buffer.coordinate_buffer:
             last_state = self.buffer.coordinate_buffer[-1][id]
@@ -231,13 +231,13 @@ class MapsBuffer:
                  
         # Process observation for readings_map
         for agent_id in observation:
-            scaled_coordinates: tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
+            scaled_coordinates: Tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             x: int = int(scaled_coordinates[0])
             y: int = int(scaled_coordinates[1])
             
             # Average existing readings
-            unscaled_coordinates: tuple(float, float) = (observation[agent_id][1], observation[agent_id][2])
-            assert len(self.buffer.readings[unscaled_coordinates]) > 0
+            unscaled_coordinates: Tuple(float, float) = (observation[agent_id][1], observation[agent_id][2])
+            assert len(self.buffer.readings[unscaled_coordinates]) > 0 # type: ignore
             
             # Get estimated reading and save new max for later normalization
             estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
@@ -258,7 +258,7 @@ class MapsBuffer:
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
 
-            self.visit_counts_map[x][y] += 1
+            self.visit_counts_map[x][y] += 1 #(log(2)/2) / log(self.steps_per_episode+1) # Normalize in [0, 1) (slightly under 1; done this way to use integers instead of floating points)
             
         # Process observation for obstacles_map 
         # Agent detects obstructions within 110 cm of itself
@@ -410,7 +410,7 @@ class Actor(nn.Module):
     def forward(self, observation = None, act = None):
         raise NotImplementedError
     
-    def evaluate(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def evaluate(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         ''' Put actor into "train" mode and get action logprobabilities for an observation mapstack. Then calculate a particular actions entropy.'''
         self.actor.train()
         
@@ -530,9 +530,10 @@ class CCNBase:
     id: int    
     state_dim: int
     action_dim: int
-    grid_bounds: tuple[float]
+    grid_bounds: Tuple[float]
     resolution_accuracy: float
     steps_per_epoch: int
+    steps_per_episode: int
     scaled_offset: float = field(default=0)    
     random_seed: int = field(default=None)
     critic: Any = field(default=None)  # Eventually allows for a global critic
@@ -561,10 +562,11 @@ class CCNBase:
         # Initialize buffers and neural networks
         self.maps = MapsBuffer(
                 observation_dimension = self.state_dim,
-                max_size=self.steps_per_epoch,                  
+                max_size=self.steps_per_epoch,
                 grid_bounds=self.grid_bounds, 
                 resolution_accuracy=self.resolution_accuracy,
-                offset=self.scaled_offset
+                offset=self.scaled_offset,
+                steps_per_episode=self.steps_per_episode
             )
 
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
@@ -587,40 +589,44 @@ class CCNBase:
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
         '''
         # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
-             
-        # Add intensity readings to a list if reading has not been seen before at that location. 
-        for observation in state_observation.values():
-            key: tuple(float, float) = (observation[1], observation[2])
-            if key in self.maps.buffer.readings:
-                if observation[0] not in self.maps.buffer.readings[key]:
-                    self.maps.buffer.readings[key].append(observation[0])
-            else:
-                self.maps.buffer.readings[key]: list[tuple] = [observation[0]]
-            assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
+        
+        # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
+        with torch.no_grad():        
+            if save_map:     
+                # Add intensity readings to a list if reading has not been seen before at that location. 
+                for observation in state_observation.values():
+                    key: Tuple[float, float] = (observation[1], observation[2])
+                    if key in self.maps.buffer.readings:
+                        if observation[0] not in self.maps.buffer.readings[key]:
+                            self.maps.buffer.readings[key].append(observation[0])
+                    else:
+                        self.maps.buffer.readings[key]: List[Tuple] = [observation[0]]
+                    assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
 
-        with torch.no_grad():
-            (
-                location_map,
-                others_locations_map,
-                readings_map,
-                visit_counts_map,
-                obstacles_map
-            ) = self.maps.observation_to_map(state_observation, id)
-            
-            # Convert to tensor
-            map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
-            
-            # Add to mapstack buffer to eventually be converted into tensor with minibatches
-            #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
-            self.maps.buffer.coordinate_buffer.append({})
-            for i, observation in state_observation.items():
-                self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
-            
-            #print(state_observation[self.id])
-            #observation_key = hash(state_observation[self.id].flatten().tolist)
-            if save_map:
-                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
-            
+                    (
+                        location_map,
+                        others_locations_map,
+                        readings_map,
+                        visit_counts_map,
+                        obstacles_map
+                    ) = self.maps.observation_to_map(state_observation, id)
+                    
+                    # Convert to tensor
+                    map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
+                    
+                    # Add to mapstack buffer to eventually be converted into tensor with minibatches
+                    #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
+                    self.maps.buffer.coordinate_buffer.append({})
+                    for i, observation in state_observation.items():
+                        self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
+                    
+                    #print(state_observation[self.id])
+                    #observation_key = hash(state_observation[self.id].flatten().tolist)
+                    self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
+            else:
+                with torch.no_grad():
+                    map_stack = self.maps.observation_buffer[-1][1]
+                
             # Add single batch tensor dimension for action selection
             map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
             
@@ -772,7 +778,7 @@ class CCNBase:
         fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png')
         
         self.render_counter += 1
-        plt.close(fig)
+        plt.close(fig)  # TODO figs arent closing, causes memory issues during large training
 
     def reset(self):
         ''' Reset entire CNN '''
@@ -821,18 +827,18 @@ class PFRNNBaseCell(nn.Module):
             )
 
     @overload
-    def resampling(self, particles: torch.Tensor, prob: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def resampling(self, particles: torch.Tensor, prob: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         ...
 
     @overload
     def resampling(
-        self, particles: tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
-    ) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        self, particles: Tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         ...
 
     def resampling(
-        self, particles: torch.Tensor | tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
-    ) -> tuple[tuple[torch.Tensor, torch.Tensor] | torch.Tensor, torch.Tensor]:
+        self, particles: torch.Tensor | Tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
+    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor] | torch.Tensor, torch.Tensor]:
         """soft-resampling
 
         Arguments:
@@ -840,7 +846,7 @@ class PFRNNBaseCell(nn.Module):
             prob {tensor} -- particle weights
 
         Returns:
-            tuple -- particles
+            Tuple -- particles
         """
 
         resamp_prob = (
@@ -861,7 +867,7 @@ class PFRNNBaseCell(nn.Module):
         )
 
         # PFLSTM
-        if type(particles) == tuple:
+        if type(particles) == Tuple:
             particles_new = (
                 particles[0][flatten_indices],
                 particles[1][flatten_indices],
@@ -924,16 +930,16 @@ class PFGRUCell(PFRNNBaseCell):
         self.hnn_dropout: nn.Dropout = nn.Dropout(p=0)
 
     def forward(
-        self, input_: torch.Tensor, hx: tuple[torch.Tensor, torch.Tensor]
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        self, input_: torch.Tensor, hx: Tuple[torch.Tensor, torch.Tensor]
+    ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         """One step forward for PFGRU
 
         Arguments:
             input_ {tensor} -- the input tensor
-            hx {tuple} -- previous hidden state (particles, weights)
+            hx {Tuple} -- previous hidden state (particles, weights)
 
         Returns:
-            tuple -- new tensor
+            Tuple -- new tensor
         """
         h0, p0 = hx
         obs_in = input_.repeat(h0.shape[0], 1)
@@ -978,7 +984,7 @@ class PFGRUCell(PFRNNBaseCell):
         p1 = F.log_softmax(p1, dim=0)
         return p1
 
-    def init_hidden(self, batch_size: int) -> tuple[torch.Tensor, torch.Tensor]:
+    def init_hidden(self, batch_size: int) -> Tuple[torch.Tensor, torch.Tensor]:
         initializer: Callable[[int, int], torch.Tensor] = (
             torch.rand if self.initialize == "rand" else torch.zeros
         )

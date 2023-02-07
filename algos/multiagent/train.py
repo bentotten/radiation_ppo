@@ -553,6 +553,9 @@ class train_PPO:
                     episode_return = {id: 0 for id in self.agents}
                     episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
                     steps_in_episode = 0
+                    # Reset maps for new episode
+                    if self.actor_critic_architecture == 'cnn':
+                        _ = ac.reset_neural_nets()
 
                     # Update stat buffers for all agent observations for later observation normalization
                     for id in self.agents:

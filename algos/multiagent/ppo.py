@@ -463,7 +463,8 @@ class AgentPPO:
                     steps_per_epoch=self.steps_per_epoch,
                     id=self.id,
                     random_seed=self.seed,
-                    scaled_offset = scaled_offset                    
+                    scaled_offset = scaled_offset,
+                    steps_per_episode=self.steps_per_episode                  
                     )
                 
                 # Initialize learning opitmizers                           
