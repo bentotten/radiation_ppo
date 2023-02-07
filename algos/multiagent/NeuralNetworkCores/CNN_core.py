@@ -258,7 +258,7 @@ class MapsBuffer:
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
 
-            self.visit_counts_map[x][y] += 1 #(log(2)/2) / log(self.steps_per_episode+1) # Normalize in [0, 1) (slightly under 1; done this way to use integers instead of floating points)
+            self.visit_counts_map[x][y] += (log(2)/2) / log(self.steps_per_episode+1) # Normalize in [0, 1) (slightly under 1; done this way to use integers instead of floating points)
             
         # Process observation for obstacles_map 
         # Agent detects obstructions within 110 cm of itself
@@ -740,7 +740,7 @@ class CCNBase:
      
         fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(15, 5))
         
-        loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)
+        loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)Check if running this with multiple agents causes problems
         loc_ax.set_title('Agent Location')
         loc_ax.invert_yaxis()        
         
