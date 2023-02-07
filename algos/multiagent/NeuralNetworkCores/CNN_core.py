@@ -740,7 +740,7 @@ class CCNBase:
      
         fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(15, 5))
         
-        loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)Check if running this with multiple agents causes problems
+        loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)
         loc_ax.set_title('Agent Location')
         loc_ax.invert_yaxis()        
         
