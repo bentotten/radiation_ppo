@@ -304,20 +304,21 @@ class MapsBuffer:
             
         # Process observation for obstacles_map 
         # Agent detects obstructions within 110 cm of itself
+        # TODO Normalize 
         for agent_id in observation:
             scaled_agent_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))   
             if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
                 indices = np.flatnonzero(observation[agent_id][self.obstacle_state_offset::]).astype(int)
                 for index in indices:
                     real_index = int(index + self.obstacle_state_offset)
-                    
-                    # Inflate to actual distance, then convert and round with resolution_accuracy
-                    inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
                     x = int(scaled_agent_coordinates[0])
-                    y = int(scaled_agent_coordinates[1])     
+                    y = int(scaled_agent_coordinates[1])  
+                                        
+                    # Inflate to actual distance, then convert and round with resolution_accuracy
+                    #inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
                     
                     # Semi-arbritrary, but should make the number higher as the agent gets closer to the object, making heatmap look more correct
-                    self.obstacles_map[x][y] = DIST_TH - inflated_distance
+                    self.obstacles_map[x][y] = 1 - observation[agent_id][real_index]
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
