@@ -109,6 +109,7 @@ class train_PPO:
     minibatch: int = field(default=1)
     DEBUG: bool = field(default=False),
     enforce_boundaries: bool = field(default=False)
+    render_first_episode: bool = field(default=True) # If render, render the first episode and then follow save-gif-freq parameter
     
     """
     Proximal Policy Optimization (by clipping),
@@ -513,14 +514,29 @@ class train_PPO:
                                     epoch_count=epoch,
                                     add_value_text=True
                                 )
+                    # Always render first episode
+                    if self.render and epoch == 0 and self.render_first_episode:
+                        env.render(
+                            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
+                            epoch_count=epoch,
+                        
+                        )                              
+                        for id, ac in self.agents.items():
+                            if self.actor_critic_architecture == 'cnn':
+                                ac.render(
+                                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                                    epoch_count=epoch,
+                                    add_value_text=True
+                                )     
+                        self.render_first_episode = False             
+
                     # Always render last epoch's episode
                     if self.DEBUG and epoch == self.total_epochs-1:
+                        env.render(
+                            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
+                            epoch_count=epoch,
+                        )                        
                         for id, ac in self.agents.items():
-                            # Render gif
-                            env.render(
-                                path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-                                epoch_count=epoch,
-                            )
                             if self.actor_critic_architecture == 'cnn':
                                 ac.render(
                                     savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
