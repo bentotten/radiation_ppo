@@ -98,28 +98,28 @@ def log_and_normalize_test(max: int = 120):
     y = []    
     
     for i in range(max):
-        (
+        y.append((( 
             np.log(
-            2 + (   # Using 2 due to log(1) == 0
-                i * (   # Account for current index (think of this like a grid square that has been stepped on i times)
-                    max ** (    # Inflate original value
-                            np.log(2) / np.log(max)  # Change base to 'max'
+                2 + i * (
+                            max** ( np.log(2) / np.log(max) )
                         )
                     )
-                )
-            ) / np.log(max) # Change base to max for entire equation
-        ) / 2   # Account for 2 being used instead of 1
-    
+            ) / np.log(max)) * 1/(np.log(2 *max)/ np.log(max))
+        )
+
     print(x)
     print(y)
 
+    # Plot the function
     plt.plot(x, y)
 
+    # Add labels and title
     plt.xlabel('x')
     plt.ylabel('y')
     plt.title('Plot of log(x)')
-    plt.show()    
 
+    # Show the plot
+    plt.show()
 
 @dataclass()
 class ActionChoice():
@@ -295,8 +295,8 @@ class MapsBuffer:
                 # Using 2 due to log(1) == 0          
                 self.visit_counts_map[x][y] = (
                         (
-                            np.log(2 + self.visit_counts_shadow[x][y], dtype=np.float128) / np.log(self.steps_per_episode, dtype=np.float128) # Change base to max steps for entire equation
-                        ) / 2   # Account for 2 being used instead of 1
+                            np.log(2 + self.visit_counts_shadow[x][y], dtype=np.float128) / np.log(self.steps_per_episode, dtype=np.float128) # Change base to max steps
+                        ) * 1/(np.log(2 * self.steps_per_episode)/ np.log(self.steps_per_episode)) # Put in range [0, 1]
                     )
                 self.visit_counts_shadow[x][y] += 2
                 
@@ -318,7 +318,7 @@ class MapsBuffer:
                     #inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
                     
                     # Semi-arbritrary, but should make the number higher as the agent gets closer to the object, making heatmap look more correct
-                    self.obstacles_map[x][y] = 1 - observation[agent_id][real_index]
+                    self.obstacles_map[x][y] = observation[agent_id][real_index]
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
@@ -646,26 +646,26 @@ class CCNBase:
                         self.maps.buffer.readings[key]: List[Tuple] = [observation[0]]
                     assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
 
-                    (
-                        location_map,
-                        others_locations_map,
-                        readings_map,
-                        visit_counts_map,
-                        obstacles_map
-                    ) = self.maps.observation_to_map(state_observation, id)
-                    
-                    # Convert to tensor
-                    map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
-                    
-                    # Add to mapstack buffer to eventually be converted into tensor with minibatches
-                    #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
-                    self.maps.buffer.coordinate_buffer.append({})
-                    for i, observation in state_observation.items():
-                        self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
-                    
-                    #print(state_observation[self.id])
-                    #observation_key = hash(state_observation[self.id].flatten().tolist)
-                    self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
+                (
+                    location_map,
+                    others_locations_map,
+                    readings_map,
+                    visit_counts_map,
+                    obstacles_map
+                ) = self.maps.observation_to_map(state_observation, id)
+                
+                # Convert to tensor
+                map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
+                
+                # Add to mapstack buffer to eventually be converted into tensor with minibatches
+                #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
+                self.maps.buffer.coordinate_buffer.append({})
+                for i, observation in state_observation.items():
+                    self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
+                
+                #print(state_observation[self.id])
+                #observation_key = hash(state_observation[self.id].flatten().tolist)
+                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
             else:
                 with torch.no_grad():
                     map_stack = self.maps.observation_buffer[-1][1]
