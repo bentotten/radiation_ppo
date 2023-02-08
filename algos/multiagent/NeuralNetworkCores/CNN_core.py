@@ -770,13 +770,13 @@ class CCNBase:
         else:
             plt.show()                
      
-        loc_transposed = self.maps.location_map.T # TODO this seems expensive
-        other_transposed = self.maps.others_locations_map.T 
-        readings_transposed = self.maps.readings_map.T
-        visits_transposed = self.maps.visit_counts_map.T
-        obstacles_transposed = self.maps.obstacles_map.T
+        loc_transposed: npt.NDArray = self.maps.location_map.T # TODO this seems expensive
+        other_transposed: npt.NDArray  = self.maps.others_locations_map.T 
+        readings_transposed: npt.NDArray  = self.maps.readings_map.T
+        visits_transposed: npt.NDArray  = self.maps.visit_counts_map.T
+        obstacles_transposed: npt.NDArray  = self.maps.obstacles_map.T
      
-        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(15, 5))
+        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
         
         loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)
         loc_ax.set_title('Agent Location')
@@ -807,13 +807,15 @@ class CCNBase:
                     if other_transposed[i, j] > 0: 
                         other_ax.text(j, i, other_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
                     if readings_transposed[i, j] > 0:
-                        intensity_ax.text(j, i, readings_transposed[i, j].astype(int), ha="center", va="center", color="black", size=4)
+                        intensity_ax.text(j, i, readings_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)
                     if visits_transposed[i, j] > 0:
-                        visit_ax.text(j, i, visits_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
+                        visit_ax.text(j, i, visits_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)
                     if obstacles_transposed[i, j] > 0:
-                        obs_ax.text(j, i, obstacles_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)                        
+                        obs_ax.text(j, i, obstacles_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)                        
         
-        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png')
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png', format='png')
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.eps', format='eps')
+
         
         self.render_counter += 1
         plt.close(fig)  # TODO figs arent closing, causes memory issues during large training
