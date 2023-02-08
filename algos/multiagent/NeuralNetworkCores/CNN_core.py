@@ -6,7 +6,6 @@ import numpy as np
 import numpy.typing as npt
 
 import scipy.signal
-from math import log
 
 import torch
 import torch.nn as nn
@@ -181,12 +180,14 @@ class MapsBuffer:
     location_map: Map = field(init=False)  # Location Map: a 2D matrix showing the individual agent's location.
     others_locations_map: Map = field(init=False)  # Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
     readings_map: Map = field(init=False)  # Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
-    visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
+    visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
+    visit_counts_shadow: Map = field(init=False) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second map than to inflate a log'd number
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
     observation_buffer: list = field(default_factory=lambda: list())  # TODO move to PPO buffer
+    
 
     def __post_init__(self):      
         # Scaled maps
@@ -200,11 +201,13 @@ class MapsBuffer:
 
     def clear_maps(self):
         ''' Clear maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
-        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch?
-        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
-        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
-        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
-        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow
+        # TODO rethink this, this is very slow
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch or keep a ref count?
+        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
+        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
+        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.visit_counts_shadow: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.buffer.clear()
         
     def clear(self):
@@ -288,15 +291,16 @@ class MapsBuffer:
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
 
-            self.visit_counts_map[x][y] += (
-                    (
-                        np.log(
-                            2 + (   # Using 2 due to log(1) == 0
-                                    self.steps_per_episode ** (self.visit_counts_map[x][y])   # Inflate current value to original value
-                                )
-                        ) / np.log(self.steps_per_episode) # Change base to max steps for entire equation
-                    ) / 2   # Account for 2 being used instead of 1
-                )
+            with np.errstate(all='raise'):
+                # Using 2 due to log(1) == 0          
+                self.visit_counts_map[x][y] = (
+                        (
+                            np.log(2 + self.visit_counts_shadow[x][y], dtype=np.float128) / np.log(self.steps_per_episode, dtype=np.float128) # Change base to max steps for entire equation
+                        ) / 2   # Account for 2 being used instead of 1
+                    )
+                self.visit_counts_shadow[x][y] += 2
+                
+                assert self.visit_counts_map.max() < 1.0, "Normalization error"
             
         # Process observation for obstacles_map 
         # Agent detects obstructions within 110 cm of itself
