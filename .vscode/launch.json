@@ -46,7 +46,7 @@
         "--agent-count",
         "1",
         "--steps-per-epoch",
-        "10",
+        "20",
         "--steps-per-episode",
         "10",
         "--epochs",

@@ -92,6 +92,36 @@ def mlp(
     return nn.Sequential(*layers)
 
 
+def log_and_normalize_test(max: int = 120):
+    ''' explicitly for modeling expected values as visit count increases. This puts greater emphasis on lower step counts'''
+    
+    x = [x for x in range(max)]
+    y = []    
+    
+    for i in range(max):
+        (
+            np.log(
+            2 + (   # Using 2 due to log(1) == 0
+                i * (   # Account for current index (think of this like a grid square that has been stepped on i times)
+                    max ** (    # Inflate original value
+                            np.log(2) / np.log(max)  # Change base to 'max'
+                        )
+                    )
+                )
+            ) / np.log(max) # Change base to max for entire equation
+        ) / 2   # Account for 2 being used instead of 1
+    
+    print(x)
+    print(y)
+
+    plt.plot(x, y)
+
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.title('Plot of log(x)')
+    plt.show()    
+
+
 @dataclass()
 class ActionChoice():
     id: int 
@@ -258,7 +288,15 @@ class MapsBuffer:
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
 
-            self.visit_counts_map[x][y] += (log(2)/2) / log(self.steps_per_episode+1) # Normalize in [0, 1) (slightly under 1; done this way to use integers instead of floating points)
+            self.visit_counts_map[x][y] += (
+                    (
+                        np.log(
+                            2 + (   # Using 2 due to log(1) == 0
+                                    self.steps_per_episode ** (self.visit_counts_map[x][y])   # Inflate current value to original value
+                                )
+                        ) / np.log(self.steps_per_episode) # Change base to max steps for entire equation
+                    ) / 2   # Account for 2 being used instead of 1
+                )
             
         # Process observation for obstacles_map 
         # Agent detects obstructions within 110 cm of itself
