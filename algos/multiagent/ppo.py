@@ -379,6 +379,7 @@ class PPOBuffer:
 @dataclass
 class AgentPPO:
     id: int
+    number_of_agents: int
     observation_space: int
     action_space: int
     env_height: int
@@ -464,7 +465,8 @@ class AgentPPO:
                     id=self.id,
                     random_seed=self.seed,
                     scaled_offset = scaled_offset,
-                    steps_per_episode=self.steps_per_episode                  
+                    steps_per_episode=self.steps_per_episode,
+                    number_of_agents=self.number_of_agents           
                     )
                 
                 # Initialize learning opitmizers                           

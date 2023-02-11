@@ -281,7 +281,8 @@ class train_PPO:
                 scaled_grid_bounds=scaled_grid_bounds,
                 seed=self.seed,
                 minibatch=self.minibatch,
-                enforce_boundaries=self.enforce_boundaries
+                enforce_boundaries=self.enforce_boundaries,
+                number_of_agents=self.number_of_agents
             ) for i in range(self.number_of_agents)
         }
         

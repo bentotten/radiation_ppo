@@ -164,6 +164,7 @@ class MapsBuffer:
     observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
     max_size: int  # steps_per_epoch
     steps_per_episode: int # Used for normalizing visits count in visits map
+    number_of_agents: int # Used for normalizing visists count in visits map
             
     # Parameters
     grid_bounds: Tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
@@ -175,6 +176,7 @@ class MapsBuffer:
     x_limit_scaled: int = field(init=False)  # maximum x value in maps
     y_limit_scaled: int = field(init=False)  # maximum y value in maps
     map_dimensions: Tuple = field(init=False)  # Scaled dimensions of each map - used to create the CNNs
+    base: int = field(init=False) # Base for log() for visit count map normalization
         
     # Maps
     location_map: Map = field(init=False)  # Location Map: a 2D matrix showing the individual agent's location.
@@ -182,14 +184,15 @@ class MapsBuffer:
     readings_map: Map = field(init=False)  # Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
     obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
     visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-    visit_counts_shadow: Map = field(init=False) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second map than to inflate a log'd number
+    visit_counts_shadow: dict = field(default_factory=lambda: dict()) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second sparce matrix than to inflate a log'd number
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
     observation_buffer: list = field(default_factory=lambda: list())  # TODO move to PPO buffer
     
-
-    def __post_init__(self):      
+    def __post_init__(self):
+        self.base = self.steps_per_episode * self.number_of_agents
+        
         # Scaled maps
         self.map_dimensions = (
             int(self.grid_bounds[0] * self.resolution_accuracy) + int(self.offset  * self.resolution_accuracy),
@@ -207,7 +210,7 @@ class MapsBuffer:
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.visit_counts_shadow: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
         self.buffer.clear()
         
     def clear(self):
@@ -292,14 +295,21 @@ class MapsBuffer:
             y = int(scaled_coordinates[1])
 
             with np.errstate(all='raise'):
-                # Using 2 due to log(1) == 0          
+                # If visited before, fetch counter from shadow table, else create shadow table entry
+                if scaled_coordinates in self.visit_counts_shadow.keys():
+                    current = self.visit_counts_shadow[scaled_coordinates]
+                    self.visit_counts_shadow[scaled_coordinates] += 2
+                else:
+                    current = 0
+                    self.visit_counts_shadow[scaled_coordinates] = 2
+                    
+                # Using 2 due to log(1) == 0
                 self.visit_counts_map[x][y] = (
                         (
-                            np.log(2 + self.visit_counts_shadow[x][y], dtype=np.float128) / np.log(self.steps_per_episode, dtype=np.float128) # Change base to max steps
-                        ) * 1/(np.log(2 * self.steps_per_episode)/ np.log(self.steps_per_episode)) # Put in range [0, 1]
+                            np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
+                        ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
                     )
-                self.visit_counts_shadow[x][y] += 2
-                
+                                
                 assert self.visit_counts_map.max() < 1.0, "Normalization error"
             
         # Process observation for obstacles_map 
@@ -577,6 +587,7 @@ class CCNBase:
     resolution_accuracy: float
     steps_per_epoch: int
     steps_per_episode: int
+    number_of_agents: int
     scaled_offset: float = field(default=0)    
     random_seed: int = field(default=None)
     critic: Any = field(default=None)  # Eventually allows for a global critic
@@ -609,7 +620,8 @@ class CCNBase:
                 grid_bounds=self.grid_bounds, 
                 resolution_accuracy=self.resolution_accuracy,
                 offset=self.scaled_offset,
-                steps_per_episode=self.steps_per_episode
+                steps_per_episode=self.steps_per_episode,
+                number_of_agents = self.number_of_agents
             )
 
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
