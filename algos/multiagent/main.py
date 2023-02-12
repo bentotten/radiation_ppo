@@ -1,3 +1,6 @@
+''' 
+Start Rad-Team simulation 
+'''
 import argparse
 from dataclasses import dataclass
 from typing import Literal
@@ -270,10 +273,8 @@ def ping():
     return 'Pong!'
 
 def main():
-    ''' Read arguments from command line'''
     args = parse_args(create_parser())
 
-    ''' Save directory and experiment name ''' 
     save_dir_name: str = args.exp_name  # Stands for bootstrap particle filter, one of the neat resampling methods used
     exp_name: str = (
         args.exp_name        

@@ -267,17 +267,15 @@ class Agent():
 @dataclass
 class RadSearch(gym.Env):
     """
-        # bbox is the "bounding box"
-        # Dimensions of radiation source search area in cm, decreased by observation_area param. to ensure visilibity graph setup is valid.
-        #
-        # observation_area
-        # Interval for each obstruction area in cm. The actual search area will be the bounds box decreased by this amount. This is also used to offset obstacles from one another
-        #
-        # np_random
-        # A random number generator
-        #
-        # obstruction_count
-        # Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
+        bbox is the "bounding box"
+        
+        Dimensions of radiation source search area in cm, decreased by observation_area param. to ensure visilibity graph setup is valid.
+        
+        observation_area: Interval for each obstruction area in cm. The actual search area will be the bounds box decreased by this amount. This is also used to offset obstacles from one another
+        
+        np_random: A random number generator
+        
+        obstruction_count: Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
     """ 
     # Environment
     bbox: BBox = field(default_factory=lambda: BBox(

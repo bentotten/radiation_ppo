@@ -1,5 +1,5 @@
 '''
-Originally built from https://github.com/nikhilbarhate99/PPO-PyTorch, however has been merged with RAD-PPO
+Train agents and update neural networks using simulation environment.
 '''
 import os
 import sys

@@ -1,3 +1,6 @@
+'''
+Create graph of training or evaluation cycle from saved results in models directory
+'''
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.signal as signal

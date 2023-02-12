@@ -23,6 +23,7 @@ extensions = [
     'sphinx.ext.duration',
     'sphinx.ext.doctest',
     'sphinx.ext.autodoc',
+    'sphinx.ext.autosummary',    
 ]
 
 # If extensions (or modules to document with autodoc) are in another directory,

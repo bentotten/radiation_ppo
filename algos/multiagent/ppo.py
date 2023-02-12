@@ -1,3 +1,7 @@
+'''
+Original single-agent RAD-A2C Module.
+'''
+
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F

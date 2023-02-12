@@ -11,8 +11,8 @@ Welcome to RAD-TEAMS's documentation!
    :caption: Contents:
 
    usage/installation.rst
-   usage.rst
-
+   api
+   development
 
 
 
