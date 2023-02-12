@@ -9,13 +9,20 @@ from dataclasses import dataclass, field
 from typing import TypeAlias, Union, cast, Optional, Any, NamedTuple
 import scipy.signal
 
-from epoch_logger import EpochLogger
+try:
+    from epoch_logger import EpochLogger
+except:
+    from algos.multiagent.epoch_logger import EpochLogger
 
 # Neural Networks
-import NeuralNetworkCores.FF_core as RADFF_core
-import NeuralNetworkCores.CNN_core as RADCNN_core
-import NeuralNetworkCores.RADA2C_core as RADA2C_core
-import NeuralNetworkCores.uniform_search as UNIFORM
+try:
+    import NeuralNetworkCores.FF_core as RADFF_core
+    import NeuralNetworkCores.CNN_core as RADCNN_core
+    import NeuralNetworkCores.RADA2C_core as RADA2C_core
+except:
+    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core
+    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core
+    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
 
 
 Shape: TypeAlias = int | tuple[int, ...]
@@ -420,28 +427,7 @@ class AgentPPO:
         )
                 
         # Initialize agents
-        match self.actor_critic_architecture: # Type: ignore
-            case 'uniform':
-                # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
-                #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
-                #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
-                multiplier = 0.01
-                resolution_accuracy = multiplier * 1/self.environment_scale
-                if self.enforce_boundaries:
-                    scaled_offset = self.environment_scale * max(self.bounds_offset)                    
-                else:
-                    scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))                
-                                
-                self.agent = UNIFORM.Core(
-                    state_dim=self.observation_space, 
-                    action_dim=self.action_space,
-                    grid_bounds=self.scaled_grid_bounds,
-                    resolution_accuracy=resolution_accuracy,
-                    steps_per_epoch=self.steps_per_epoch,
-                    id=self.id,
-                    random_seed=self.seed,
-                    scaled_offset = scaled_offset                    
-                    )                      
+        match self.actor_critic_architecture: # Type: ignore                   
             case 'ff':
                 self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
             case 'cnn':                

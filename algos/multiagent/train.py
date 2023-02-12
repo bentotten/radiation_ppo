@@ -29,16 +29,26 @@ from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ig
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # PPO
-from ppo import OptimizationStorage, PPOBuffer, AgentPPO
+try:
+    from ppo import OptimizationStorage, PPOBuffer, AgentPPO
+except:
+    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO
 
 # Neural Networks
-import NeuralNetworkCores.FF_core as RADFF_core
-import NeuralNetworkCores.CNN_core as RADCNN_core
-import NeuralNetworkCores.RADA2C_core as RADA2C_core
+try:
+    import NeuralNetworkCores.FF_core as RADFF_core
+    import NeuralNetworkCores.CNN_core as RADCNN_core
+    import NeuralNetworkCores.RADA2C_core as RADA2C_core
+except:
+    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core
+    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core
+    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
 
 # Data Management Utility
-from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
-
+try:
+    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
+except:
+    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
 
 # Scaling
 # TODO get from env instead, remove from global

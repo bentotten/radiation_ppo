@@ -8,11 +8,17 @@ import numpy.random as npr
 
 import gym
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
-
-import NeuralNetworkCores.RADA2C_core as RADA2C_core
-from epoch_logger import setup_logger_kwargs, EpochLogger
-import train
 from gym_rad_search.envs import RadSearch  # type: ignore
+
+try:
+    import NeuralNetworkCores.RADA2C_core as RADA2C_core
+    from epoch_logger import setup_logger_kwargs, EpochLogger
+    import train
+except:
+    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
+    from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger
+    import algos.multiagent.train
+
 
 @dataclass
 class CliArgs:
