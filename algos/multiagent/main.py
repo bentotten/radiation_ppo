@@ -261,7 +261,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-if __name__ == "__main__":
+def main():
     ''' Read arguments from command line'''
     args = parse_args(create_parser())
 
@@ -351,3 +351,6 @@ if __name__ == "__main__":
     )
     
     simulation.train()
+
+if __name__ == "__main__":
+    main()

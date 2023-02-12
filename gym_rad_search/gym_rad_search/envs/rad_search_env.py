@@ -163,6 +163,7 @@ def get_y_step_coeff(action: Action) -> float:
     #return math.sin(2 * math.pi * action / idle_action) if action != idle_action else 0
     return round(math.sin(math.pi * (1.0 - action / 4.0)))
 
+
 # TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
 def get_x_step_coeff(action: Action, ) -> float:
@@ -211,6 +212,10 @@ def lighten_color(color: Color, factor: float) -> Color:
     ''' increase tint of a color '''
     scaled_color = color * 255 # return to original scale
     return Color(np.array(list(map(lambda c: (c + (255 - c) * factor) / 255, scaled_color))))
+
+
+def ping():
+    return 'PONG!'
 
 
 class StepResult(NamedTuple):
@@ -371,6 +376,10 @@ class RadSearch(gym.Env):
         self.scale = 1 / self.search_area[2][1]  # Needed for CNN network scaling
         
         self.reset()
+
+    def ping(self):
+        ''' Test environemnt communication '''
+        return 'PONG'
 
     def step( self, action: Optional[Union[Action, dict]] = None ) -> StepResult:
         """
