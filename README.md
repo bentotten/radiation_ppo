@@ -26,7 +26,20 @@ This contains the RAD-A2C architecture and proximal policy optimization (PPO) fo
 
 This repository provides a Minimal PyTorch implementation of Proximal Policy Optimization (PPO) with clipped objective from Nikhil Barhate's [PPO-PyTorch] (https://github.com/nikhilbarhate99/PPO-PyTorch) repo.
 
-## Installation
+## Files
+
+- `/algo`: contains the PPO implementations and neural network architectures
+- `/demo`: contains demonstrations.
+- `/gym_rad_search`: contains the radiation source search OpenAI gym environment
+- `/unit_testing`: contains unit tests. This functionality is under development
+
+## Documentation
+
+Documentation generated with [Sphinx](https://www.sphinx-doc.org/en/master/usage/quickstart.html).
+
+Generate documentation with `sphinx-build -b html docs doc_build` from root directory
+
+## Quick-Start Installation
 
 It is recommended to use the Anaconda package manager. The author did all development with [Micromamba](https://mamba.readthedocs.io/en/latest/installation.html), a fast and light-weight implementation of Anaconda. To use Micromamba, simply replace `conda` commands with `micromamba`. To do a command-line install, simple add `-c conda-forge` or `-c pytorch` or another channel to specify the correct channel.
 
@@ -41,16 +54,3 @@ It is recommended to use the Anaconda package manager. The author did all develo
 ## Debugging
 
 In VSCode, you can run the specific algorithm and environment configuration through the Command Palette (Ctrl+Shift+P) by filtering on Debug: Select and Start Debugging or typing 'debug ' and selecting the desired configuration. An existing template has been provided.
-
-## Files
-
-- `/algo`: contains the PPO implementations and neural network architectures
-- `/demo`: contains demonstrations.
-- `/gym_rad_search`: contains the radiation source search OpenAI gym environment
-- `/unit_testing`: contains unit tests. This functionality is under development
-
-## Documentation
-
-Documentation generated with [Sphinx](https://www.sphinx-doc.org/en/master/usage/quickstart.html).
-
-Generate documentation with `sphinx-build -b html sourcedir builddir` from root directory

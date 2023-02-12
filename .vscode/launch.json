@@ -5,6 +5,14 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Build Docs",
+      "type": "bashdb",
+      "request": "launch",
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/build_docs.sh",
+      "args": []
+    },
+    {
       "name": "Python: Module",
       "type": "python",
       "request": "launch",
@@ -64,7 +72,7 @@
         "--exp-name",
         "TEAM-RAD",
         "--net-type",
-        "cnn",
+        "cnn"
         // "--DEBUG",
         // "True"
       ],

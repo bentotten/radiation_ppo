@@ -13,11 +13,11 @@ from gym_rad_search.envs import RadSearch  # type: ignore
 try:
     import NeuralNetworkCores.RADA2C_core as RADA2C_core
     from epoch_logger import setup_logger_kwargs, EpochLogger
-    import train
+    import train as train
 except:
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
     from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger
-    import algos.multiagent.train
+    import algos.multiagent.train as train
 
 
 @dataclass
@@ -266,6 +266,8 @@ def create_parser() -> argparse.ArgumentParser:
     )
     return parser
 
+def ping():
+    return 'Pong!'
 
 def main():
     ''' Read arguments from command line'''

@@ -20,3 +20,4 @@ dependencies:
   - pip:
       - -e ../../gym_rad_search
       - -U ray
+      - sphinx-rtd-theme

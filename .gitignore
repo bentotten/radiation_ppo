@@ -1,5 +1,5 @@
 # Documentation (should be generated with Sphinx from doc_source directory)
-documentation/
+doc_build/
 
 # Models
 models/
