@@ -14,11 +14,71 @@ from epoch_logger import setup_logger_kwargs, EpochLogger
 import train
 from gym_rad_search.envs import RadSearch  # type: ignore
 
-''' Parameters passed in through the command line '''
 @dataclass
 class CliArgs:
-    hid_gru: int
-    hid_pol: int
+    ''' Parameters passed in through the command line 
+    General parameters:
+        --DEBUG, type=bool, default=False, 
+            help="Enable DEBUG mode - contains extra logging and set minimal setups"
+        --steps-per-episode, type=int, default=120, 
+            help="Number of timesteps per episode (before resetting the environment)"
+        --steps-per-epoch, type=int, default=480,
+            help="Number of timesteps per epoch (before updating agent networks)"
+        --epochs, type=int, default=3000, 
+            help="Number of total epochs to train the agent"
+        --seed, type=int, default=2, 
+            help="Random seed control" 
+        --exp-name, type=str, default="test", 
+            help="Name of experiment for saving"
+        --agent-count, type=int, # Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], default=1, 
+            help="Number of agents"
+        --render, type=bool, default=False, 
+            help="Save gif"
+        --save-gif-freq, type=int, default=float('inf'),
+            help="If render is true, save gif after this many epochs."
+        --save-freq, type=int, default=500, 
+            help="How often to save the model."
+             
+    Environment Parameters:
+        --env-name, type=str, default='gym_rad_search:RadSearchMulti-v1', 
+            help="Environment name registered with Gym" 
+        --dims, type=float, nargs=2, default=[2700.0, 2700.0], metavar=("dim_length", "dim_height"),
+            help="Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid. Length by height.",
+        --area-obs, type=float, nargs=2, default=[200.0, 500.0], metavar=("area_obs_min", "area_obs_max"),
+            help="Interval for each obstruction area in cm. This is how much to remove from bounds to make the 'visible bounds'",
+        --obstruct, type= int, #Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7], default=-1,
+            help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
+        --enforce-boundaries, type=bool, default=False,
+            help="Indicate whether or not agents can travel outside of the search area"
+  
+    Hyperparameters and PPO parameters:
+        --gamma, type=float, default=0.99,
+            help="Reward attribution for advantage estimator for PPO updates",
+        --alpha, type=float, default=0.1, 
+            help="Entropy reward term scaling"
+        --minibatches, type=int, default=1, 
+            help="Batches to sample data during actor policy update (k_epochs)"
+
+    Parameters for Neural Networks:
+        --net-type, type=str, default="rnn",
+            help="Choose between convolutional neural network, recurrent neural network, MLP Actor-Critic (A2C , feed forward, or uniform option: cnn, rnn, mlp, ff, uniform",
+    
+    Parameters for RAD-A2C:
+        --hid-pol, type=int, default=32, 
+            help="Actor linear layer size (Policy Hidden Layer Size "
+        --hid-val, type=int, default=32, 
+            help="Critic linear layer size (State-Value Hidden Layer Size "
+        --hid-rec, type=int, default=24, 
+            help="PFGRU hidden state size (Localization Network "
+        --hid-gru, type=int, default=24, 
+            help="Actor-Critic GRU hidden state size (Embedding Layers "
+        --l-pol, type=int, default=1, 
+            help="Number of layers for Actor MLP (Policy Multi-layer Perceptron "
+        --l-val, type=int, default=1, 
+            help="Number of layers for Critic MLP (State-Value Multi-layer Perceptron "
+    '''
+    hid_gru: int 
+    hid_pol: int # test 
     hid_val: int
     hid_rec: int
     l_pol: int
@@ -43,8 +103,13 @@ class CliArgs:
     save_gif_freq: int
     DEBUG: bool
 
-''' Function to parge command line arguments '''
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
+    ''' Function to parge command line arguments
+
+        Args: The parser from argparse module with read-in arguments
+        
+        Return: Command line argument class-object containing read-in arguments
+    '''
     args = parser.parse_args()
     return CliArgs(
         hid_gru=args.hid_gru,
@@ -74,8 +139,12 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         DEBUG=args.DEBUG
     )
 
-''' Function to generate argument parser '''
+
 def create_parser() -> argparse.ArgumentParser:
+    ''' 
+        Function to generate argument parser
+        Returns: argument parser with command line arguments
+    '''
     parser = argparse.ArgumentParser()
     
     # General parameters
@@ -189,14 +258,14 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--l-val", type=int, default=1, help="Number of layers for Critic MLP (State-Value Multi-layer Perceptron)"
     )
-    
     return parser
 
 
 if __name__ == "__main__":
+    ''' Read arguments from command line'''
     args = parse_args(create_parser())
 
-    # Save directory and experiment name
+    ''' Save directory and experiment name ''' 
     save_dir_name: str = args.exp_name  # Stands for bootstrap particle filter, one of the neat resampling methods used
     exp_name: str = (
         args.exp_name        

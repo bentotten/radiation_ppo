@@ -58,7 +58,9 @@ class StatBuff:
     sig_sto: float = 0.0
     sig_obs: float = 1.0
     count: int = 0
-    ''' statistics buffer for normalizing returns from environment '''
+    ''' statistics buffer for normalizing returns from environment. Left in train.py for backwards compatability
+        with RADPPO
+    '''
     
     def update(self, obs: float) -> None:
         self.count += 1
@@ -548,7 +550,7 @@ class train_PPO:
                     # Reset the environment and counters
                     episode_return_buffer = []
                     for id in self.agents:
-                         self.stat_buffers[id].reset()
+                        self.stat_buffers[id].reset()
                          
                     # If not at the end of an epoch, reset hidden layers for incoming new episode    
                     if timeout and not epoch_ended: # not env.epoch_end:

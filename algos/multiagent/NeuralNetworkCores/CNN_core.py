@@ -6,6 +6,7 @@ import numpy as np
 import numpy.typing as npt
 
 import scipy.signal
+import math
 
 import torch
 import torch.nn as nn
@@ -36,6 +37,7 @@ CoordinateStorage: TypeAlias = NewType("Storage", list[dict, Point])
 Shape: TypeAlias = int | Tuple[int, ...]
 
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
+SIMPLE_NORMALIZATION = False
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     if shape is None:
@@ -134,6 +136,29 @@ class ActionChoice():
 
 
 @dataclass
+class StatBuff:
+    mu: float = 0.0
+    sig_sto: float = 0.0
+    sig_obs: float = 1.0
+    count: int = 0
+    ''' statistics buffer for normalizing intensity readings from environment '''
+    
+    def update(self, obs: float) -> None:
+        self.count += 1
+        if self.count == 1:
+            self.mu = obs
+        else:
+            mu_n = self.mu + (obs - self.mu) / (self.count)
+            s_n = self.sig_sto + (obs - self.mu) * (obs - mu_n)
+            self.mu = mu_n
+            self.sig_sto = s_n
+            self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
+
+    def reset(self) -> None:
+        self = StatBuff()
+
+
+@dataclass
 class RolloutBuffer:      
     # Buffers
     coordinate_buffer: list = field(init=False)
@@ -189,7 +214,8 @@ class MapsBuffer:
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
     observation_buffer: list = field(default_factory=lambda: list())  # TODO move to PPO buffer
-    
+    normalization_buffer: StatBuff = field(default_factory=lambda: StatBuff())
+
     def __post_init__(self):
         self.base = self.steps_per_episode * self.number_of_agents
         
@@ -212,6 +238,7 @@ class MapsBuffer:
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
         self.buffer.clear()
+        self.normalization_buffer.reset()
         
     def clear(self):
         ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
@@ -231,7 +258,7 @@ class MapsBuffer:
         
         # TODO Remove redundant calculations and massively consolidate
         
-        # Process observation for current agent's locations map
+        ### Process observation for current agent's locations map
         scaled_coordinates: Tuple(int, int) = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
         # Capture current and reset previous location
         if self.buffer.coordinate_buffer:
@@ -246,7 +273,7 @@ class MapsBuffer:
         y: int = int(scaled_coordinates[1])
         self.location_map[x][y]: int = 1
         
-        # Process observation for other agent's locations map
+        ### Process observation for other agent's locations map
         for other_agent_id in observation:
             # Do not add current agent to other_agent map
             if other_agent_id != id:
@@ -264,14 +291,18 @@ class MapsBuffer:
                 x: int = int(others_scaled_coordinates[0])
                 y: int = int(others_scaled_coordinates[1])
                 self.others_locations_map[x][y] += 1  # Initial agents begin at same location        
-                 
-        # Process observation for readings_map
+
+        ### Process observation for readings_map
+        # Update stat buffer for later normalization
+        if not SIMPLE_NORMALIZATION:
+            for agent_id in observation:
+                self.normalization_buffer.update(observation[agent_id][0])
         for agent_id in observation:
             scaled_coordinates: Tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             x: int = int(scaled_coordinates[0])
             y: int = int(scaled_coordinates[1])
             
-            # Average existing readings
+            # Inflate coordinates
             unscaled_coordinates: Tuple(float, float) = (observation[agent_id][1], observation[agent_id][2])
             assert len(self.buffer.readings[unscaled_coordinates]) > 0 # type: ignore
             
@@ -281,40 +312,45 @@ class MapsBuffer:
                 self.buffer.readings['max'] = estimated_reading            
             
             # Normalize
-            normalized_reading = estimated_reading / self.buffer.readings['max']
+            if SIMPLE_NORMALIZATION:
+                normalized_reading = estimated_reading / self.buffer.readings['max']
+            else:
+                normalized_reading = np.clip((observation[agent_id][0] - self.normalization_buffer.mu) / self.normalization_buffer.sig_obs, -8, 8)     
+            assert normalized_reading < 1 and normalized_reading > 0
             
             if estimated_reading > 0:
                 self.readings_map[x][y] = normalized_reading 
             else:
                 assert estimated_reading >= 0
 
-        # Process observation for visit_counts_map
+        ### Process observation for visit_counts_map
         for agent_id in observation:
             scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             x = int(scaled_coordinates[0])
             y = int(scaled_coordinates[1])
 
-            with np.errstate(all='raise'):
-                # If visited before, fetch counter from shadow table, else create shadow table entry
-                if scaled_coordinates in self.visit_counts_shadow.keys():
-                    current = self.visit_counts_shadow[scaled_coordinates]
-                    self.visit_counts_shadow[scaled_coordinates] += 2
-                else:
-                    current = 0
-                    self.visit_counts_shadow[scaled_coordinates] = 2
+            # Increment shadow table
+            # If visited before, fetch counter from shadow table, else create shadow table entry
+            if scaled_coordinates in self.visit_counts_shadow.keys():
+                current = self.visit_counts_shadow[scaled_coordinates]
+                self.visit_counts_shadow[scaled_coordinates] += 2
+            else:
+                current = 0
+                self.visit_counts_shadow[scaled_coordinates] = 2
                     
-                # Using 2 due to log(1) == 0
-                self.visit_counts_map[x][y] = (
-                        (
-                            np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
-                        ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
-                    )
-                                
-                assert self.visit_counts_map.max() < 1.0, "Normalization error"
+            if SIMPLE_NORMALIZATION:
+                self.visit_counts_map[x][y] = current / self.base
+            else: 
+                with np.errstate(all='raise'):
+                    # Using 2 due to log(1) == 0
+                    self.visit_counts_map[x][y] = (
+                            (
+                                np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
+                            ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
+                        )          
+                    assert self.visit_counts_map.max() < 1.0, "Normalization error"
             
-        # Process observation for obstacles_map 
-        # Agent detects obstructions within 110 cm of itself
-        # TODO Normalize 
+        ### Process observation for obstacles_map 
         for agent_id in observation:
             scaled_agent_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))   
             if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
@@ -623,7 +659,7 @@ class CCNBase:
                 steps_per_episode=self.steps_per_episode,
                 number_of_agents = self.number_of_agents
             )
-
+        
         self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
         
         if not self.critic:

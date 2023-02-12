@@ -21,7 +21,7 @@
       "program": "${workspaceFolder}/algos/ppo/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": [],
+      "args": ["--debug", "True", "--epochs", "50"],
       "cwd": "${workspaceFolder}/algos/ppo"
     },
     {

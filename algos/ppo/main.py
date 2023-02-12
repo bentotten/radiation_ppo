@@ -32,6 +32,7 @@ class CliArgs:
     net_type: str
     alpha: float
     render: bool
+    debug: bool
 
 
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -54,6 +55,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         net_type=args.net_type,
         alpha=args.alpha,
         render=args.render,
+        debug=args.debug
     )
 
 
@@ -133,6 +135,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--render", type=bool, default=False, help="Render Gif"
     )
+    parser.add_argument(
+        "--debug", type=bool, default=False, help="Debug mode (hardcoded start/stop)"
+    )
     return parser
 
 
@@ -182,7 +187,8 @@ if __name__ == "__main__":
         observation_area=np.array(args.area_obs),  # type: ignore
         obstruction_count=args.obstruct,
         np_random=rng,
-        number_agents = number_of_agents
+        number_agents = number_of_agents,
+        DEBUG=args.debug
     )
 
     # Run ppo training function
