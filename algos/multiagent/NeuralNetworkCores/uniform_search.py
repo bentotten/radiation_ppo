@@ -103,43 +103,44 @@ class Core:
     def handle_boundary(self, scaled_coordinates: tuple):
         ''' Negotiates walls and corners '''
         
-        def handle_wall(self, wall: str):
-            match wall: # type: ignore
-                case 'left':
-                    self.state = STATES['wall left']
-                    return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']
+        # def handle_wall(self, wall: str):
+        #     match wall: # type: ignore
+        #         case 'left':
+        #             self.state = STATES['wall left']
+        #             return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']
 
-                case 'right':
-                    self.state = STATES['wall right']
-                    return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']
+        #         case 'right':
+        #             self.state = STATES['wall right']
+        #             return ACTION_MAPPING['up'] if self.search_up else ACTION_MAPPING['down']
                     
-                case 'up':
-                    self.state = STATES['wall up']
-                    # TODO handle corner
+        #         case 'up':
+        #             self.state = STATES['wall up']
+        #             # TODO handle corner
                     
-                case 'down':
-                    self.state = STATES['wall down']
-                    # TODO handle corner
+        #         case 'down':
+        #             self.state = STATES['wall down']
+        #             # TODO handle corner
                     
-                case _:
-                    raise ValueError(f"Invalid wall direction: {wall}")
+        #         case _:
+        #             raise ValueError(f"Invalid wall direction: {wall}")
         
         def handle_corner(Self):
             pass
         
-        if self.state == STATES['search']:
-            ''' Find which boundary was violated '''
-            if scaled_coordinates[0] == 0:
-                action: int = handle_wall(self, 'left')
-            elif scaled_coordinates[0] == self.x_limit_scaled:
-                action: int = handle_wall(self, 'right')
-            elif scaled_coordinates[1] == 0:
-                action: int = handle_wall(self, 'down')
-            elif scaled_coordinates[1] == self.y_limit_scaled:
-                action: int = handle_wall(self, 'up')
-        else:
-            # TODO Handle corner
-            pass   
+        # if self.state == STATES['search']:
+        #     ''' Find which boundary was violated '''
+        #     if scaled_coordinates[0] == 0:
+        #         action: int = handle_wall(self, 'left')
+        #     elif scaled_coordinates[0] == self.x_limit_scaled:
+        #         action: int = handle_wall(self, 'right')
+        #     elif scaled_coordinates[1] == 0:
+        #         action: int = handle_wall(self, 'down')
+        #     elif scaled_coordinates[1] == self.y_limit_scaled:
+        #         action: int = handle_wall(self, 'up')
+        # else:
+        #     # TODO Handle corner
+        #     pass   
+        action = None
         return action
     
     def update(self):

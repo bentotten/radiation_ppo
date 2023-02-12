@@ -15,6 +15,7 @@ dependencies:
   - matplotlib
   - pytorch-lightning
   - cudatoolkit
+  - sphinx
   - pip
   - pip:
       - -e ../../gym_rad_search

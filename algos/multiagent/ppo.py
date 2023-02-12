@@ -420,7 +420,7 @@ class AgentPPO:
         )
                 
         # Initialize agents
-        match self.actor_critic_architecture:
+        match self.actor_critic_architecture: # Type: ignore
             case 'uniform':
                 # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
                 #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
