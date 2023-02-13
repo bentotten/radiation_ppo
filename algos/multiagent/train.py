@@ -282,7 +282,7 @@ class train_PPO:
                 
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
-                    episode_return[id] += rewards[id]
+                    episode_return[id] += np.array(rewards[id], dtype="float32") 
                 steps_in_episode += 1    
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
@@ -307,8 +307,7 @@ class train_PPO:
 
                 # Tally up ending conditions
                 
-                # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not
-                #  all, this will need to be changed.
+                # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
                 terminal_reached_flag = False
                 for id in terminal_counter:
                     if terminals[id] == True and not timeout:

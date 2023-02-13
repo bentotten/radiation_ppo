@@ -29,7 +29,7 @@
       "program": "${workspaceFolder}/algos/ppo/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--debug", "True", "--epochs", "25"],
+      "args": ["--debug", "True", "--epochs", "25", "--render", "True"],
       "cwd": "${workspaceFolder}/algos/ppo"
     },
     {
