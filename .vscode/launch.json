@@ -29,7 +29,7 @@
       "program": "${workspaceFolder}/algos/ppo/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--debug", "True", "--epochs", "50"],
+      "args": ["--debug", "True", "--epochs", "25"],
       "cwd": "${workspaceFolder}/algos/ppo"
     },
     {
@@ -52,7 +52,7 @@
       "justMyCode": false,
       "args": [
         "--agent-count",
-        "3",
+        "1",
         // "--steps-per-epoch",
         // "20",
         // "--steps-per-episode",
@@ -72,9 +72,9 @@
         "--exp-name",
         "TEAM-RAD",
         "--net-type",
-        "cnn"
-        // "--DEBUG",
-        // "True"
+        "rnn",
+        "--DEBUG",
+        "True"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

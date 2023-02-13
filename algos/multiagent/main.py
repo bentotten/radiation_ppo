@@ -434,6 +434,7 @@ def main():
         DEBUG=args.DEBUG
     )
     
+    # Begin simulation
     simulation.train()
 
 if __name__ == "__main__":

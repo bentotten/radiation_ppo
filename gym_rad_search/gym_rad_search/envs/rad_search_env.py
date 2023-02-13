@@ -310,6 +310,7 @@ class RadSearch(gym.Env):
     # Values with default values which are not set in the constructor
     number_agents: int = 1
     action_space: spaces.Discrete = spaces.Discrete(A_SIZE)
+    number_actions: int = A_SIZE
     detectable_directions: int = DETECTABLE_DIRECTIONS
     _max_episode_steps: int = 120
     background_radiation_bounds: Point = Point((10, 51))
