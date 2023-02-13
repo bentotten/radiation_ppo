@@ -207,7 +207,6 @@ class train_PPO:
 
         source_coordinates: npt.NDArray = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         episode_return: dict[int, float] = {id: 0.0 for id in self.agents}
-        episode_return_buffer: list = []  # TODO can probably get rid of this, unless want to keep for logging
         steps_in_episode: int = 0
         
         # Prepare epoch variables
@@ -284,7 +283,6 @@ class train_PPO:
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
                     episode_return[id] += rewards[id]
-                episode_return_buffer.append(episode_return[id])
                 steps_in_episode += 1    
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
@@ -418,7 +416,6 @@ class train_PPO:
                                 )                            
 
                     # Reset the environment and counters
-                    episode_return_buffer = []
                     for id in self.agents:
                         self.stat_buffers[id].reset()
                          
@@ -440,7 +437,6 @@ class train_PPO:
                     observations, _,  _, _ = env.reset()                                         
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}
-                    episode_return_buffer = []  # TODO can probably get rid of this, unless want to keep for logging
                     steps_in_episode = 0
                     # Reset maps for new episode
                     if self.actor_critic_architecture == 'cnn':
