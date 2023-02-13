@@ -389,6 +389,32 @@ class PPOBuffer:
 
 @dataclass
 class AgentPPO:
+    '''
+    :param ac_kwargs: (dict) Any kwargs appropriate for the Actor-Critic object provided to PPO.
+    :param pi_learning_rate: (float) Learning rate for Actor/policy optimizer.
+    :param critic_learning_rate: (float) Learning rate for Critic (value) function optimizer.
+    :param pfgru_learning_rate: (float) Learning rate for the source prediction module (PFGRU)
+    
+    :param train_pi_iters: (int) Maximum number of gradient descent steps to take on actor policy loss per epoch. (Early stopping may cause optimizer to take fewer than this.)
+    :param train_v_iters: (int) Number of gradient descent steps to take on critic state-value function per epoch.
+    :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit)           
+    :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training 
+    
+    :param minibatch: (int) How many observations to sample out of a batch. Used to reduce the impact of fully online learning
+
+    :param enforce_boundaries: (bool) whether or not agents can wander outside of the gridworld
+
+    :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
+    :param alpha: (float) Entropy reward term scaling.
+    :param clip_ratio: (float) Usually seen as Epsilon Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy while 
+        still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
+        (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, it goes with a clipped value instead.
+    :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used for early stopping. (Usually small, 0.01 or 0.05.)   
+        
+    :param lam: (float) Lambda for GAE-Lambda advantage estimator calculations. (Always between 0 and 1, close to 1.)
+        
+      
+    '''
     id: int
     number_of_agents: int
     observation_space: int
@@ -398,6 +424,7 @@ class AgentPPO:
     steps_per_episode: int    
     detector_step_size: int
     scaled_grid_bounds: tuple # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
+    #: The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the entire grid when boundaries are being enforced.    
     bounds_offset: tuple # Unscaled "observation area" to match map size to actual boundaries
     steps_per_epoch: int = field(default= 480)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
@@ -405,20 +432,33 @@ class AgentPPO:
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
     train_pfgru_iters: int = field(default= 15)
+    reduce_pfgru_iters: bool = field(default=True) 
     actor_learning_rate: float = field(default= 3e-4)
     critic_learning_rate: float = field(default= 1e-3)
     pfgru_learning_rate: float = field(default= 5e-3)    
     clip_ratio: float = field(default= 0.2)
     alpha: float = field(default= 0)
     target_kl: float = field(default= 0.07)
-    reduce_pfgru_iters: bool = field(default=True) 
     gamma: float = field(default= 0.99)
     lam: float = field(default= 0.9)
     seed: int = field(default= 0)
     minibatch: int = field(default=1)
     enforce_boundaries: bool = field(default=False)  # Informs how large maps need to be to accomodate out-of-grid steps
 
+    # Initialized elsewhere
     bp_args: BpArgs = field(init=False)
+
+    # TODO copied wholesale from train(), integrate here
+    #: [observation Space] From the environment, get the length that the observation array returned from a step in the environment will be. For RAD-TEAM and RAD-A2C the observation
+    #: will be a one dimensional tuple where the first element is the detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements 
+    #: are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized. 
+    obs_dim: int = field(init=False)
+    #: [Action Space] From the environment, get the number of actions an agent can take. For RAD-TEAM and RAD-A2C this will be 8 standard directions, including diagonals.
+    act_dim: int = field(init=False)
+    #: Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for increased accuracy in convolutional network
+    env_scale: float = field(init=False)
+    #: Distance an agent can travel in a single action.
+    step_size: int = field(init=False)
 
     def __post_init__(self):   
         # PFGRU args, from Ma et al. 2020

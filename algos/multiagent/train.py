@@ -88,258 +88,120 @@ class StatBuff:
 
 
 ################################### Training ###################################
+
 @dataclass
 class train_PPO:
-    env: RadSearch
+    ''' Proximal Policy Optimization (by clipping) with early stopping based on approximate KL. Base code from OpenAI: https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
+    This class focuses on the coordination part of training an actor-critic model, including coordinating agent objects, interacting with simulation environment for a certain number of epochs, and 
+    calling an agents update function according to a seperate neural network module.
+    
+    Steps:
+    
+    #. Set seed for pytorch, numpy, and add to actor-critic arguments.
+    #. Fetch information about action-space, observation-space, and scale from simulation environment.
+
+    :param env: An environment satisfying the OpenAI Gym API.    
+    
+    :param logger_kwargs: Static parameters for the logging mechanism for saving models and saving/printing progress for each agent. Note that the logger is also used for calculating values later on in the episode.
+    :param ppo_kwargs: Static parameters for ppo method. Also contains arguments for actor-critic neural networks.
+    
+    :param seed: (int) Seed for random number generators.
+
+    :param number_of_agents: (int) Number of agents
+    :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
+    
+    :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
+    :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment.        
+    :param total_epochs: (int) Number of total epochs of interaction (equivalent to number of policy updates) to perform.
+    
+    :param render: (bool) Indicates whether to render last episode    
+    :param save_freq: (int) How often (in terms of gap between epochs) to save the current policy and value function.
+    :param save_gif_freq: (int) How many epochs to save a gif
+    :param save_gif: (bool) Indicates whether to save render of last episode
+    :param render_first_episode: (bool) If render, render the first episode and then follow save-gif-freq parameter
+    
+    :param DEBUG: (bool) indicate whether in debug mode with hardcoded start/stopping locations   
+    
+    '''
+    # Environment
+    env: RadSearch    
+    
+    # Pass-through arguments
     logger_kwargs: EpochLoggerKwargs
-    seed: int = field(default= 0)
+    ppo_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
+
+    # Random seed
+    seed: int = field(default= 0)    
+
+    # Agent information
+    number_of_agents: int = field(default= 1)
+    actor_critic_architecture: str = field(default="cnn")
+    
+    # Simulation parameters
     steps_per_epoch: int = field(default= 480)
     steps_per_episode: int = field(default= 120)
     total_epochs: int = field(default= 3000)
+    
+    # Rendering information
+    render: bool = field(default= False)    
     save_freq: int = field(default= 500)
     save_gif_freq: int = field(default= float('inf'))
-    render: bool = field(default= False)
     save_gif: bool = field(default= False)
-    gamma: float = field(default= 0.99)
-    alpha: float = field(default= 0)
-    clip_ratio: float = field(default= 0.2)
-    mp_mm: tuple[int, int] = field(default= (5, 5))
-    pi_lr: float = field(default= 3e-4)
-    critic_learning_rate: float = field(default= 1e-3)
-    pfgru_learning_rate: float = field(default= 5e-3)
-    train_pi_iters: int = field(default= 40)
-    train_v_iters: int = field(default= 40)
-    train_pfgru_iters: int = field(default= 15)
-    reduce_pfgru_iters: bool = field(default=True)
-    lam: float = field(default= 0.9)
-    number_of_agents: int = field(default= 1)
-    target_kl: float = field(default= 0.07)
-    ac_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
-    #actor_critic: Type[RADA2C_core.RNNModelActorCritic] = field(default=RADA2C_core.RNNModelActorCritic)
-    actor_critic_architecture: str = field(default="cnn")
-    start_time: float = field(default_factory= lambda: time.time()),
-    minibatch: int = field(default=1)
-    DEBUG: bool = field(default=False),
-    enforce_boundaries: bool = field(default=False)
-    render_first_episode: bool = field(default=True) # If render, render the first episode and then follow save-gif-freq parameter
+    render_first_episode: bool = field(default=True)     
     
-    """
-    Proximal Policy Optimization (by clipping),
+    # Debug
+    DEBUG: bool = field(default=False),
 
-    with early stopping based on approximate KL
-
-    Base code from OpenAI:
-    https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
-
-    Args:
-        env : An environment satisfying the OpenAI Gym API.
-        
-        logger_kwargs: Arguments for the logging mechanism for saving models and saving/printing progress for each agent.
-            Note that the logger is also used for calculating values later on in the episode.
-        
-        seed (int): Seed for random number generators.     
-
-        steps_per_epoch (int): Number of steps of interaction (state-action pairs)
-            for the agent and the environment in each epoch before updating the neural network modules.
-            
-        steps_per_episode (int): Number of steps of interaction (state-action pairs)
-            for the agent and the environment in each episode before resetting the environment.        
-
-        total_epochs (int): Number of total epochs of interaction (equivalent to
-            number of policy updates) to perform.
-
-        save_freq (int): How often (in terms of gap between epochs) to save
-            the current policy and value function.
-            
-        save_gif_freq (int): How many epochs to save a gif
-            
-        render (bool): Indicates whether to render last episode
-        
-        save_gif (bool): Indicates whether to save render of last episode
-
-        gamma (float):  Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
-        
-        alpha (float): Entropy reward term scaling.        
-
-        clip_ratio (float): Usually seen as Epsilon Hyperparameter for clipping in the policy objective.
-            Roughly: how far can the new policy go from the old policy while
-            still profiting (improving the objective function)? The new policy
-            can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
-            (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, 
-            it goes with a clipped value instead.
-
-        pi_lr (float): Learning rate for Actor/policy optimizer.
-
-        critic_learning_rate (float): Learning rate for Critic (value) function optimizer.
-        
-        pfgru_learning_rate (float): Learning rate for the source prediction module (PFGRU)
-
-        train_pi_iters (int): Maximum number of gradient descent steps to take on actor policy loss per epoch. 
-            (Early stopping may cause optimizer to take fewer than this.)
-
-        train_v_iters (int): Number of gradient descent steps to take on
-            critic state-value function per epoch.
-            
-        train_pfgru_iters (int): Number of gradient descent steps to take for source localization neural network (the PFGRU unit)           
-
-        reduce_pfgru_iters (bool): Reduces PFGRU training iteration when further along to speed up training
-
-        lam (float): Lambda for GAE-Lambda advantage estimator calculations. (Always between 0 and 1,
-            close to 1.)
-
-        target_kl (float): Roughly what KL divergence we think is appropriate
-            between new and old policies after an update. This will get used
-            for early stopping. (Usually small, 0.01 or 0.05.) This is a part of PPO.        
-
-        ac_kwargs (dict): Any kwargs appropriate for the Actor-Critic object
-            provided to PPO.
-            
-        minibatch (int): How many observations to sample out of a batch. Used to reduce the impact of fully online learning
-
-        actor_critic: The constructor method for a PyTorch Module with a
-            ``step`` method, an ``act`` method, a ``pi`` module, and a ``v``
-            module. The ``step`` method should accept a batch of observations
-            and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``a``        (batch, act_dim)  | Numpy array of actions for each
-                                        | observation.
-            ``v``        (batch,)          | Numpy array of value estimates
-                                        | for the provided observations.
-            ``logp_a``   (batch,)          | Numpy array of log probs for the
-                                        | actions in ``a``.
-            ===========  ================  ======================================
-
-            The ``act`` method behaves the same as ``step`` but only returns ``a``.
-
-            The ``pi`` module's forward call should accept a batch of
-            observations and optionally a batch of actions, and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``pi``       N/A               | Torch Distribution object, containing
-                                        | a batch of distributions describing
-                                        | the policy for the provided observations.
-            ``logp_a``   (batch,)          | Optional (only returned if batch of
-                                        | actions is given). Tensor containing
-                                        | the log probability, according to
-                                        | the policy, of the provided actions.
-                                        | If actions not given, will contain
-                                        | ``None``.
-            ===========  ================  ======================================
-
-            The ``v`` module's forward call should accept a batch of observations
-            and return:
-
-            ===========  ================  ======================================
-            Symbol       Shape             Description
-            ===========  ================  ======================================
-            ``v``        (batch,)          | Tensor containing the value estimates
-                                        | for the provided observations. (Critical:
-                                        | make sure to flatten this!)
-            ===========  ================  ======================================
-    """
+    # Initialized elsewhere
+    #: Time experiment was started
+    start_time: float = field(default_factory= lambda: time.time()),    
+    #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
+    # TODO change this to single statbuf
+    stat_buffers: dict[int, StatBuff] = field(default_factory=lambda:dict())
+    #: Object that holds agents
+    agents: dict[int, AgentPPO] = field(default_factory=lambda:dict())
+    #: Sets up logger arguements for each agent  
+    logger_kwargs_set: dict[int, Any] = field(default_factory=lambda:dict())
+    #: Object that holds agent loggers
+    loggers: dict[int, EpochLogger] = field(default_factory=lambda:dict())
+    
     def __post_init__(self):  
-        
-        # TODO get rid of redundant for loops
-                
         # Set Pytorch random seed
         if self.seed:
             torch.manual_seed(self.seed)
-            np.random.seed(self.seed)      
+            np.random.seed(self.seed)    
 
-        # Set additional Actor-Critic variables
-        self.ac_kwargs["seed"] = self.seed
-        self.ac_kwargs["pad_dim"] = 2        
-
-        # Get environment information
-        self.obs_dim: int = self.env.observation_space.shape[0]
-        #self.act_dim: int = rad_search_env.A_SIZE # Includes idle action
-        self.act_dim: int = rad_search_env.DETECTABLE_DIRECTIONS
-        self.env_scale: int = self.env.scale
-        self.bounds_offset: tuple = self.env.observation_area
-        self.step_size: int = self.env.step_size
-        scaled_grid_bounds = (1, 1)  # Scaled to match current return from env.step(). Can be reinflated with resolution_accuracy        
-        
-        # For logging
-        config_json: dict[str, Any] = convert_json(locals())
-
-        self.agents: dict[int, AgentPPO] = {
-            i: AgentPPO(
-                id=i,
-                steps_per_epoch=self.steps_per_epoch,
-                actor_critic_architecture=self.actor_critic_architecture,
-                observation_space=self.obs_dim, 
-                action_space=self.act_dim,
-                bounds_offset=self.bounds_offset,
-                steps_per_episode=self.steps_per_episode,
-                detector_step_size=self.step_size,
-                actor_critic_args=self.ac_kwargs,
-                actor_learning_rate=self.pi_lr,
-                critic_learning_rate=self.critic_learning_rate,
-                pfgru_learning_rate=self.pfgru_learning_rate,
-                train_pi_iters=self.train_pi_iters,
-                train_v_iters=self.train_v_iters,
-                train_pfgru_iters=self.train_pfgru_iters,
-                reduce_pfgru_iters=self.reduce_pfgru_iters,
-                clip_ratio=self.clip_ratio,
-                alpha=self.alpha,
-                target_kl=self.target_kl,
-                environment_scale=self.env_scale,                
-                env_height=self.env.search_area[2][1],
-                scaled_grid_bounds=scaled_grid_bounds,
-                seed=self.seed,
-                minibatch=self.minibatch,
-                enforce_boundaries=self.enforce_boundaries,
-                number_of_agents=self.number_of_agents
-            ) for i in range(self.number_of_agents)
-        }
-        
-        # TODO add PFGRU to FF and CNN networks
-        for ac in self.agents.values():
-            ac.agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?   
-        
-        # Setup statistics buffers for normalizing returns from environment
-        self.stat_buffers: dict[int, StatBuff] = {i: StatBuff() for i in range(self.number_of_agents)}
-                
-        # Count variables for actor/policy (pi) and PFGRU (model)
-        self.pi_var_count, self.model_var_count = {}, {}
-        for id, ac in self.agents.items():
-            self.pi_var_count[id], self.model_var_count[id] = (
-                count_variables(module) for module in [ac.agent.pi, ac.agent.model]
-            )   
-            
-        # Instatiate loggers and set up model saving                 
-        logger_kwargs_set: dict[int, Any] = {
-            id: setup_logger_kwargs(
+        # Save configuration   
+        config_json: dict[str, Any] = convert_json(locals())                       
+                  
+        # Instatiate loggers and save initial parameters in the first agent slot
+        # TODO save configurations in parent directory
+        for id in range(self.number_of_agents):
+            self.logger_kwargs_set[id] = setup_logger_kwargs(
                 exp_name=f"{self.logger_kwargs['exp_name']}_agent{id}",
                 seed=self.logger_kwargs['seed'],
                 data_dir=self.logger_kwargs['data_dir'],
                 env_name=self.logger_kwargs['env_name']
-            ) for id in self.agents
-        }
-        
-        self.loggers: dict[int, EpochLogger] = {id: EpochLogger(**(logger_kwargs_set[id])) for id in self.agents}
-        
-        for id in self.agents:
-            self.loggers[id].save_config(config_json)    
-            self.loggers[id].log(
-                f"\nNumber of parameters: \t actor policy (pi): {self.pi_var_count[0]}, particle filter gated recurrent unit (model): {self.model_var_count[0]} \t"
             )
-            self.loggers[id].setup_pytorch_saver(self.agents[id].agent.pi)  # Only setup to save one nn module currently, here saving the policy
+        
+            self.loggers[id] = EpochLogger(**(self.logger_kwargs_set[id]))
+        self.loggers[0].save_config(config_json) 
+        
+        # Initialize agents        
+        for i in range(self.number_of_agents):
+            # If RAD-A2C, set up statistics buffers         
+            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                self.stat_buffers[i]: StatBuff()          
+                
+            self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
             
-        # Save env image
-        if self.render:
-            self.env.render(
-            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-            epoch_count=0,
-            just_env=True
-            )                    
+            # TODO add PFGRU to FF and CNN networks
+            self.agents[i].agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?
+            self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy        
+                      
 
     def train(self):
+        ''' Execute training simulation. '''
         # Prepare environment variables and reset
         env = self.env
         

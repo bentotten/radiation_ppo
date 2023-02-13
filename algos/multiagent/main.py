@@ -12,6 +12,7 @@ import numpy.random as npr
 import gym
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from gym_rad_search.envs import RadSearch  # type: ignore
+from gym_rad_search.envs import rad_search_env
 
 try:
     import NeuralNetworkCores.RADA2C_core as RADA2C_core
@@ -26,6 +27,7 @@ except:
 @dataclass
 class CliArgs:
     ''' Parameters passed in through the command line 
+    
     General parameters:
         --DEBUG, type=bool, default=False, 
             help="Enable DEBUG mode - contains extra logging and set minimal setups"
@@ -93,6 +95,7 @@ class CliArgs:
     l_pol: int
     l_val: int
     gamma: float
+    lam: float
     seed: int
     steps_per_epoch: int
     steps_per_episode: int
@@ -103,6 +106,8 @@ class CliArgs:
     obstruct: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
     net_type: str
     alpha: float
+    clip_ratio: float
+    target_kl: float
     render: bool
     agent_count: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     enforce_boundaries: bool
@@ -110,6 +115,13 @@ class CliArgs:
     env_name: str
     save_freq: int
     save_gif_freq: int
+    actor_learning_rate: float
+    critic_learning_rate: float
+    pfgru_learning_rate: float
+    train_pi_iters: float
+    train_v_iters: float
+    train_pfgru_iters: float
+    reduce_pfgru_iters: float
     DEBUG: bool
 
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -138,6 +150,9 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         obstruct=args.obstruct,
         net_type=args.net_type,
         alpha=args.alpha,
+        lam=args.lam,
+        clip_ratio=args.clip_ratio,
+        target_kl=args.target_kl,
         render=args.render,
         agent_count=args.agent_count,
         enforce_boundaries=args.enforce_boundaries,
@@ -145,6 +160,13 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         env_name=args.env_name,
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,
+        actor_learning_rate=args.actor_learning_rate,
+        critic_learning_rate=args.critic_learning_rate,
+        pfgru_learning_rate=args.pfgru_learning_rate,
+        train_pi_iters=args.train_pi_iters,
+        train_v_iters=args.train_v_iters,
+        train_pfgru_iters=args.train_pfgru_iters,
+        reduce_pfgru_iters=args.reduce_pfgru_iters,        
         DEBUG=args.DEBUG
     )
 
@@ -239,10 +261,42 @@ def create_parser() -> argparse.ArgumentParser:
         "--alpha", type=float, default=0.1, help="Entropy reward term scaling"
     )
     parser.add_argument(
-        "--minibatches", type=int, default=1, help="Batches to sample data during actor policy update (k_epochs)"
+        "--lam", type=float, default=0.9, help="Lamda - Smoothing parameter for GAE-Lambda advantage estimator calculations (Always between 0 and 1, close to 1.)"
     )    
+    parser.add_argument(
+        "--clip_ratio", type=float, default=0.2, help="Usually seen as Epsilon Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy while \
+            still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. \
+            (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, it goes with a clipped value instead."
+    )
+    parser.add_argument(
+        "--target_kl", type=float, default=0.07, help="Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used for early stopping. (Usually small, 0.01 or 0.05.) "
+    )   
+    parser.add_argument(
+        "--minibatches", type=int, default=1, help="Batches to sample data during actor policy update (k_epochs)"
+    )
+    parser.add_argument(
+        "--actor_learning_rate", type=float, default=3e-4, help="Learning rate for Actor/policy optimizer."
+    )
+    parser.add_argument(
+        "--critic_learning_rate", type=float, default=1e-3, help="Learning rate for Critic/value optimizer."
+    )
+    parser.add_argument(
+        "--pfgru_learning_rate", type=float, default=5e-3, help="Learning rate for location prediction neural network module."
+    )
+    parser.add_argument(
+        "--train_pi_iters", type=int, default=40, help="Maximum number of gradient descent steps to take on actor policy loss per epoch. NOTE: Early stopping may cause optimizer to take fewer than this."
+    )
+    parser.add_argument(
+        "--train_v_iters", type=int, default=40, help="Maximum number of gradient descent steps to take on critic state-value function per epoch."
+    )    
+    parser.add_argument(
+        "--train_pfgru_iters", type=int, default=15, help="Maximum number of gradient descent steps to take for source localization neural network (the PFGRU unit)."
+    )        
+    parser.add_argument(
+        "--reduce_pfgru_iters", type=bool, default=True, help="Reduce PFGRU training after a certain number of iterations when further along to speed up training."
+    )        
     
-    # Parameters for Neural Networks
+    # Parameters for RAD-A2C
     parser.add_argument(
         "--net-type",
         type=str,
@@ -270,28 +324,15 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 def ping():
+    ''' Check Function call '''
     return 'Pong!'
 
 def main():
+    ''' Set up experiment and create simulation environment. '''
     args = parse_args(create_parser())
 
     save_dir_name: str = args.exp_name  # Stands for bootstrap particle filter, one of the neat resampling methods used
-    exp_name: str = (
-        args.exp_name        
-        + "_"
-        "agents"
-        + str(args.agent_count)
-        # + "_loc"
-        # + str(args.hid_rec)
-        # + "_hid"
-        # + str(args.hid_gru)
-        # + "_pol"
-        # + str(args.hid_pol)
-        # + "_val"
-        # + str(args.hid_val)
-        # + f"_epochs{args.epochs}"
-        # + f"_steps{args.steps_per_epoch}"
-    )
+    exp_name: str = (args.exp_name + "_agents" + str(args.agent_count))
 
     # Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
@@ -330,33 +371,67 @@ def main():
     #     np_random=rng,
     #     number_agents = args.agent_count
     # )    
+    
+    # Set up static A2C actor-critic args
+    ac_kwargs=dict(
+        hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
+        hidden_sizes_val=[[args.hid_val]] * args.l_val,
+        hidden_sizes_rec=[args.hid_rec],
+        hidden=[[args.hid_gru]],
+        net_type=args.net_type,
+        batch_s=args.minibatches,
+        enforce_boundaries=args.enforce_boundaries,
+        seed=args.seed,
+        pad_dim=2                     
+    )      
+
+    # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
+    ppo_kwargs=dict(
+        observation_space=env.observation_space.shape[0],
+        action_space=env.detectable_directions,
+        bounds_offset=env.observation_area,
+        detector_step_size=env.step_size,
+        environment_scale=env.scale,
+        scaled_grid_bounds=(1, 1),        
+        env_height=env.search_area[2][1],    
+        actor_critic_args=ac_kwargs,
+        steps_per_epoch=args.steps_per_epoch,
+        actor_critic_architecture=args.net_type,        
+        steps_per_episode=args.steps_per_episode,
+        seed=args.seed,
+        minibatch=args.minibatches,
+        enforce_boundaries=args.enforce_boundaries,
+        number_of_agents=args.agent_count,
+        actor_learning_rate=args.actor_learning_rate,
+        critic_learning_rate=args.critic_learning_rate,
+        pfgru_learning_rate=args.pfgru_learning_rate,
+        train_pi_iters=args.train_pi_iters,
+        train_v_iters=args.train_v_iters,
+        train_pfgru_iters=args.train_pfgru_iters,
+        reduce_pfgru_iters=args.reduce_pfgru_iters,
+        clip_ratio=args.clip_ratio,
+        alpha=args.alpha,
+        target_kl=args.target_kl,
+        gamma=args.gamma,        
+        lam=args.lam
+    )
 
     # Run ppo training function
     simulation = train.train_PPO(
         env=env,
         logger_kwargs=logger_kwargs,
-        ac_kwargs=dict(
-            hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
-            hidden_sizes_val=[[args.hid_val]] * args.l_val,
-            hidden_sizes_rec=[args.hid_rec],
-            hidden=[[args.hid_gru]],
-            net_type=args.net_type,
-            batch_s=args.minibatches,
-            enforce_boundaries=args.enforce_boundaries
-        ),
-        gamma=args.gamma,
-        alpha=args.alpha,
+        ppo_kwargs=ppo_kwargs,
         seed=robust_seed,
+        number_of_agents=args.agent_count,
+        actor_critic_architecture=args.net_type,            
         steps_per_epoch=args.steps_per_epoch,
         steps_per_episode=args.steps_per_episode,
         total_epochs=args.epochs,
-        number_of_agents=args.agent_count,
         render=args.render,
         save_gif=args.render, # TODO combine into just render
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,
-        actor_critic_architecture=args.net_type,
-        enforce_boundaries=args.enforce_boundaries
+        DEBUG=args.DEBUG
     )
     
     simulation.train()

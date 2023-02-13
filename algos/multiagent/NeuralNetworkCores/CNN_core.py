@@ -645,6 +645,9 @@ class CCNBase:
     grid_bounds: The grid bounds for the state returned by the environment. For RAD-PPO, this is (1, 1). This value will be scaled by the resolution_accuracy variable
     resolution_accuracy: How much to scale the convolution maps by (higher rate means more accurate, but more memory usage)
     lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+
+    
+    
     '''
     def __post_init__(self):
         # For render
