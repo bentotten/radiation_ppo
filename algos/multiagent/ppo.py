@@ -468,75 +468,55 @@ class AgentPPO:
 
     def __post_init__(self):                  
         # Initialize agents
-        match self.actor_critic_architecture: # Type: ignore                   
-            case 'ff':
+        if self.actor_critic_architecture == 'ff':
                 self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
-            case 'cnn':                
-
+        elif self.actor_critic_architecture == 'cnn':
+            # Initialize Agents                
+            self.agent = RADCNN_core.CCNBase(
+                state_dim=self.observation_space, 
+                action_dim=self.action_space,
+                grid_bounds=self.scaled_grid_bounds,
+                steps_per_epoch=self.steps_per_epoch,
+                id=self.id,
+                random_seed=self.seed,
+                steps_per_episode=self.steps_per_episode,
+                number_of_agents=self.number_of_agents           
+                )
+            
+            # Initialize learning opitmizers                           
+            self.agent_optimizer = OptimizationStorage(
+                train_pi_iters = self.train_pi_iters,                
+                train_v_iters = self.train_v_iters,
+                train_pfgru_iters = self.train_pfgru_iters,              
+                pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
+                critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
+                model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
+                loss = torch.nn.MSELoss(reduction="mean"),
+                clip_ratio = self.clip_ratio,
+                alpha = self.alpha,
+                target_kl = self.target_kl,             
+                )                         
                 
-                # Initialize Agents                
-                self.agent = RADCNN_core.CCNBase(
-                    state_dim=self.observation_space, 
-                    action_dim=self.action_space,
-                    grid_bounds=self.scaled_grid_bounds,
-                    steps_per_epoch=self.steps_per_epoch,
-                    id=self.id,
-                    random_seed=self.seed,
-                    steps_per_episode=self.steps_per_episode,
-                    number_of_agents=self.number_of_agents           
-                    )
-                
-                # Initialize learning opitmizers                           
-                self.agent_optimizer = OptimizationStorage(
-                    train_pi_iters = self.train_pi_iters,                
-                    train_v_iters = self.train_v_iters,
-                    train_pfgru_iters = self.train_pfgru_iters,              
-                    pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                    critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
-                    model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
-                    loss = torch.nn.MSELoss(reduction="mean"),
-                    clip_ratio = self.clip_ratio,
-                    alpha = self.alpha,
-                    target_kl = self.target_kl,             
-                    )                         
-                
-            case 'rnn':
-                del self.actor_critic_args['enforce_boundaries']
-                # Initialize Agents                
-                self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)
-                
-                # Initialize learning opitmizers                           
-                self.agent_optimizer = OptimizationStorage(
-                    train_pi_iters = self.train_pi_iters,                
-                    train_v_iters = self.train_v_iters,
-                    train_pfgru_iters = self.train_pfgru_iters,              
-                    pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                    critic_optimizer = Adam(self.agent.pi.parameters(), lr=self.critic_learning_rate),
-                    model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
-                    loss = torch.nn.MSELoss(reduction="mean"),
-                    clip_ratio = self.clip_ratio,
-                    alpha = self.alpha,
-                    target_kl = self.target_kl,             
-                    )                
-            case 'mlp':
-                # Initialize Agents
-                self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args) 
-                 
-                # Initialize learning opitmizers           
-                self.agent_optimizer = OptimizationStorage(
-                    train_pi_iters = self.train_pi_iters,                
-                    train_v_iters = self.train_v_iters,
-                    train_pfgru_iters = self.train_pfgru_iters,              
-                    pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                    critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
-                    model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
-                    loss = torch.nn.MSELoss(reduction="mean"),
-                    clip_ratio = self.clip_ratio,
-                    alpha = self.alpha,
-                    target_kl = self.target_kl,             
-                    )                         
-            case _:
-                raise ValueError('Unsupported neural network type')
+        elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            del self.actor_critic_args['enforce_boundaries']
+            # Initialize Agents                
+            self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)
+            
+            # Initialize learning opitmizers                           
+            self.agent_optimizer = OptimizationStorage(
+                train_pi_iters = self.train_pi_iters,                
+                train_v_iters = self.train_v_iters,
+                train_pfgru_iters = self.train_pfgru_iters,              
+                pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
+                critic_optimizer = Adam(self.agent.pi.parameters(), lr=self.critic_learning_rate),
+                model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
+                loss = torch.nn.MSELoss(reduction="mean"),
+                clip_ratio = self.clip_ratio,
+                alpha = self.alpha,
+                target_kl = self.target_kl,             
+                )                
+        else:
+            raise ValueError('Unsupported neural network type')
             
         # Inititalize buffers
         self.ppo_buffer = PPOBuffer(
