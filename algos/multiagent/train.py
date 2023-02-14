@@ -52,12 +52,6 @@ except:
 
 
 ################################### Functions for algorithm/implementation conversions ###################################
-def count_variables(module: nn.Module) -> int:
-    # TODO obsolete - remove
-    ''' Counts number of parameters in a neural network '''
-    return sum(np.prod(p.shape) for p in module.parameters())
-
-
 @dataclass
 class StatBuff:
     ''' [Backwards Compatibility] Statistics buffer for normalizing returns from environment. Left in train.py for backwards compatability
@@ -94,16 +88,6 @@ class train_PPO:
     
     #. Set seed for pytorch and numpy
     #. Set up logger. Will save to a directory named "models" and the chosen experiment name. Configurations are stored in the first agents directory.
-    #. Begin experiment.
-    #. While epoch count is less than max epochs, 
-    - Reset the environment
-    - Begin epoch. While stepcount is less than max steps per epoch:
-    -- Each agent chooses an action from reset environment
-    -- Send actions to environment and receive rewards, observations, whether or not the source was found, and boundary information back
-    -- Save the observations and returns in buffers
-    -- Check if the episode or epoch has ended because of a timeout or a terminal condition.
-    --- If the episode has ended but not the epoch, reset environment and hidden layers/map stacks
-    --- If the epoch has ended, use existing buffers to update the networks, then reset all buffers, hidden networks, and the environment
 
     :param env: An environment satisfying the OpenAI Gym API.    
     :param logger_kwargs: Static parameters for the logging mechanism for saving models and saving/printing progress for each agent. Note that the logger is also used for calculating values later on in the episode.
@@ -195,13 +179,23 @@ class train_PPO:
             self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy        
                       
     def train(self):
-        ''' Function that executes training simulation. '''
-        # Prepare environment variables and reset
-        env = self.env
+        ''' Function that executes training simulation. 
+            #. Begin experiment.
+            #. While epoch count is less than max epochs, 
+            - Reset the environment
+            - Begin epoch. While stepcount is less than max steps per epoch:
+            -- Each agent chooses an action from reset environment
+            -- Send actions to environment and receive rewards, observations, whether or not the source was found, and boundary information back
+            -- Save the observations and returns in buffers
+            -- Check if the episode or epoch has ended because of a timeout or a terminal condition.
+            --- If the episode has ended but not the epoch, reset environment and hidden layers/map stacks
+            --- If the epoch has ended, use existing buffers to update the networks, then reset all buffers, hidden networks, and the environment        
+        '''       
+        # Reset environment and load initial observations
+        #   Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]        
+        observations, _,  _, infos = self.env.reset()
         
-        # Obsertvations for each agent, 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]        
-        observations, _,  _, infos = env.reset()
-
+        # Prepare environment variables and reset
         source_coordinates: npt.NDArray = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
         episode_return: dict[int, float] = {id: 0.0 for id in self.agents}
         steps_in_episode: int = 0
@@ -210,13 +204,11 @@ class train_PPO:
         out_of_bounds_count: dict[int, int] = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
         terminal_counter: dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
+        # TODO move to PPO
         # Update stat buffers for all agent observations for later observation normalization
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             for id in self.agents:
                 self.stat_buffers[id].update(observations[id][0])
-        
-        # TODO Removed features - migrating to pytorch lightning/Ray instead of mpi (God willing)
-        #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
         # TODO add PFGRU to FF and CNN networks
         for id in self.agents: 
@@ -271,11 +263,11 @@ class train_PPO:
                 
                 # Ensure no item is above max actions or below 0. Idle action is max action dimension (here 8)
                 for action in agent_action_decisions.values():
-                    assert 0 <= action and action < int(env.number_actions)
+                    assert 0 <= action and action < int(self.env.number_actions)
                 
                 # Take step in environment - Critical that this value is saved as "next" observation so we can link
                 #  rewards from this new state to the prior step/action
-                next_observations, rewards, terminals, infos = env.step(action=agent_action_decisions) 
+                next_observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions) 
                 
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
@@ -303,7 +295,7 @@ class train_PPO:
                 observations = next_observations
 
                 # Tally up ending conditions
-                
+                # TODO move this to seperate function
                 # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
                 terminal_reached_flag = False
                 for id in terminal_counter:
@@ -347,7 +339,7 @@ class train_PPO:
  
                         if epoch_ended:
                             # Set flag to sample new environment parameters
-                            env.epoch_end = True 
+                            self.env.epoch_end = True 
                     else:
                         value = 0  # State value 
                     # Finish the trajectory and compute advantages. See function comments for more information                        
@@ -368,7 +360,7 @@ class train_PPO:
                     time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
                     if (asked_to_save and save_first_epoch and time_to_save):
                         # Render gif
-                        env.render(
+                        self.env.render(
                             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                             epoch_count=epoch,
                         )
@@ -383,7 +375,7 @@ class train_PPO:
                                 )
                     # Always render first episode
                     if self.render and epoch == 0 and self.render_first_episode:
-                        env.render(
+                        self.env.render(
                             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                             epoch_count=epoch,
                         
@@ -399,7 +391,7 @@ class train_PPO:
 
                     # Always render last epoch's episode
                     if self.DEBUG and epoch == self.total_epochs-1:
-                        env.render(
+                        self.env.render(
                             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                             epoch_count=epoch,
                         )                        
@@ -430,7 +422,7 @@ class train_PPO:
                             out_of_bounds_count[id] = 0
                     
                     # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-                    observations, _,  _, _ = env.reset()                                         
+                    observations, _,  _, _ = self.env.reset()                                         
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}
                     steps_in_episode = 0

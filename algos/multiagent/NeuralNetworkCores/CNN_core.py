@@ -616,40 +616,52 @@ class Critic(nn.Module):
 
 @dataclass
 class CCNBase:
-    id: int    
-    state_dim: int
-    action_dim: int
-    grid_bounds: Tuple[float]
-    resolution_accuracy: float
-    steps_per_epoch: int
-    steps_per_episode: int
-    number_of_agents: int
-    scaled_offset: float = field(default=0)    
-    random_seed: int = field(default=None)
-    critic: Any = field(default=None)  # Eventually allows for a global critic
-    render_counter: int = field(init=False)
-    
-    # Moved to PPO Buffer    
-    #steps_per_epoch    
-    # lamda=0.95
-    # beta: float = 0.005
-    # epsilon=0.2
-    # lr_actor
-    # lr_critic
-    # gamma
-    # K_epochs
-    # eps_clip        
     '''
     state_dim: The dimensions of the return from the environment
     action_dim: How many actions the actor chooses from
     grid_bounds: The grid bounds for the state returned by the environment. For RAD-PPO, this is (1, 1). This value will be scaled by the resolution_accuracy variable
     resolution_accuracy: How much to scale the convolution maps by (higher rate means more accurate, but more memory usage)
     lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
-
-    
-    
     '''
+        
+    # from PPO buffer wholesale          
+    action_space: int
+    detector_step_size: int
+    environment_scale: int
+    #: The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the entire grid when boundaries are being enforced.    
+    bounds_offset: tuple # Unscaled "observation area" to match map size to actual boundaries        
+    
+    id: int    
+    state_dim: int
+    action_dim: int
+    grid_bounds: Tuple[float]
+    steps_per_epoch: int
+    steps_per_episode: int
+    number_of_agents: int
+    random_seed: int = field(default=None)
+    critic: Any = field(default=None)  # Eventually allows for a global critic
+    render_counter: int = field(init=False)
+    
+    # from PPO buffer wholesale      
+    scaled_grid_bounds: tuple = (1,1) # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
+    enforce_boundaries: bool = field(default=False)  # Informs how large maps need to be to accomodate out-of-grid steps
+    
+    # Initialized elsewhere
+    scaled_offset: float = field(init=False)
+    resolution_accuracy: float = field(init=False)
+
+
     def __post_init__(self):
+        # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
+        #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
+        #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
+        multiplier = 0.01
+        self.resolution_accuracy = multiplier * 1/self.environment_scale
+        if self.enforce_boundaries:
+            self.scaled_offset = self.environment_scale * max(self.bounds_offset)                    
+        else:
+            self.scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))           
+        
         # For render
         self.render_counter = 0
         # Initialize buffers and neural networks
@@ -675,7 +687,8 @@ class CCNBase:
         bpf_num_particles: int = 40
         bpf_alpha: float = 0.7            
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
-        self.model = PFGRUCell(bpf_num_particles, self.state_dim - 8, self.state_dim - 8, bpf_hsize, bpf_alpha, True, "relu") 
+        self.model = PFGRUCell(bpf_num_particles, self.state_dim - 8, self.state_dim - 8, bpf_hsize, bpf_alpha, True, "relu")             
+        
         
     def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
         ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location

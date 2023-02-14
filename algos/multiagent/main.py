@@ -8,6 +8,7 @@ from datetime import datetime
 
 import numpy as np
 import numpy.random as npr
+from typing import NamedTuple
 
 import gym
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
@@ -18,10 +19,12 @@ try:
     import NeuralNetworkCores.RADA2C_core as RADA2C_core
     from epoch_logger import setup_logger_kwargs, EpochLogger
     import train as train
+    from ppo import BpArgs
 except:
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
     from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger
     import algos.multiagent.train as train
+    from algos.multiagent.ppo import BpArgs    
 
 
 @dataclass
@@ -56,13 +59,15 @@ class CliArgs:
         --dims, type=float, nargs=2, default=[2700.0, 2700.0], metavar=("dim_length", "dim_height"),
             help="Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid. Length by height.",
         --area-obs, type=float, nargs=2, default=[200.0, 500.0], metavar=("area_obs_min", "area_obs_max"),
-            help="Interval for each obstruction area in cm. This is how much to remove from bounds to make the 'visible bounds'",
+            help="Interval for each obstruction area in cm. This is how much to remove from dimensions of radiation source search area to spawn starting location and obstacles in",
         --obstruct, type= int, #Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7], default=-1,
             help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
         --enforce-boundaries, type=bool, default=False,
             help="Indicate whether or not agents can travel outside of the search area"
   
     Hyperparameters and PPO parameters:
+        "--lam", type=float, default=0.9, 
+            help="Lamda - Smoothing parameter for GAE-Lambda advantage estimator calculations (Always between 0 and 1, close to 1.)"    
         --gamma, type=float, default=0.99,
             help="Reward attribution for advantage estimator for PPO updates",
         --alpha, type=float, default=0.1, 
@@ -123,6 +128,7 @@ class CliArgs:
     train_pfgru_iters: float
     reduce_pfgru_iters: float
     DEBUG: bool
+
 
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
     ''' Function to parge command line arguments
@@ -323,9 +329,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     return parser
 
+
 def ping():
     ''' Check Function call '''
     return 'Pong!'
+
 
 def main():
     ''' Set up experiment and create simulation environment. '''
@@ -372,36 +380,60 @@ def main():
     #     number_agents = args.agent_count
     # )    
     
+    # Bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
+    bp_args = BpArgs(
+        bp_decay=0.1,
+        l2_weight=1.0,
+        l1_weight=0.0,
+        elbo_weight=1.0,
+        area_scale=env.search_area[2][1]
+    )    
+    
     # Set up static A2C actor-critic args
-    ac_kwargs=dict(
-        hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
-        hidden_sizes_val=[[args.hid_val]] * args.l_val,
-        hidden_sizes_rec=[args.hid_rec],
-        hidden=[[args.hid_gru]],
-        net_type=args.net_type,
-        batch_s=args.minibatches,
-        enforce_boundaries=args.enforce_boundaries,
-        seed=args.seed,
-        pad_dim=2                     
-    )      
+    # TODO switch all of these to switch statements
+    if args.net_type == 'mlp' or args.net_type =='rnn':
+        ac_kwargs=dict(
+            hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
+            hidden_sizes_val=[[args.hid_val]] * args.l_val,
+            hidden_sizes_rec=[args.hid_rec],
+            hidden=[[args.hid_gru]],
+            net_type=args.net_type,
+            batch_s=args.minibatches,
+            enforce_boundaries=args.enforce_boundaries,
+            seed=args.seed,
+            pad_dim=2                     
+        )
+    else:
+        ac_kwargs=dict(
+            number_of_agents=args.agent_count,
+            observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
+            action_space=env.detectable_directions,
+            steps_per_episode=args.steps_per_episode,
+            steps_per_epoch=args.steps_per_epoch,
+            scaled_grid_bounds=(1, 1),        
+
+            net_type=args.net_type,
+            batch_s=args.minibatches,
+            enforce_boundaries=args.enforce_boundaries,
+            seed=args.seed,
+            pad_dim=2                     
+        )        
 
     # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
     ppo_kwargs=dict(
-        observation_space=env.observation_space.shape[0],
-        action_space=env.detectable_directions,
+        observation_space=env.observation_space.shape[0],     # Also known as state dimensions: The dimensions of the observation returned from the environment
+        bp_args=bp_args,
+        steps_per_epoch=args.steps_per_epoch,
+        
+        actor_critic_args=ac_kwargs,
+                
         bounds_offset=env.observation_area,
         detector_step_size=env.step_size,
         environment_scale=env.scale,
-        scaled_grid_bounds=(1, 1),        
-        env_height=env.search_area[2][1],    
-        actor_critic_args=ac_kwargs,
-        steps_per_epoch=args.steps_per_epoch,
         actor_critic_architecture=args.net_type,        
-        steps_per_episode=args.steps_per_episode,
         seed=args.seed,
         minibatch=args.minibatches,
         enforce_boundaries=args.enforce_boundaries,
-        number_of_agents=args.agent_count,
         actor_learning_rate=args.actor_learning_rate,
         critic_learning_rate=args.critic_learning_rate,
         pfgru_learning_rate=args.pfgru_learning_rate,
@@ -416,7 +448,7 @@ def main():
         lam=args.lam
     )
 
-    # Run ppo training function
+    # Set up training
     simulation = train.train_PPO(
         env=env,
         logger_kwargs=logger_kwargs,

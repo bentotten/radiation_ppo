@@ -60,15 +60,6 @@ def discount_cumsum(
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
-class BpArgs(NamedTuple):
-    ''' Object that contains the parameters for bootstrap particle filter '''
-    bp_decay: float
-    l2_weight: float
-    l1_weight: float
-    elbo_weight: float
-    area_scale: float
-
-
 class UpdateResult(NamedTuple):
     ''' Object that contains the return values from the neural network updates '''
     StopIter: int
@@ -80,6 +71,15 @@ class UpdateResult(NamedTuple):
     ClipFrac: npt.NDArray[np.float32]
     LocLoss: torch.Tensor
     VarExplain: int
+
+
+class BpArgs(NamedTuple):
+    ''' Object that contains the parameters for bootstrap particle filter '''
+    bp_decay: float
+    l2_weight: float
+    l1_weight: float
+    elbo_weight: float
+    area_scale: float
 
 
 @dataclass
@@ -170,7 +170,7 @@ class PPOBuffer:
     PPO agent so that A2C architectures can be swapped out as desired.
     
     gamma (float): Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
-    lam (float): Smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+    :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
     beta (float): Entropy for loss function, encourages exploring different policies
     """
     
@@ -390,63 +390,66 @@ class PPOBuffer:
 @dataclass
 class AgentPPO:
     '''
-    :param ac_kwargs: (dict) Any kwargs appropriate for the Actor-Critic object provided to PPO.
+    This class handles PPO-related functions/calculations, the experience buffer, and holds the agent object. This class also is responsible for calculating advantages after an epoch,
+    calling actor/critic update functions located in the agent's individual neural networks, and handling all optimizers and learning cut-offs. Minibatches are sampled
+    here. One AgentPPO object per agent. Future work: add functionality for sharing single policy/critic and copying network to new "agents" (see OpenAI 5 by Berner et al. and
+    Target Localization by Alagha et al.)
+    
+    :param id: (int) unique identifier for agent that is used as key for identification of correct observations, rewards, etc within shared objects
+    :param observation_space: (int) The dimensions of the observation returned from the environment. Also known as state dimensions. For rad-search this will be 11, for the 11 elements of 
+        the observation array. This is used for the PPO buffer.
+    :param bp_args: (BpArgs) Set up bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
+    :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
+    :param seed: (int) For random number generator.
+    :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
+    :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
+    :param minibatch: (int) How many observations to sample out of a batch. Used to reduce the impact of fully online learning    
     :param pi_learning_rate: (float) Learning rate for Actor/policy optimizer.
     :param critic_learning_rate: (float) Learning rate for Critic (value) function optimizer.
     :param pfgru_learning_rate: (float) Learning rate for the source prediction module (PFGRU)
-    
     :param train_pi_iters: (int) Maximum number of gradient descent steps to take on actor policy loss per epoch. (Early stopping may cause optimizer to take fewer than this.)
     :param train_v_iters: (int) Number of gradient descent steps to take on critic state-value function per epoch.
     :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit)           
     :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training 
-    
-    :param minibatch: (int) How many observations to sample out of a batch. Used to reduce the impact of fully online learning
-
-    :param enforce_boundaries: (bool) whether or not agents can wander outside of the gridworld
-
+    :param actor_learning_rate: (float) For actor/policy. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
+        reduced as the agent's learning progresses.
+    :param critic_learning_rate: (float) For critic/value function. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
+        reduced as the agent's learning progresses.
+    :param pfgru_learning_rate: (float) For the PFGRU/location predictor module. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
+        reduced as the agent's learning progresses.        
     :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
     :param alpha: (float) Entropy reward term scaling.
     :param clip_ratio: (float) Usually seen as Epsilon Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy while 
         still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
         (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, it goes with a clipped value instead.
     :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used for early stopping. (Usually small, 0.01 or 0.05.)   
-        
-    :param lam: (float) Lambda for GAE-Lambda advantage estimator calculations. (Always between 0 and 1, close to 1.)
-        
+    :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
       
     '''
     id: int
-    number_of_agents: int
     observation_space: int
-    action_space: int
-    env_height: int
-    environment_scale: int
-    steps_per_episode: int    
-    detector_step_size: int
-    scaled_grid_bounds: tuple # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
-    #: The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the entire grid when boundaries are being enforced.    
-    bounds_offset: tuple # Unscaled "observation area" to match map size to actual boundaries
-    steps_per_epoch: int = field(default= 480)
+    bp_args: BpArgs     # No default due to need for environment height parameter.
+    steps_per_epoch: int  # No default value - Critical that it match environment
+    
+    seed: int = field(default= 0)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
-    actor_critic_architecture: str = field(default="cnn")  
+    actor_critic_architecture: str = field(default="cnn")
+    minibatch: int = field(default=1)    
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
     train_pfgru_iters: int = field(default= 15)
     reduce_pfgru_iters: bool = field(default=True) 
     actor_learning_rate: float = field(default= 3e-4)
     critic_learning_rate: float = field(default= 1e-3)
-    pfgru_learning_rate: float = field(default= 5e-3)    
-    clip_ratio: float = field(default= 0.2)
-    alpha: float = field(default= 0)
-    target_kl: float = field(default= 0.07)
+    pfgru_learning_rate: float = field(default= 5e-3)
     gamma: float = field(default= 0.99)
+    alpha: float = field(default= 0)    
+    clip_ratio: float = field(default= 0.2)
+    target_kl: float = field(default= 0.07)
     lam: float = field(default= 0.9)
-    seed: int = field(default= 0)
-    minibatch: int = field(default=1)
-    enforce_boundaries: bool = field(default=False)  # Informs how large maps need to be to accomodate out-of-grid steps
+    
 
     # Initialized elsewhere
-    bp_args: BpArgs = field(init=False)
 
     # TODO copied wholesale from train(), integrate here
     #: [observation Space] From the environment, get the length that the observation array returned from a step in the environment will be. For RAD-TEAM and RAD-A2C the observation
@@ -459,42 +462,26 @@ class AgentPPO:
     env_scale: float = field(init=False)
     #: Distance an agent can travel in a single action.
     step_size: int = field(init=False)
+    
+    # MOVE TO CNN
 
-    def __post_init__(self):   
-        # PFGRU args, from Ma et al. 2020
-        self.bp_args = BpArgs(
-            bp_decay=0.1,
-            l2_weight=1.0,
-            l1_weight=0.0,
-            elbo_weight=1.0,
-            area_scale=self.env_height
-        )
-                
+
+    def __post_init__(self):                  
         # Initialize agents
         match self.actor_critic_architecture: # Type: ignore                   
             case 'ff':
                 self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
             case 'cnn':                
-                # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
-                #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
-                #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
-                multiplier = 0.01
-                resolution_accuracy = multiplier * 1/self.environment_scale
-                if self.enforce_boundaries:
-                    scaled_offset = self.environment_scale * max(self.bounds_offset)                    
-                else:
-                    scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))                
+
                 
                 # Initialize Agents                
                 self.agent = RADCNN_core.CCNBase(
                     state_dim=self.observation_space, 
                     action_dim=self.action_space,
                     grid_bounds=self.scaled_grid_bounds,
-                    resolution_accuracy=resolution_accuracy,
                     steps_per_epoch=self.steps_per_epoch,
                     id=self.id,
                     random_seed=self.seed,
-                    scaled_offset = scaled_offset,
                     steps_per_episode=self.steps_per_episode,
                     number_of_agents=self.number_of_agents           
                     )
