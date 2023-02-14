@@ -316,7 +316,7 @@ class MapsBuffer:
                 normalized_reading = estimated_reading / self.buffer.readings['max']
             else:
                 normalized_reading = np.clip((observation[agent_id][0] - self.normalization_buffer.mu) / self.normalization_buffer.sig_obs, -8, 8)     
-            assert normalized_reading < 1 and normalized_reading > 0
+            assert normalized_reading <= 1.0 and normalized_reading > 0.0
             
             if estimated_reading > 0:
                 self.readings_map[x][y] = normalized_reading 
@@ -348,7 +348,7 @@ class MapsBuffer:
                                 np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
                             ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
                         )          
-                    assert self.visit_counts_map.max() < 1.0, "Normalization error"
+                    assert self.visit_counts_map.max() <= 1.0 and self.visit_counts_map.main > 0.0, "Normalization error" 
             
         ### Process observation for obstacles_map 
         for agent_id in observation:
