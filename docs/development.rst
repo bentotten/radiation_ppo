@@ -19,3 +19,7 @@ Train
 .. autoclass::  algos.multiagent.train.train_PPO
     :members:
     :inherited-members:
+
+.. autoclass::  algos.multiagent.train.train_PPO
+    :members:
+    :inherited-members:
