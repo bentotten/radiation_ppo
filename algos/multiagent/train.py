@@ -234,7 +234,7 @@ class train_PPO:
                     # Put actor and critic into eval mode
                     #ac.model.eval()  # TODO add PFGRU
                     ac.agent.pi.eval()
-                    ac.agent.critic.eval() # TODO will need to be changed for global critic
+                    ac.agent.Critic.eval() # TODO will need to be changed for global critic
                     
                 for ac in self.agents.values():
                     if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:

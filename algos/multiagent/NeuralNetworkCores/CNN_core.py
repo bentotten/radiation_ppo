@@ -5,7 +5,7 @@ from numpy import dtype
 import numpy as np
 import numpy.typing as npt
 
-import scipy.signal
+import scipy.signal # type: ignore
 import math
 
 import torch
@@ -20,13 +20,13 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union
 from typing_extensions import TypeAlias
 
-import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from matplotlib.streamplot import Grid
+import matplotlib.pyplot as plt # type: ignore
+from mpl_toolkits.axes_grid1 import make_axes_locatable # type: ignore
+from matplotlib.streamplot import Grid # type: ignore
 
 # from epoch_logger import EpochLogger TODO not importing correctly
 
-from gym_rad_search.envs import StepResult
+from gym_rad_search.envs import StepResult # type: ignore
 
 # Maps
 Point: TypeAlias = NewType("Point", Tuple[float, float])  # Array indicies to access a GridSquare
@@ -371,10 +371,14 @@ class MapsBuffer:
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
-    def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5):
+    def __init__(self, map_dim, observation_space, batches: int=1, map_count: int=5, action_dim: int=5):
         super(Actor, self).__init__()
-        
-        ''' Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
+        ''' 
+            When an observation is fed to this base class, it is transformed into a series of stackable observation maps (numerican matrices/tensors). As these maps are fed 
+            through the network, Convolutional and pooling layers train a series of filters that operate on the data and extract features from it. 
+            These features are then distilled through linear layers to produce an array that contains probabilities, where each element cooresponds to an action.
+            
+            Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
                 1. batch size: 1 mapstack
                 2. (map_count) number of channels: 5 input maps
                 3. Height: grid height
@@ -515,7 +519,7 @@ class Actor(nn.Module):
 
 
 class Critic(nn.Module):
-    def __init__(self, map_dim, state_dim, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
+    def __init__(self, map_dim, observation_space, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Critic, self).__init__()
         
         '''
@@ -612,290 +616,6 @@ class Critic(nn.Module):
     
     def forward(self, observation = None, act = None):
         raise NotImplementedError    
-
-
-@dataclass
-class CCNBase:
-    '''
-    state_dim: The dimensions of the return from the environment
-    action_dim: How many actions the actor chooses from
-    grid_bounds: The grid bounds for the state returned by the environment. For RAD-PPO, this is (1, 1). This value will be scaled by the resolution_accuracy variable
-    resolution_accuracy: How much to scale the convolution maps by (higher rate means more accurate, but more memory usage)
-    lamda: smoothing parameter for Generalize Advantage Estimate (GAE) calculations
-    '''
-        
-    # from PPO buffer wholesale          
-    action_space: int
-    detector_step_size: int
-    environment_scale: int
-    #: The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the entire grid when boundaries are being enforced.    
-    bounds_offset: tuple # Unscaled "observation area" to match map size to actual boundaries        
-    
-    id: int    
-    state_dim: int
-    action_dim: int
-    grid_bounds: Tuple[float]
-    steps_per_epoch: int
-    steps_per_episode: int
-    number_of_agents: int
-    random_seed: int = field(default=None)
-    critic: Any = field(default=None)  # Eventually allows for a global critic
-    render_counter: int = field(init=False)
-    
-    # from PPO buffer wholesale      
-    scaled_grid_bounds: tuple = (1,1) # Scaled to match return from env.step(). Can be reinflated with resolution_accuracy
-    enforce_boundaries: bool = field(default=False)  # Informs how large maps need to be to accomodate out-of-grid steps
-    
-    # Initialized elsewhere
-    scaled_offset: float = field(init=False)
-    resolution_accuracy: float = field(init=False)
-
-
-    def __post_init__(self):
-        # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
-        #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
-        #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
-        multiplier = 0.01
-        self.resolution_accuracy = multiplier * 1/self.environment_scale
-        if self.enforce_boundaries:
-            self.scaled_offset = self.environment_scale * max(self.bounds_offset)                    
-        else:
-            self.scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))           
-        
-        # For render
-        self.render_counter = 0
-        # Initialize buffers and neural networks
-        self.maps = MapsBuffer(
-                observation_dimension = self.state_dim,
-                max_size=self.steps_per_epoch,
-                grid_bounds=self.grid_bounds, 
-                resolution_accuracy=self.resolution_accuracy,
-                offset=self.scaled_offset,
-                steps_per_episode=self.steps_per_episode,
-                number_of_agents = self.number_of_agents
-            )
-        
-        self.pi = Actor(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device)
-        
-        if not self.critic:
-            self.critic = Critic(map_dim=self.maps.map_dimensions, state_dim=self.state_dim, action_dim=self.action_dim)#.to(self.maps.buffer.device) # TODO these are really slow
-            
-        self.MseLoss = nn.MSELoss()
-        
-        # For PFGRU (Developed from RAD-A2C https://github.com/peproctor/radiation_ppo)
-        bpf_hsize: int = 64
-        bpf_num_particles: int = 40
-        bpf_alpha: float = 0.7            
-        # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
-        self.model = PFGRUCell(bpf_num_particles, self.state_dim - 8, self.state_dim - 8, bpf_hsize, bpf_alpha, True, "relu")             
-        
-        
-    def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
-        ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
-            to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
-            action (and returns action logprobabilities) and the critic network to calculate state-value. 
-        '''
-        # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
-        
-        # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
-        with torch.no_grad():        
-            if save_map:     
-                # Add intensity readings to a list if reading has not been seen before at that location. 
-                for observation in state_observation.values():
-                    key: Tuple[float, float] = (observation[1], observation[2])
-                    if key in self.maps.buffer.readings:
-                        if observation[0] not in self.maps.buffer.readings[key]:
-                            self.maps.buffer.readings[key].append(observation[0])
-                    else:
-                        self.maps.buffer.readings[key]: List[Tuple] = [observation[0]]
-                    assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
-
-                (
-                    location_map,
-                    others_locations_map,
-                    readings_map,
-                    visit_counts_map,
-                    obstacles_map
-                ) = self.maps.observation_to_map(state_observation, id)
-                
-                # Convert to tensor
-                map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
-                
-                # Add to mapstack buffer to eventually be converted into tensor with minibatches
-                #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
-                self.maps.buffer.coordinate_buffer.append({})
-                for i, observation in state_observation.items():
-                    self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
-                
-                #print(state_observation[self.id])
-                #observation_key = hash(state_observation[self.id].flatten().tolist)
-                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
-            else:
-                with torch.no_grad():
-                    map_stack = self.maps.observation_buffer[-1][1]
-                
-            # Add single batch tensor dimension for action selection
-            map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
-            
-            # Get actions and values                          
-            action, action_logprob  = self.pi.act(map_stack) # Choose action
-            state_value = self.critic.act(map_stack)  # Should be a pointer to either local critic or global critic
-
-        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
-        #return action.item(), action_logprob.item(), state_value.item()
-    
-    # def update(self):
-    #     # Rewards have already been normalized and advantages already calculated with finish_path() function
-        
-    #     # Get data from buffers for old policy    
-    #     data: dict[str, torch.Tensor] = self.maps.buffer.get_buffers_for_epoch_and_reset()  
-        
-    #     # Reset gradients (actor and critic will be set to train mode in evaluate())
-    #     self.optimizer_actor.zero_grad()
-    #     self.optimizer_critic.zero_grad()
-            
-    #     # Optimize policy for K epochs 
-    #     print(data['maps'])
-    #     print(data["act"])
-
-    #     for _ in range(self.K_epochs):
-    #         for i, (observations, actions, advantages) in enumerate(train_loader):         
-    #             logprobs, state_values, dist_entropy = self.policy.evaluate(data['maps'], data['act']) # Actor-critic            
-        
-    #     surrogate_loss = calculate_surrogate_loss()
-    #     actor_loss = calculate_policy_loss(self, data)
-    #     value_loss = calculate_critic_loss(self, data)
-        
-    #     actor_loss.backward()
-    #     self.optimizer_actor.step()
-        
-    #     value_loss.backward()
-    #     self.optimizer_critic.step()        
-        
-    
-    #     # critic
-    #     def calculate_value_loss(data):
-    #         obs, ret = data['obs'], data['ret']
-    #         obs = obs.to(self.maps.buffer.device)
-    #         ret = ret.to(self.maps.buffer.device)
-    #         return ((self.actor.local_critic(obs) - ret)**2).mean()    
-        
-    #     def calculate_policy_loss(self, data):
-    #         '''
-    #         Calculate how much the policy has changed: 
-    #             ratio = policy_new / policy_old
-    #         Take log form of this: 
-    #             ratio = [log(policy_new) - log(policy_old)].exp()
-    #         Calculate Actor loss as the minimum of two functions: 
-    #             p1 = ratio * advantage
-    #             p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
-    #             actor_loss = min(p1, p2)
-                
-    #         Calculate critic loss with MSE between returns and critic value
-    #             critic_loss = (R - V(s))^2
-                
-    #         Caculcate total loss:
-    #             total_loss = critic_loss * critic_discount + actor_loss - entropy
-    #         '''            
-    #         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
-            
-    #         # Policy loss
-            
-    #         pi, logp = self.policy.actor(obs.to(self.maps.buffer.device), act.to(self.maps.buffer.device))
-    #         logp = logp.cpu()
-    #         ratio = torch.exp(logp - logp_old)
-    #         clip_adv = torch.clamp(ratio, 1-self.eps_clip, 1+self.eps_clip) * adv  # clipped ratio
-    #         loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
-
-    #         # TODO why not using surrogate?
-    #         # surrogate = torch.exp(ratio) * advantages
-    #         # surrogate_clipped = torch.clamp(surrogate, 1 - epsilon, 1 + epsilon) * advantages
-    #         # surrogate_loss = -torch.min(surrogate, surrogate_clipped)
-    #         # entropy = new_policy.entropy()
-    #         # entropy_loss = -entropy_coef * entropy
-    #         # loss = surrogate_loss + entropy_loss
-
-    #         # Useful extra info
-    #         approx_kl = (logp_old - logp).mean().item()
-    #         ent = pi.entropy().mean().item()
-    #         clipped = ratio.gt(1+self.eps_clip) | ratio.lt(1-self.eps_clip)
-    #         clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
-    #         pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
-
-    #         return loss_pi, pi_info            
-         
-  
-    def save(self, checkpoint_path):
-        torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
-   
-    def load(self, checkpoint_path):
-        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
-        
-    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
-        ''' Renders heatmaps from maps buffer '''
-        if save_map:
-            if not path.isdir(str(savepath) + "/heatmaps/"):
-                mkdir(str(savepath) + "/heatmaps/")
-        else:
-            plt.show()                
-     
-        loc_transposed: npt.NDArray = self.maps.location_map.T # TODO this seems expensive
-        other_transposed: npt.NDArray  = self.maps.others_locations_map.T 
-        readings_transposed: npt.NDArray  = self.maps.readings_map.T
-        visits_transposed: npt.NDArray  = self.maps.visit_counts_map.T
-        obstacles_transposed: npt.NDArray  = self.maps.obstacles_map.T
-     
-        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
-        
-        loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)
-        loc_ax.set_title('Agent Location')
-        loc_ax.invert_yaxis()        
-        
-        other_ax.imshow(other_transposed, cmap='viridis', interpolation=interpolation_method)
-        other_ax.set_title('Other Agent Locations') 
-        other_ax.invert_yaxis()  
-        
-        intensity_ax.imshow(readings_transposed, cmap='viridis', interpolation=interpolation_method)
-        intensity_ax.set_title('Radiation Intensity')
-        intensity_ax.invert_yaxis()
-        
-        visit_ax.imshow(visits_transposed, cmap='viridis', interpolation=interpolation_method)
-        visit_ax.set_title('Visit Counts') 
-        visit_ax.invert_yaxis()
-        
-        obs_ax.imshow(obstacles_transposed, cmap='viridis', interpolation=interpolation_method)
-        obs_ax.set_title('Obstacles Detected') 
-        obs_ax.invert_yaxis()
-        
-        # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
-        if add_value_text:
-            for i in range(loc_transposed.shape[0]):
-                for j in range(loc_transposed.shape[1]):
-                    if loc_transposed[i, j] > 0: 
-                        loc_ax.text(j, i, loc_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
-                    if other_transposed[i, j] > 0: 
-                        other_ax.text(j, i, other_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
-                    if readings_transposed[i, j] > 0:
-                        intensity_ax.text(j, i, readings_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)
-                    if visits_transposed[i, j] > 0:
-                        visit_ax.text(j, i, visits_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)
-                    if obstacles_transposed[i, j] > 0:
-                        obs_ax.text(j, i, obstacles_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)                        
-        
-        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png', format='png')
-        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.eps', format='eps')
-
-        
-        self.render_counter += 1
-        plt.close(fig)  # TODO figs arent closing, causes memory issues during large training
-
-    def reset(self):
-        ''' Reset entire CNN '''
-        self.maps.clear()
-        
-    def clear_maps(self):
-        ''' Just clear maps and buffer for new episode'''
-        self.maps.clear_maps()        
 
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
@@ -1013,13 +733,13 @@ class PFRNNBaseCell(nn.Module):
 class PFGRUCell(PFRNNBaseCell):
     def __init__(
         self,
-        num_particles: int,
         input_size: int,
         obs_size: int,
-        hidden_size: int,
-        resamp_alpha: float,
         use_resampling: bool,
-        activation: str,
+        activation: str,        
+        num_particles: int = 40,        
+        hidden_size: int = 64,
+        resamp_alpha: float = 0.7,
     ):
         super().__init__(
             num_particles,
@@ -1105,3 +825,233 @@ class PFGRUCell(PFRNNBaseCell):
         return hidden
 
 
+
+@dataclass
+class CCNBase:
+    '''
+    This is the base class for the Actor-Critic (A2C) Convolutional Neural Network (CNN) architecture. The Actor subclass is an approximator for an Agent's policy.
+    The Critic subclass is an approximator for the value function (for more information, see Barto and Sutton's "Reinforcement Learning"). 
+    When an observation is fed to this base class, it is transformed into a series of stackable observation maps (numerican matrices/tensors). As these maps are fed 
+    through the subclass networks, Convolutional and pooling layers train a series of filters that operate on the data and extract features from it. 
+    
+    An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
+    
+    :param id: (int) Unique identifier key that is used to identify own observations from observation object during map conversions.
+    :param action_space: (int) Also called action-dimensions. From the environment, get the total number of actions an agent can take. This is used to configure the last 
+        linear layer for action-selection in the Actor class.
+    :param observation_space: (int) Also called state-space or state-dimensions. The dimensions of the observation returned from the environment.For rad-search this will 
+        be 11, for the 11 elements of the observation array. This is used for the PFGRU. Future work: make observation-to-map function accomodate differently sized state-spaces.
+    :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
+        Used for determining stackable map buffer max size.
+    :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment. Used
+        for resolution accuracy calculation and during normalization of visits-counts map and a multiplier for the log base.  
+    :param number_of_agents: (int) Number of agents. Used during normalization of visits-counts map and a multiplier for the log base.
+    :param detector_step_size: (int) Distance an agent can travel in one step (centimeters). Used for inflating scaled coordinates.
+    :param environment_scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for increased accuracy, though
+        increased computation time, for convolutional networks.
+    :param bounds_offset: (tuple[float, float]) The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the 
+        entire grid when boundaries are being enforced, not just the obstruction/spawning area. For the CNN, this expands the size of the network to accomodate these extra grid 
+        coordinates. This is optional, but for this implementation, to remove this would require adjusting environment to not let agents through to that area when grid boundaries
+        are being enforced. Removing this also makes renders look very odd, as agent will not be able to travel to bottom coordinates.
+    :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. For the rad-search environment, this is (1, 1). This is used for scaling
+        in the map buffer by the resolution variable.
+    :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
+        coordinates can be encompased in a matrix element.
+    :param Critic: [Optional] For future work, this allows for the inclusion of a pointer to a global critic
+    '''
+        
+    id: int    
+    action_space: int
+    observation_space: int
+    steps_per_epoch: int
+    steps_per_episode: int
+    number_of_agents: int
+    detector_step_size: int  # No default to ensure changes to step size in environment are propogated to this function
+    environment_scale: int
+    bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function  
+    enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
+    grid_bounds: Tuple[float] = field(default_factory= lambda: (1.0, 1.0))
+            
+    # Initialized elsewhere
+    #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
+    Critic: Any = field(default=None)  # Eventually allows for a global critic
+
+    #: Policy/Actor network
+    pi: Actor = field(init=False)
+    
+    #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
+    model: PFGRUCell = field(init=False)
+    #: Buffer that holds map-stacks and converts observations to maps
+    maps: MapsBuffer = field(init=False)
+    
+    #: Mean Squared Error for loss for critic network
+    MseLoss: nn.MSELoss = field(init=False)
+    
+    #: How much unscaling to do to reinflate agent coordinates to full representation.
+    scaled_offset: float = field(init=False)
+    
+    #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
+    resolution_accuracy: float = field(init=False)
+    
+    #: Ensures heatmap renders to not overwrite eachother
+    render_counter: int = field(init=False)    
+
+    def __post_init__(self):
+        # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
+        #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
+        #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
+        multiplier = 0.01
+        self.resolution_accuracy = multiplier * 1/self.environment_scale
+        if self.enforce_boundaries:
+            self.scaled_offset = self.environment_scale * max(self.bounds_offset)                    
+        else:
+            self.scaled_offset = self.environment_scale * (max(self.bounds_offset) + (self.steps_per_episode * self.detector_step_size))           
+        
+        # For render
+        self.render_counter = 0
+        # Initialize buffers and neural networks
+        self.maps = MapsBuffer(
+                observation_dimension = self.observation_space,
+                max_size=self.steps_per_epoch,
+                grid_bounds=self.grid_bounds, 
+                resolution_accuracy=self.resolution_accuracy,
+                offset=self.scaled_offset,
+                steps_per_episode=self.steps_per_episode,
+                number_of_agents = self.number_of_agents
+            )
+        
+        self.pi = Actor(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device)
+        
+        if not self.Critic:
+            self.Critic = Critic(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device) # TODO these are really slow
+            
+        self.MseLoss = nn.MSELoss()
+        
+        # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
+        self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
+        
+    def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
+        ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
+            to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
+            action (and returns action logprobabilities) and the critic network to calculate state-value. 
+        '''
+        # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
+        
+        # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
+        with torch.no_grad():        
+            if save_map:     
+                # Add intensity readings to a list if reading has not been seen before at that location. 
+                for observation in state_observation.values():
+                    key: Tuple[float, float] = (observation[1], observation[2])
+                    if key in self.maps.buffer.readings:
+                        if observation[0] not in self.maps.buffer.readings[key]:
+                            self.maps.buffer.readings[key].append(observation[0])
+                    else:
+                        self.maps.buffer.readings[key]: List[Tuple] = [observation[0]]
+                    assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
+
+                (
+                    location_map,
+                    others_locations_map,
+                    readings_map,
+                    visit_counts_map,
+                    obstacles_map
+                ) = self.maps.observation_to_map(state_observation, id)
+                
+                # Convert to tensor
+                map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
+                
+                # Add to mapstack buffer to eventually be converted into tensor with minibatches
+                #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
+                self.maps.buffer.coordinate_buffer.append({})
+                for i, observation in state_observation.items():
+                    self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
+                
+                #print(state_observation[self.id])
+                #observation_key = hash(state_observation[self.id].flatten().tolist)
+                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
+            else:
+                with torch.no_grad():
+                    map_stack = self.maps.observation_buffer[-1][1]
+                
+            # Add single batch tensor dimension for action selection
+            map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
+            
+            # Get actions and values                          
+            action, action_logprob  = self.pi.act(map_stack) # Choose action
+            state_value = self.Critic.act(map_stack)  # Should be a pointer to either local critic or global critic
+
+        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
+        #return action.item(), action_logprob.item(), state_value.item()
+    
+    def save(self, checkpoint_path):
+        torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
+   
+    def load(self, checkpoint_path):
+        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
+        
+    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
+        ''' Renders heatmaps from maps buffer '''
+        if save_map:
+            if not path.isdir(str(savepath) + "/heatmaps/"):
+                mkdir(str(savepath) + "/heatmaps/")
+        else:
+            plt.show()                
+     
+        loc_transposed: npt.NDArray = self.maps.location_map.T # TODO this seems expensive
+        other_transposed: npt.NDArray  = self.maps.others_locations_map.T 
+        readings_transposed: npt.NDArray  = self.maps.readings_map.T
+        visits_transposed: npt.NDArray  = self.maps.visit_counts_map.T
+        obstacles_transposed: npt.NDArray  = self.maps.obstacles_map.T
+     
+        fig, (loc_ax, other_ax, intensity_ax, visit_ax, obs_ax) = plt.subplots(nrows=1, ncols=5, figsize=(30, 10), tight_layout=True)
+        
+        loc_ax.imshow(loc_transposed, cmap='viridis', interpolation=interpolation_method)
+        loc_ax.set_title('Agent Location')
+        loc_ax.invert_yaxis()        
+        
+        other_ax.imshow(other_transposed, cmap='viridis', interpolation=interpolation_method)
+        other_ax.set_title('Other Agent Locations') 
+        other_ax.invert_yaxis()  
+        
+        intensity_ax.imshow(readings_transposed, cmap='viridis', interpolation=interpolation_method)
+        intensity_ax.set_title('Radiation Intensity')
+        intensity_ax.invert_yaxis()
+        
+        visit_ax.imshow(visits_transposed, cmap='viridis', interpolation=interpolation_method)
+        visit_ax.set_title('Visit Counts') 
+        visit_ax.invert_yaxis()
+        
+        obs_ax.imshow(obstacles_transposed, cmap='viridis', interpolation=interpolation_method)
+        obs_ax.set_title('Obstacles Detected') 
+        obs_ax.invert_yaxis()
+        
+        # Add values to gridsquares if value is greater than 0 #TODO if large grid, this will be slow
+        if add_value_text:
+            for i in range(loc_transposed.shape[0]):
+                for j in range(loc_transposed.shape[1]):
+                    if loc_transposed[i, j] > 0: 
+                        loc_ax.text(j, i, loc_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
+                    if other_transposed[i, j] > 0: 
+                        other_ax.text(j, i, other_transposed[i, j].astype(int), ha="center", va="center", color="black", size=6)
+                    if readings_transposed[i, j] > 0:
+                        intensity_ax.text(j, i, readings_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)
+                    if visits_transposed[i, j] > 0:
+                        visit_ax.text(j, i, visits_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)
+                    if obstacles_transposed[i, j] > 0:
+                        obs_ax.text(j, i, obstacles_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)                        
+        
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png', format='png')
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.eps', format='eps')
+
+        
+        self.render_counter += 1
+        plt.close(fig)  # TODO figs arent closing, causes memory issues during large training
+
+    def reset(self):
+        ''' Reset entire CNN '''
+        self.maps.clear()
+        
+    def clear_maps(self):
+        ''' Just clear maps and buffer for new episode'''
+        self.maps.clear_maps()        

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field, asdict
 from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, NamedTuple
 from typing_extensions import TypeAlias
-from gym_rad_search.envs import StepResult
+from gym_rad_search.envs import StepResult # type: ignore
 from numpy import dtype
 import numpy as np
 import numpy.typing as npt

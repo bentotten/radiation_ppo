@@ -1,6 +1,8 @@
+''' RAD-A2C Network Architecture ''' # type: ignore
+
 import numpy as np
 import numpy.typing as npt
-import scipy.signal
+import scipy.signal # type: ignore
 import math
 import torch
 from torch import Tensor

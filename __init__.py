@@ -1,20 +1,6 @@
-# Disable TF deprecation warnings.
-# Syntax from tf1 is not expected to be compatible with tf2.
-import tensorflow as tf
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-
 # Algorithms
-import algos
 
-from spinup.algos.pytorch.ddpg.ddpg import ddpg as ddpg_pytorch
-from spinup.algos.pytorch.ppo.ppo import ppo as ppo_pytorch
-from spinup.algos.pytorch.sac.sac import sac as sac_pytorch
-from spinup.algos.pytorch.td3.td3 import td3 as td3_pytorch
-from spinup.algos.pytorch.trpo.trpo import trpo as trpo_pytorch
-from spinup.algos.pytorch.vpg.vpg import vpg as vpg_pytorch
-
-# Loggers
-from spinup.utils.logx import Logger, EpochLogger
-
-# Version
-from spinup.version import __version__
+# import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
+# from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger
+# import algos.multiagent.train as train
+# from algos.multiagent.ppo import BpArgs    

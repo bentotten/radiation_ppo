@@ -140,6 +140,10 @@ class OptimizationStorage:
 
 @dataclass
 class PPOBuffer:
+    #: [observation Space] From the environment, get the length that the observation array returned from a step in the environment will be. For RAD-TEAM and RAD-A2C the observation
+    #: will be a one dimensional tuple where the first element is the detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements 
+    #: are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized. 
+    obs_dim: int = field(init=False)    
     obs_dim: int  # Observation space dimensions
     max_size: int  # Max steps per epoch
 
@@ -283,7 +287,10 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
 
-        self.path_start_idx = self.ptr
+    # TODO copied wholesale from train(), integrate here
+
+    
+    # MOVE TO CNN
 
     def get(self, logger=None) -> dict[str, Union[torch.Tensor, list]]:
         """
@@ -387,7 +394,7 @@ class PPOBuffer:
         return data
 
 
-@dataclass
+@dataclass 
 class AgentPPO:
     '''
     This class handles PPO-related functions/calculations, the experience buffer, and holds the agent object. This class also is responsible for calculating advantages after an epoch,
@@ -448,30 +455,17 @@ class AgentPPO:
     target_kl: float = field(default= 0.07)
     lam: float = field(default= 0.9)
     
-
     # Initialized elsewhere
+    agent: RADCNN_core.CCNBase = field(init=False)
 
-    # TODO copied wholesale from train(), integrate here
-    #: [observation Space] From the environment, get the length that the observation array returned from a step in the environment will be. For RAD-TEAM and RAD-A2C the observation
-    #: will be a one dimensional tuple where the first element is the detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements 
-    #: are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized. 
-    obs_dim: int = field(init=False)
-    #: [Action Space] From the environment, get the number of actions an agent can take. For RAD-TEAM and RAD-A2C this will be 8 standard directions, including diagonals.
-    act_dim: int = field(init=False)
-    #: Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for increased accuracy in convolutional network
-    env_scale: float = field(init=False)
-    #: Distance an agent can travel in a single action.
-    step_size: int = field(init=False)
-    
-    # MOVE TO CNN
-
-
-    def __post_init__(self):                  
-        # Initialize agents
+    def __post_init__(self):
+        ''' Initialize Agent's neural network architecture'''
+                  
+        # Simple Feed Forward Network
         if self.actor_critic_architecture == 'ff':
-                self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
+            self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
+        # Convolutional Network for RAD-TEAM
         elif self.actor_critic_architecture == 'cnn':
-            # Initialize Agents                
             self.agent = RADCNN_core.CCNBase(
                 state_dim=self.observation_space, 
                 action_dim=self.action_space,
@@ -489,14 +483,14 @@ class AgentPPO:
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
+                critic_optimizer = Adam(self.agent.Critic.parameters(), lr=self.critic_learning_rate),
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 loss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
                 alpha = self.alpha,
                 target_kl = self.target_kl,             
                 )                         
-                
+        # Gated recurrent architecture for RAD-A2C 
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             del self.actor_critic_args['enforce_boundaries']
             # Initialize Agents                
@@ -516,12 +510,10 @@ class AgentPPO:
                 target_kl = self.target_kl,             
                 )                
         else:
-            raise ValueError('Unsupported neural network type')
+            raise ValueError('Unsupported Neural Network type requested')
             
-        # Inititalize buffers
-        self.ppo_buffer = PPOBuffer(
-            obs_dim=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam
-            )
+        # Inititalize buffer
+        self.ppo_buffer = PPOBuffer(obs_dim=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam)
         
     def reduce_pfgru_training(self):
         '''Reduce localization module training iterations after some number of epochs to speed up training'''
@@ -838,7 +830,7 @@ class AgentPPO:
         true_return = data['ret'][index]
         
         # Compare predicted return with true return and use MSE to indicate loss
-        predicted_value = self.agent.critic.evaluate(map_stack)
+        predicted_value = self.agent.Critic.evaluate(map_stack)
         critic_loss = self.agent.MseLoss(torch.squeeze(predicted_value), true_return)
         return critic_loss
 
