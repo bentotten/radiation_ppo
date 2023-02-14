@@ -50,27 +50,23 @@ try:
 except:
     from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
 
-# Scaling
-# TODO get from env instead, remove from global
-DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
-DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
-DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm
 
 ################################### Functions for algorithm/implementation conversions ###################################
-
 def count_variables(module: nn.Module) -> int:
+    # TODO obsolete - remove
+    ''' Counts number of parameters in a neural network '''
     return sum(np.prod(p.shape) for p in module.parameters())
 
 
 @dataclass
 class StatBuff:
+    ''' [Backwards Compatibility] Statistics buffer for normalizing returns from environment. Left in train.py for backwards compatability
+        with RADPPO
+    '''    
     mu: float = 0.0
     sig_sto: float = 0.0
     sig_obs: float = 1.0
     count: int = 0
-    ''' statistics buffer for normalizing returns from environment. Left in train.py for backwards compatability
-        with RADPPO
-    '''
     
     def update(self, obs: float) -> None:
         self.count += 1
@@ -88,7 +84,6 @@ class StatBuff:
 
 
 ################################### Training ###################################
-
 @dataclass
 class train_PPO:
     ''' Proximal Policy Optimization (by clipping) with early stopping based on approximate KL. Base code from OpenAI: https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
@@ -99,28 +94,31 @@ class train_PPO:
     
     #. Set seed for pytorch and numpy
     #. Set up logger. Will save to a directory named "models" and the chosen experiment name. Configurations are stored in the first agents directory.
-    #. 
+    #. Begin experiment.
+    #. While epoch count is less than max epochs, 
+    - Reset the environment
+    - Begin epoch. While stepcount is less than max steps per epoch:
+    -- Each agent chooses an action from reset environment
+    -- Send actions to environment and receive rewards, observations, whether or not the source was found, and boundary information back
+    -- Save the observations and returns in buffers
+    -- Check if the episode or epoch has ended because of a timeout or a terminal condition.
+    --- If the episode has ended but not the epoch, reset environment and hidden layers/map stacks
+    --- If the epoch has ended, use existing buffers to update the networks, then reset all buffers, hidden networks, and the environment
 
     :param env: An environment satisfying the OpenAI Gym API.    
-    
     :param logger_kwargs: Static parameters for the logging mechanism for saving models and saving/printing progress for each agent. Note that the logger is also used for calculating values later on in the episode.
     :param ppo_kwargs: Static parameters for ppo method. Also contains arguments for actor-critic neural networks.
-    
     :param seed: (int) Seed for random number generators.
-
     :param number_of_agents: (int) Number of agents
     :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
-    
     :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment.        
     :param total_epochs: (int) Number of total epochs of interaction (equivalent to number of policy updates) to perform.
-    
     :param render: (bool) Indicates whether to render last episode    
     :param save_freq: (int) How often (in terms of gap between epochs) to save the current policy and value function.
     :param save_gif_freq: (int) How many epochs to save a gif
     :param save_gif: (bool) Indicates whether to save render of last episode
     :param render_first_episode: (bool) If render, render the first episode and then follow save-gif-freq parameter
-    
     :param DEBUG: (bool) indicate whether in debug mode with hardcoded start/stopping locations   
     
     '''
@@ -150,7 +148,7 @@ class train_PPO:
     save_gif: bool = field(default= False)
     render_first_episode: bool = field(default=True)     
     
-    # Debug
+    #: DEBUG mode adds extra print statements/rendering to train function
     DEBUG: bool = field(default=False),
 
     # Initialized elsewhere
@@ -196,7 +194,6 @@ class train_PPO:
             
             self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy        
                       
-
     def train(self):
         ''' Function that executes training simulation. '''
         # Prepare environment variables and reset
@@ -218,16 +215,16 @@ class train_PPO:
             for id in self.agents:
                 self.stat_buffers[id].update(observations[id][0])
         
-        # TODO Removed features - migrating to pytorch lightning instead of mpi (God willing)
+        # TODO Removed features - migrating to pytorch lightning/Ray instead of mpi (God willing)
         #local_steps_per_epoch = int(steps_per_epoch / num_procs())    
 
-        print(f"Starting main training loop!", flush=True)
-        self.start_time:float = time.time()
-        
         # TODO add PFGRU to FF and CNN networks
         for id in self.agents: 
-            self.agents[id].reset_neural_nets()  # NOTE: buffers are cleared during update        
-            self.agents[id].agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?              
+            self.agents[id].reset_neural_nets()      
+            self.agents[id].agent.model.eval() # Sets PFGRU model into "eval" mode # TODO why not in the episode with the other agents?      
+
+        print(f"Starting main training loop!", flush=True)
+        self.start_time: float = time.time()        
         
         # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 

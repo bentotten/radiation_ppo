@@ -17,8 +17,6 @@ try:
     from epoch_logger import EpochLogger
 except:
     from algos.multiagent.epoch_logger import EpochLogger
-
-# Neural Networks
 try:
     import NeuralNetworkCores.FF_core as RADFF_core
     import NeuralNetworkCores.CNN_core as RADCNN_core
@@ -63,6 +61,7 @@ def discount_cumsum(
 
 
 class BpArgs(NamedTuple):
+    ''' Object that contains the parameters for bootstrap particle filter '''
     bp_decay: float
     l2_weight: float
     l1_weight: float
@@ -71,6 +70,7 @@ class BpArgs(NamedTuple):
 
 
 class UpdateResult(NamedTuple):
+    ''' Object that contains the return values from the neural network updates '''
     StopIter: int
     LossPi: float
     LossV: float
