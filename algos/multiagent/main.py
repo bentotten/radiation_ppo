@@ -393,13 +393,14 @@ def main():
     # TODO switch all of these to switch statements
     if args.net_type == 'mlp' or args.net_type =='rnn':
         ac_kwargs=dict(
+            obs_dim=env.observation_space.shape[0],
+            act_dim=env.detectable_directions,
             hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
             hidden_sizes_val=[[args.hid_val]] * args.l_val,
             hidden_sizes_rec=[args.hid_rec],
             hidden=[[args.hid_gru]],
             net_type=args.net_type,
             batch_s=args.minibatches,
-            enforce_boundaries=args.enforce_boundaries,
             seed=args.seed,
             pad_dim=2                     
         )
@@ -419,30 +420,24 @@ def main():
 
     # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
     ppo_kwargs=dict(
-        observation_space=env.observation_space.shape[0],     # Also known as state dimensions: The dimensions of the observation returned from the environment
+        observation_space=env.observation_space.shape[0],
         bp_args=bp_args,
         steps_per_epoch=args.steps_per_epoch,
-        
+        seed=args.seed,        
         actor_critic_args=ac_kwargs,
-                
-        bounds_offset=env.observation_area,
-        detector_step_size=env.step_size,
-        environment_scale=env.scale,
-        actor_critic_architecture=args.net_type,        
-        seed=args.seed,
+        actor_critic_architecture=args.net_type,
         minibatch=args.minibatches,
-        enforce_boundaries=args.enforce_boundaries,
-        actor_learning_rate=args.actor_learning_rate,
-        critic_learning_rate=args.critic_learning_rate,
-        pfgru_learning_rate=args.pfgru_learning_rate,
         train_pi_iters=args.train_pi_iters,
         train_v_iters=args.train_v_iters,
         train_pfgru_iters=args.train_pfgru_iters,
         reduce_pfgru_iters=args.reduce_pfgru_iters,
+        actor_learning_rate=args.actor_learning_rate,
+        critic_learning_rate=args.critic_learning_rate,
+        pfgru_learning_rate=args.pfgru_learning_rate,
+        gamma=args.gamma,  
+        alpha=args.alpha,                      
         clip_ratio=args.clip_ratio,
-        alpha=args.alpha,
         target_kl=args.target_kl,
-        gamma=args.gamma,        
         lam=args.lam
     )
 

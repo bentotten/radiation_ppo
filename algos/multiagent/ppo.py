@@ -143,7 +143,6 @@ class PPOBuffer:
     #: [observation Space] From the environment, get the length that the observation array returned from a step in the environment will be. For RAD-TEAM and RAD-A2C the observation
     #: will be a one dimensional tuple where the first element is the detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements 
     #: are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized. 
-    obs_dim: int = field(init=False)    
     obs_dim: int  # Observation space dimensions
     max_size: int  # Max steps per epoch
 
@@ -437,7 +436,6 @@ class AgentPPO:
     observation_space: int
     bp_args: BpArgs     # No default due to need for environment height parameter.
     steps_per_epoch: int  # No default value - Critical that it match environment
-    
     seed: int = field(default= 0)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic_architecture: str = field(default="cnn")
@@ -466,16 +464,7 @@ class AgentPPO:
             self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
         # Convolutional Network for RAD-TEAM
         elif self.actor_critic_architecture == 'cnn':
-            self.agent = RADCNN_core.CCNBase(
-                state_dim=self.observation_space, 
-                action_dim=self.action_space,
-                grid_bounds=self.scaled_grid_bounds,
-                steps_per_epoch=self.steps_per_epoch,
-                id=self.id,
-                random_seed=self.seed,
-                steps_per_episode=self.steps_per_episode,
-                number_of_agents=self.number_of_agents           
-                )
+            self.agent = RADCNN_core.CCNBase(id=self.id, **self.actor_critic_args)
             
             # Initialize learning opitmizers                           
             self.agent_optimizer = OptimizationStorage(
@@ -492,9 +481,8 @@ class AgentPPO:
                 )                         
         # Gated recurrent architecture for RAD-A2C 
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            del self.actor_critic_args['enforce_boundaries']
             # Initialize Agents                
-            self.agent = RADA2C_core.RNNModelActorCritic(self.observation_space, self.action_space, **self.actor_critic_args)
+            self.agent = RADA2C_core.RNNModelActorCritic(**self.actor_critic_args)
             
             # Initialize learning opitmizers                           
             self.agent_optimizer = OptimizationStorage(
