@@ -193,7 +193,7 @@ class MapsBuffer:
             
     # Parameters
     grid_bounds: Tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
-    resolution_accuracy: int = field(default=100) # How much to multiply grid bounds and state coordinates by. 100 will return to full accuracy for RADPPO
+    resolution_accuracy: float = field(default=100) # How much to multiply grid bounds and state coordinates by. 100 will return to full accuracy for RADPPO
     obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords
     offset: float = field(default=0)  # Offset for when boundaries are different than "search area".
     
@@ -209,11 +209,11 @@ class MapsBuffer:
     readings_map: Map = field(init=False)  # Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
     obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
     visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-    visit_counts_shadow: dict = field(default_factory=lambda: dict()) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second sparce matrix than to inflate a log'd number
+    visit_counts_shadow: Dict = field(default_factory=lambda: dict()) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second sparce matrix than to inflate a log'd number
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
-    observation_buffer: List = field(default_factory=lambda: List())  # TODO move to PPO buffer
+    observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
     normalization_buffer: StatBuff = field(default_factory=lambda: StatBuff())
 
     def __post_init__(self):
@@ -245,12 +245,12 @@ class MapsBuffer:
         del self.observation_buffer[:]
         self.clear_maps()        
         
-    def observation_to_map(self, observation: dict[int, StepResult], id: int
+    def observation_to_map(self, observation: Dict[int, list], id: int
                      ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
         '''
         Convert an 11-element observation dictionary from all agents into maps. Normalize Data
         
-        observation (dict): observations from environment for all agents
+        observation (Dict): observations from environment for all agents
             id (int): ID of agent to reference in observation object 
             
             Returns a Tuple of 2d map arrays
@@ -258,8 +258,10 @@ class MapsBuffer:
         
         # TODO Remove redundant calculations and massively consolidate
         
-        ### Process observation for current agent's locations map
-        scaled_coordinates: Tuple(int, int) = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))        
+        # Process observation for current agent's locations map
+        deflated_x = observation[id][1]
+        deflated_y = observation[id][2]
+        current_a_scaled_coordinates: Tuple[int, int] = (int(deflated_x * self.resolution_accuracy), int(deflated_y * self.resolution_accuracy))        
         # Capture current and reset previous location
         if self.buffer.coordinate_buffer:
             last_state = self.buffer.coordinate_buffer[-1][id]
@@ -269,9 +271,9 @@ class MapsBuffer:
             self.location_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
             assert self.location_map[x_old][y_old] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."
         # Set new location
-        x: int = int(scaled_coordinates[0])
-        y: int = int(scaled_coordinates[1])
-        self.location_map[x][y]: int = 1
+        current_a_x: int = int(current_a_scaled_coordinates[0])
+        current_a_y: int = int(current_a_scaled_coordinates[1])
+        self.location_map[current_a_x][current_a_y] = 1
         
         ### Process observation for other agent's locations map
         for other_agent_id in observation:
@@ -288,9 +290,9 @@ class MapsBuffer:
                     assert self.others_locations_map[x_old][y_old] > -1, "Location map grid coordinate reset where agent was not present"
         
                 # Set new location
-                x: int = int(others_scaled_coordinates[0])
-                y: int = int(others_scaled_coordinates[1])
-                self.others_locations_map[x][y] += 1  # Initial agents begin at same location        
+                other_a_x: int = int(others_scaled_coordinates[0])
+                other_a_y: int = int(others_scaled_coordinates[1])
+                self.others_locations_map[other_a_x][other_a_y] += 1  # Initial agents begin at same location        
 
         ### Process observation for readings_map
         # Update stat buffer for later normalization
@@ -298,12 +300,12 @@ class MapsBuffer:
             for agent_id in observation:
                 self.normalization_buffer.update(observation[agent_id][0])
         for agent_id in observation:
-            scaled_coordinates: Tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
-            x: int = int(scaled_coordinates[0])
-            y: int = int(scaled_coordinates[1])
+            readings_scaled_coordinates: Tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
+            readings_x: int = int(readings_scaled_coordinates[0])
+            readings_y: int = int(readings_scaled_coordinates[1])
             
             # Inflate coordinates
-            unscaled_coordinates: Tuple(float, float) = (observation[agent_id][1], observation[agent_id][2])
+            unscaled_coordinates: Tuple[float, float] = (observation[agent_id][1], observation[agent_id][2])
             assert len(self.buffer.readings[unscaled_coordinates]) > 0 # type: ignore
             
             # Get estimated reading and save new max for later normalization
@@ -319,36 +321,36 @@ class MapsBuffer:
             assert normalized_reading <= 1.0 and normalized_reading > 0.0
             
             if estimated_reading > 0:
-                self.readings_map[x][y] = normalized_reading 
+                self.readings_map[readings_x][readings_y] = normalized_reading 
             else:
                 assert estimated_reading >= 0
 
         ### Process observation for visit_counts_map
         for agent_id in observation:
-            scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
-            x = int(scaled_coordinates[0])
-            y = int(scaled_coordinates[1])
+            visits_scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
+            visits_x = int(visits_scaled_coordinates[0])
+            visits_y = int(visits_scaled_coordinates[1])
 
             # Increment shadow table
             # If visited before, fetch counter from shadow table, else create shadow table entry
-            if scaled_coordinates in self.visit_counts_shadow.keys():
-                current = self.visit_counts_shadow[scaled_coordinates]
-                self.visit_counts_shadow[scaled_coordinates] += 2
+            if visits_scaled_coordinates in self.visit_counts_shadow.keys():
+                current = self.visit_counts_shadow[visits_scaled_coordinates]
+                self.visit_counts_shadow[visits_scaled_coordinates] += 2
             else:
                 current = 0
-                self.visit_counts_shadow[scaled_coordinates] = 2
+                self.visit_counts_shadow[visits_scaled_coordinates] = 2
                     
             if SIMPLE_NORMALIZATION:
-                self.visit_counts_map[x][y] = current / self.base
+                self.visit_counts_map[visits_x][visits_y] = current / self.base
             else: 
                 with np.errstate(all='raise'):
                     # Using 2 due to log(1) == 0
-                    self.visit_counts_map[x][y] = (
+                    self.visit_counts_map[visits_x][visits_y] = (
                             (
                                 np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
                             ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
                         )          
-                    assert self.visit_counts_map.max() <= 1.0 and self.visit_counts_map.main > 0.0, "Normalization error" 
+                    assert self.visit_counts_map.max() <= 1.0 and self.visit_counts_map.min() > 0.0, "Normalization error" 
             
         ### Process observation for obstacles_map 
         for agent_id in observation:
@@ -357,14 +359,14 @@ class MapsBuffer:
                 indices = np.flatnonzero(observation[agent_id][self.obstacle_state_offset::]).astype(int)
                 for index in indices:
                     real_index = int(index + self.obstacle_state_offset)
-                    x = int(scaled_agent_coordinates[0])
-                    y = int(scaled_agent_coordinates[1])  
+                    obstruct_x = int(scaled_agent_coordinates[0])
+                    obstruct_y = int(scaled_agent_coordinates[1])  
                                         
                     # Inflate to actual distance, then convert and round with resolution_accuracy
                     #inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
                     
                     # Semi-arbritrary, but should make the number higher as the agent gets closer to the object, making heatmap look more correct
-                    self.obstacles_map[x][y] = observation[agent_id][real_index]
+                    self.obstacles_map[obstruct_x][obstruct_y] = observation[agent_id][real_index]
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
@@ -924,7 +926,7 @@ class CCNBase:
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
         
-    def select_action(self, state_observation: dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
+    def select_action(self, state_observation: Dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
         ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
             to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
