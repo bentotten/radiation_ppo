@@ -14,25 +14,25 @@ from gym import spaces  # type: ignore
 
 import visilibity as vis  # type: ignore
 
-import matplotlib.pyplot as plt 
+import matplotlib.pyplot as plt # type: ignore
 import matplotlib.animation as animation # type: ignore
 from matplotlib.ticker import FormatStrFormatter # type: ignore
 from matplotlib.animation import PillowWriter # type: ignore
-from matplotlib.patches import Polygon as PolygonPatches
+from matplotlib.patches import Polygon as PolygonPatches # type: ignore
 
-from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple
+from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple, Tuple, List
 from typing_extensions import TypeAlias
 
 
-Point: TypeAlias = NewType("Point", tuple[float, float])
-Polygon: TypeAlias = NewType("Polygon", list[Point])
-Interval: TypeAlias = NewType("Interval", tuple[float, float])
-BBox: TypeAlias = NewType("BBox", tuple[Point, Point, Point, Point])
-Colorcode: TypeAlias = NewType("Colorcode", list[int])
-Color: TypeAlias = NewType("Color", npt.NDArray[np.float64])
+Point = NewType("Point", Tuple[float, float])
+Polygon = NewType("Polygon", List[Point])
+Interval = NewType("Interval", Tuple[float, float])
+BBox = NewType("BBox", Tuple[Point, Point, Point, Point])
+Colorcode = NewType("Colorcode", List[int])
+Color = NewType("Color", npt.NDArray[np.float64])
 
-Metadata: TypeAlias = TypedDict(
-    "Metadata", {"render.modes": list[str], "video.frames_per_second": int}
+Metadata = TypedDict(
+    "Metadata", {"render.modes": List[str], "video.frames_per_second": int}
 )
 
 # BT
@@ -68,7 +68,7 @@ COLORS = [
 COLOR_FACTOR = 0.75  # How much to lighten previous rendered step by
 
 # Rendering
-ACTION_MAPPING: dict = {0: "Left", 1: "Up Left", 2: "Up", 3: "Up Right", 4: "Right", 5: "Down Right", 6: "Down", 7: "Down Left", 8: "Idle"}
+ACTION_MAPPING: Dict = {0: "Left", 1: "Up Left", 2: "Up", 3: "Up Right", 4: "Right", 5: "Down Right", 6: "Down", 7: "Down Left", 8: "Idle"}
 FPS = 5
 
 
@@ -134,7 +134,7 @@ def to_vis_poly(poly: Polygon) -> vis.Polygon:
     return vis.Polygon(list(map(to_vis_p, poly)))
 
 
-def count_matching_p(p1: Point, point_list: list[Point]) -> int:
+def count_matching_p(p1: Point, point_list: List[Point]) -> int:
     """
     Count number of times a Point appears in a list
     """
@@ -154,7 +154,7 @@ def get_step_size(action: Action) -> float:
 
 
 # TODO Get the new Y for an arbritrary action angle to work
-def get_y_step_coeff(action: Action) -> float:
+def get_y_step_coeff(action: int) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
@@ -165,7 +165,7 @@ def get_y_step_coeff(action: Action) -> float:
 
 # TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
-def get_x_step_coeff(action: Action, ) -> float:
+def get_x_step_coeff(action: int, ) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
@@ -218,10 +218,10 @@ def ping():
 
 
 class StepResult(NamedTuple):
-    observation: dict[int, npt.NDArray[np.float32]]
-    reward: dict[int, float]
-    terminal: dict[int, bool] 
-    info: dict[dict[Any, Any]] 
+    observation: Dict[int, npt.NDArray[np.float32]]
+    reward: Dict[int, float]
+    terminal: Dict[int, bool] 
+    info: Dict[int, Dict[Any, Any]] 
     
 
 @dataclass
@@ -240,8 +240,8 @@ class Agent():
     
     # Rendering
     marker_color: Color = field(init=False)
-    det_sto: list[Point] = field(init=False)  # Coordinate history for episdoe
-    meas_sto: list[float] = field(init=False) # Measurement history for episode
+    det_sto: List[Point] = field(init=False)  # Coordinate history for episdoe
+    meas_sto: List[float] = field(init=False) # Measurement history for episode
     reward_sto: list[float] = field(init=False) # Reward history for epsisode
     cum_reward_sto: list = field(init=False)  # Cumulative rewards tracker for episode
     action_sto: list = field(init=False)  # Stores actions for render
@@ -284,7 +284,7 @@ class RadSearch(gym.Env):
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
     enforce_grid_boundaries: bool = field(default=False)
-    save_gif: bool = field(default=False)    
+    save_gif: bool = field(default=True)    
     env_ls: list[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: list[list[vis.Line_Segment]] = field(init=False)
@@ -298,7 +298,7 @@ class RadSearch(gym.Env):
     obs_coord: list[list[Point]] = field(init=False)
 
     # Detector
-    agents: dict[int, Agent] = field(init=False)
+    agents: Dict[int, Agent] = field(init=False)
     step_size = DET_STEP
 
     # Source
@@ -381,10 +381,10 @@ class RadSearch(gym.Env):
         ''' Test environemnt communication '''
         return 'PONG'
 
-    def step( self, action: Optional[Union[Action, dict]] = None ) -> StepResult:
+    def step( self, action: Optional[Union[Action, Dict]] = None ) -> StepResult:
         """
         Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep". 
-        Accepts literal action for single agent, or a dict of agent-IDs and actions.
+        Accepts literal action for single agent, or a Dict of agent-IDs and actions.
         
         Returns dictionary of agent IDs and StepReturns. Agent coodinates are scaled for graph.
         
@@ -392,13 +392,13 @@ class RadSearch(gym.Env):
         Literal single-action. Empty Action indicates agent is stalling for a timestep.
         
         action_list:
-        A dict of agent_IDs and their corresponding Actions. If none passed in, this will return just agents current states (often used during a environment reset).
+        A Dict of agent_IDs and their corresponding Actions. If none passed in, this will return just agents current states (often used during a environment reset).
         
         """ 
         
         def agent_step(
             action: Optional[Action], agent: Agent, proposed_coordinates: list[Point] = []
-        ) -> tuple[npt.NDArray[np.float32], float, bool, dict[Any, Any]]:
+        ) -> tuple[npt.NDArray[np.float32], float, bool, Dict[Any, Any]]:
             """
             Method that takes an action and updates the detector position accordingly.
             Returns an observation, reward, and whether the termination criteria is met.
@@ -527,10 +527,10 @@ class RadSearch(gym.Env):
         action_list = action if type(action) is dict else None
 
         # TODO implement this natively to meet Gym environment requirements
-        aggregate_observation_result: dict = {_: None for _ in self.agents}
-        aggregate_reward_result: dict = {_: None for _ in self.agents}
-        aggregate_success_result: dict = {_: None for _ in self.agents}
-        aggregate_info_result: dict = {_: None for _ in self.agents}
+        aggregate_observation_result: Dict = {_: None for _ in self.agents}
+        aggregate_reward_result: Dict = {_: None for _ in self.agents}
+        aggregate_success_result: Dict = {_: None for _ in self.agents}
+        aggregate_info_result: Dict = {_: None for _ in self.agents}
         
         if action_list:
             # if self.DEBUG:  
