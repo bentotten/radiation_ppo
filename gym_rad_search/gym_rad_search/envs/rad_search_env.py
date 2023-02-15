@@ -1048,7 +1048,7 @@ class RadSearch(gym.Env):
 
     def render(
         self,
-        save_gif: bool = False,
+        save_gif: bool = True,
         path: Optional[str] = None,
         epoch_count: Optional[int] = None,
         just_env: Optional[bool] = False,
@@ -1056,7 +1056,6 @@ class RadSearch(gym.Env):
         episode_rewards={},
         data=[],
         measurements: Optional[list[float]] = None,
-        params=[],
         location_estimate=None,
     ):
         """
@@ -1406,7 +1405,7 @@ class RadSearch(gym.Env):
             ax1.legend(loc="lower right", fontsize=8) # TODO get agent labels to stay put
         
             # Save
-            if self.save_gif:
+            if self.save_gif or save_gif:
                 if os.path.isdir(str(path) + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
@@ -1441,7 +1440,7 @@ class RadSearch(gym.Env):
                 frames=data_length,
                 fargs=(ax1, ax2, ax3, self.src_coords, self.bbox, measurements, flattened_rewards),
             )
-            if self.save_gif:
+            if self.save_gif or save_gif:
                 if self.DEBUG:
                     fps = 1
                 else:
