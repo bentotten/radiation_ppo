@@ -8,23 +8,23 @@ from datetime import datetime
 
 import numpy as np
 import numpy.random as npr
-from typing import NamedTuple
+from typing import NamedTuple, Tuple
 
-import gym
+import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from gym_rad_search.envs import RadSearch  # type: ignore
 from gym_rad_search.envs import rad_search_env
 
 try:
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core
-    from epoch_logger import setup_logger_kwargs, EpochLogger
-    import train as train
-    from ppo import BpArgs
+    import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
+    from epoch_logger import setup_logger_kwargs, EpochLogger # type: ignore
+    import train as train # type: ignore
+    from ppo import BpArgs # type: ignore
 except:
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
-    from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger
-    import algos.multiagent.train as train
-    from algos.multiagent.ppo import BpArgs    
+    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
+    from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger # type: ignore
+    import algos.multiagent.train as train # type: ignore
+    from algos.multiagent.ppo import BpArgs     # type: ignore
 
 
 @dataclass
@@ -106,8 +106,8 @@ class CliArgs:
     steps_per_episode: int
     epochs: int
     exp_name: str
-    dims: tuple[int, int]
-    area_obs: tuple[int, int]
+    dims: Tuple[int, int]
+    area_obs: Tuple[int, int]
     obstruct: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7]
     net_type: str
     alpha: float
@@ -330,12 +330,12 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def ping():
+def ping()-> str:
     ''' Check Function call '''
     return 'Pong!'
 
 
-def main():
+def main() -> None:
     ''' Set up experiment and create simulation environment. '''
     args = parse_args(create_parser())
 

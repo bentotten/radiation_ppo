@@ -17,7 +17,7 @@ from torchinfo import summary
 import pytorch_lightning as pl
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union
+from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union, List, Dict
 from typing_extensions import TypeAlias
 
 import matplotlib.pyplot as plt # type: ignore
@@ -29,12 +29,12 @@ from matplotlib.streamplot import Grid # type: ignore
 from gym_rad_search.envs import StepResult # type: ignore
 
 # Maps
-Point: TypeAlias = NewType("Point", Tuple[float, float])  # Array indicies to access a GridSquare
-Map: TypeAlias = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
-CoordinateStorage: TypeAlias = NewType("Storage", list[dict, Point])
+Point = NewType("Point", Tuple[float, float])  # Array indicies to access a GridSquare
+Map = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
+CoordinateStorage = NewType("CoordinateStorage", List[Dict[int, Point]])
 
 # Helpers
-Shape: TypeAlias = int | Tuple[int, ...]
+Shape = Union[int, Tuple[int, ...]]
 
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
 SIMPLE_NORMALIZATION = False
@@ -71,7 +71,7 @@ def discount_cumsum(
 
 
 def mlp(
-    sizes: list[Shape],
+    sizes: List[Shape],
     activation,
     output_activation=nn.Identity,
     layer_norm: bool = False,
@@ -161,18 +161,18 @@ class StatBuff:
 @dataclass
 class RolloutBuffer:      
     # Buffers
-    coordinate_buffer: list = field(init=False)
-    readings: Dict[Any, list] =field(init=False)
+    coordinate_buffer: List = field(init=False)
+    readings: Dict[Any, List] =field(init=False)
     
     def __post_init__(self):
         self.coordinate_buffer: CoordinateStorage = []    
-        self.readings: Dict[Any, Union[int, list]] = {'max': 0, 'min': 0} # For heatmap resampling        
+        self.readings: Dict[Any, Union[int, List]] = {'max': 0, 'min': 0} # For heatmap resampling        
     
     def clear(self):
         # Reset readings and coordinates buffers
         del self.coordinate_buffer[:]     
         self.readings.clear()
-        self.readings: Dict[Any, Union[int, list]] = {'max': 0, 'min': 0} # For heatmap resampling                
+        self.readings: Dict[Any, Union[int, List]] = {'max': 0, 'min': 0} # For heatmap resampling                
 
 
 @dataclass()
@@ -213,7 +213,7 @@ class MapsBuffer:
     
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
-    observation_buffer: list = field(default_factory=lambda: list())  # TODO move to PPO buffer
+    observation_buffer: List = field(default_factory=lambda: List())  # TODO move to PPO buffer
     normalization_buffer: StatBuff = field(default_factory=lambda: StatBuff())
 
     def __post_init__(self):
