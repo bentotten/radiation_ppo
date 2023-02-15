@@ -2,16 +2,18 @@
 Create graph of training or evaluation cycle from saved results in models directory
 '''
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy.signal as signal
+import matplotlib.pyplot as plt # type: ignore
+import scipy.signal as signal # type: ignore
 import json
 import os
 import os.path as osp
-import pandas as pd
+import pandas as pd # type: ignore
+
+from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, NamedTuple
 
 # Global vars for tracking and labeling data at load time.
 exp_idx = 0
-units = dict()
+units: Dict = dict()
 
 def get_datasets(logdir, condition=None):
     """

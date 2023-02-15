@@ -36,7 +36,7 @@ class ActionChoice():
     
 
 class NestedFiller(NamedTuple):
-    shape = field(default=(0,0))
+    shape: Tuple[int, int]
 
 
 class Filler():
@@ -57,17 +57,17 @@ class Core:
     id: int    
     state_dim: int
     action_dim: int
-    grid_bounds: tuple[float]
+    grid_bounds: Tuple[float, float]
     resolution_accuracy: float
     steps_per_epoch: int
     scaled_offset: float = field(default=0)    
-    random_seed: int = field(default=None)
+    random_seed: Union[None, int] = field(default=None)
     critic: Any = field(default=None)  # Eventually allows for a global critic
     render_counter: int = field(init=False)
     '''
     Skeleton for testing purposes. A non-learning uniform search with many filler elements for compatability.
     '''
-    def __post_init__(self):
+    def __post_init__(self)-> None:
         # Scaled maps
         self.map_dimensions = (
             int(self.grid_bounds[0] * self.resolution_accuracy) + int(self.scaled_offset  * self.resolution_accuracy),
@@ -86,7 +86,7 @@ class Core:
         self.pi = Filler()
         self.critic = Filler()
                 
-    def select_action(self, observation: dict[int, StepResult], message: dict[str, Any], id: int, save_map=True) -> ActionChoice:         
+    def select_action(self, observation: Dict[int, list], message: Dict[int, Any], id: int, save_map=True) -> ActionChoice:         
         # Inflate current coordinates
         scaled_coordinates = (int(observation[id][1] * self.resolution_accuracy), int(observation[id][2] * self.resolution_accuracy))
         action = self.search_direction
@@ -153,7 +153,7 @@ class Core:
     def load(self, checkpoint_path):
         print("Filler for load()")     
         
-    def render(self, savepath: str=None, save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
+    def render(self, savepath: Union[None, str] = None, save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         ''' Renders heatmaps from maps buffer '''
         print("Filler for render()")     
            

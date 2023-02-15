@@ -12,31 +12,33 @@ from dataclasses import dataclass, field
 from torch.distributions.categorical import Categorical
 from numbers import Number
 
+from typing_extensions import TypeAlias
+
 from typing import (
     Any,
     Callable,
     Literal,
     NoReturn,
-    TypeAlias,
     Optional,
     cast,
     overload,
     Union,
-    NamedTuple
+    NamedTuple,
+    Tuple
 )
 
-Shape: TypeAlias = int | tuple[int, ...]
+Shape: TypeAlias = Union[int, Tuple[int, Any]]
 
 
 class ActionChoice(NamedTuple):
-    action: Any= field(default=None) #npt.NDArray   = field(default=None) # size (1)
-    action_logprob: npt.NDArray   = field(default=None) # size (1)
-    state_value: npt.NDArray  = field(default=None)  # size(1)
-    hiddens: tuple[torch.Tensor]  = field(default=None)
-    loc_pred: npt.NDArray  = field(default=None)
+    action: Any = field(default=None) #npt.NDArray   = field(default=None) # size (1)
+    action_logprob: Union[None, npt.NDArray] = field(default=None) # size (1)
+    state_value: Union[None, npt.NDArray] = field(default=None)  # size(1)
+    hiddens: Union[None, Tuple[torch.Tensor]] = field(default=None)
+    loc_pred: Union[None, npt.NDArray]  = field(default=None)
     
     # For compatibility with CNN
-    id: int = field(default=None)
+    id: Union[None, int] = field(default=None)
 
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:

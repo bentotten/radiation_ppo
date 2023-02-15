@@ -10,35 +10,37 @@ import numpy as np
 import numpy.typing as npt
 
 from dataclasses import dataclass, field
-from typing import TypeAlias, Union, cast, Optional, Any, NamedTuple
-import scipy.signal
+from typing_extensions import TypeAlias # type: ignore
+from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Dict
+import scipy.signal # type: ignore
 
 try:
-    from epoch_logger import EpochLogger
+    from epoch_logger import EpochLogger # type: ignore
 except:
-    from algos.multiagent.epoch_logger import EpochLogger
+    from algos.multiagent.epoch_logger import EpochLogger 
 try:
-    import NeuralNetworkCores.FF_core as RADFF_core
-    import NeuralNetworkCores.CNN_core as RADCNN_core
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core
+    import NeuralNetworkCores.FF_core as RADFF_core # type: ignore 
+    import NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
 except:
-    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core
-    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
+    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
 
 
-Shape: TypeAlias = int | tuple[int, ...]
+Shape: TypeAlias = Union[int, Tuple[int, Any]]
 
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     if shape is None:
-        return (length,)
+        return (length,) # type: ignore
     elif np.isscalar(shape):
         shape = cast(int, shape)
         return (length, shape)
     else:
-        shape = cast(tuple[int, ...], shape)
-        return (length, *shape)
+        # TODO check this is working
+        shape = cast(tuple[int, ...], shape) # type: ignore
+        return (length, *shape) # type: ignore
 
 
 def discount_cumsum(
@@ -87,16 +89,16 @@ class OptimizationStorage:
     train_pi_iters: int
     train_v_iters: int
     train_pfgru_iters: int    
-    pi_optimizer: torch.optim
-    critic_optimizer: torch.optim
-    model_optimizer: torch.optim
+    pi_optimizer: torch.optim.Optimizer
+    critic_optimizer: torch.optim.Optimizer
+    model_optimizer: torch.optim.Optimizer
     clip_ratio: float
     alpha: float
     target_kl: float
     
-    pi_scheduler: torch.optim.lr_scheduler = field(init=False)  # Schedules gradient steps for actor
-    critic_scheduler: torch.optim.lr_scheduler = field(init=False)  # Schedules gradient steps for value function (critic)
-    pfgru_scheduler: torch.optim.lr_scheduler = field(init=False)   # Schedules gradient steps for PFGRU location predictor module
+    pi_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # Schedules gradient steps for actor
+    critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # Schedules gradient steps for value function (critic)
+    pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)   # Schedules gradient steps for PFGRU location predictor module
     loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean"))) # Loss calculator utility NOTE: Actor/PFGRU have other complex loss functions
         
     '''     
@@ -146,7 +148,7 @@ class PPOBuffer:
     obs_dim: int  # Observation space dimensions
     max_size: int  # Max steps per epoch
 
-    episode_lengths: npt.NDArray[np.float32] = field(default_factory=list)  # Episode length storage
+    episode_lengths: List[int] = field(default_factory= lambda: list())  # Episode length storage
 
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
@@ -286,12 +288,7 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
 
-    # TODO copied wholesale from train(), integrate here
-
-    
-    # MOVE TO CNN
-
-    def get(self, logger=None) -> dict[str, Union[torch.Tensor, list]]:
+    def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, dict]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -307,8 +304,8 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        episode_lengths: list[int] = self.episode_lengths # TODO this needs to be cleared before can be used
-        epLens: list[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
+        episode_lengths: List[int] = self.episode_lengths # TODO this needs to be cleared before can be used
+        epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         
         number_episodes = len(episode_lengths)
         numEps = len(epLens)
@@ -368,8 +365,8 @@ class PPOBuffer:
             )
         )
         
-        episode_form: list[list[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        epForm: list[list[torch.Tensor]] = [[] for _ in range(epLenSize)]
+        episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
+        epForm: List[List[torch.Tensor]] = [[] for _ in range(epLenSize)]
         
         slice_b: int = 0
         slice_f: int = 0
@@ -723,7 +720,7 @@ class AgentPPO:
         }
         return results
 
-    def compute_loss_pi(self, data: dict[torch.Tensor, list], map_stack: torch.Tensor, index:int = None):
+    def compute_loss_pi(self, data: dict[torch.Tensor, List], map_stack: torch.Tensor, index:int = None):
         ''' Compute loss for actor network
             The difference between the probability of taking the action according to the current policy
             and the probability of taking the action according to the old policy, multiplied by the 
@@ -800,7 +797,7 @@ class AgentPPO:
         results = {'critic_loss': torch.stack(critic_loss_list).mean()}
         return results
             
-    def compute_loss_critic(self, data: dict[torch.Tensor, list], map_stack: torch.Tensor, index: int = None):
+    def compute_loss_critic(self, data: dict[torch.Tensor, List], map_stack: torch.Tensor, index: int = None):
         ''' Compute loss for state-value approximator (critic network) using MSE. Calculates the MSE of the 
             predicted state value from the critic and the true state value
         
