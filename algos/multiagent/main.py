@@ -423,6 +423,7 @@ def main():
         observation_space=env.observation_space.shape[0],
         bp_args=bp_args,
         steps_per_epoch=args.steps_per_epoch,
+        env_height=env.search_area[2][1],
         seed=args.seed,        
         actor_critic_args=ac_kwargs,
         actor_critic_architecture=args.net_type,

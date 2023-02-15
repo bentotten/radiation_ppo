@@ -406,6 +406,7 @@ class AgentPPO:
         the observation array. This is used for the PPO buffer.
     :param bp_args: (BpArgs) Set up bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
     :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
+    :param env_height: (float) Max y axis bound of search area from environment grid. Note that this is only in spawnable coordinates, so likely is shorter than the full grid.
     :param seed: (int) For random number generator.
     :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
     :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
@@ -436,6 +437,7 @@ class AgentPPO:
     observation_space: int
     bp_args: BpArgs     # No default due to need for environment height parameter.
     steps_per_epoch: int  # No default value - Critical that it match environment
+    env_height: float
     seed: int = field(default= 0)
     actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic_architecture: str = field(default="cnn")
