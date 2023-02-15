@@ -1,4 +1,4 @@
-''' RAD-A2C Network Architecture ''' # type: ignore
+''' RAD-A2C Network Architecture '''
 
 import numpy as np
 import numpy.typing as npt
