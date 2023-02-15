@@ -242,10 +242,10 @@ class Agent():
     marker_color: Color = field(init=False)
     det_sto: List[Point] = field(init=False)  # Coordinate history for episdoe
     meas_sto: List[float] = field(init=False) # Measurement history for episode
-    reward_sto: list[float] = field(init=False) # Reward history for epsisode
-    cum_reward_sto: list = field(init=False)  # Cumulative rewards tracker for episode
-    action_sto: list = field(init=False)  # Stores actions for render
-    terminal_sto: list = field(init=False)
+    reward_sto: List[float] = field(init=False) # Reward history for epsisode
+    cum_reward_sto: List = field(init=False)  # Cumulative rewards tracker for episode
+    action_sto: List = field(init=False)  # Stores actions for render
+    terminal_sto: List = field(init=False)
 
     def __post_init__(self):
         self.marker_color: Color = create_color(self.id)
@@ -255,12 +255,12 @@ class Agent():
         self.obstacle_blocking = False
         self.out_of_bounds = False  
         self.out_of_bounds_count = 0
-        self.det_sto: list[Point] = []  # Coordinate history for episdoe
-        self.meas_sto: list[float] = [] # Measurement history for episode
-        self.reward_sto: list[float] = [] # Reward history for epsisode
-        self.cum_reward_sto: list = []  # Cumulative rewards tracker for episode
-        self.action_sto: list = []
-        self.terminal_sto: list = []
+        self.det_sto: List[Point] = []  # Coordinate history for episdoe
+        self.meas_sto: List[float] = [] # Measurement history for episode
+        self.reward_sto: List[float] = [] # Reward history for epsisode
+        self.cum_reward_sto: List = []  # Cumulative rewards tracker for episode
+        self.action_sto: List = []
+        self.terminal_sto: List = []
                 
 
 @dataclass
@@ -277,25 +277,26 @@ class RadSearch(gym.Env):
         obstruction_count: Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions
     """ 
     # Environment
+    #    BBox = NewType("BBox", Tuple[Point, Point, Point, Point])
     bbox: BBox = field(default_factory=lambda: BBox(
-            tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0))))
+            tuple((Point((0.0, 0.0)), Point((2700.0, 0.0)), Point((2700.0, 2700.0)), Point((0.0, 2700.0)))) # type: ignore 
             ))
     observation_area: Interval = field(default_factory=lambda: Interval((200.0, 500.0)))
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
     enforce_grid_boundaries: bool = field(default=False)
     save_gif: bool = field(default=True)    
-    env_ls: list[Polygon] = field(init=False)
+    env_ls: List[Polygon] = field(init=False)
     max_dist: float = field(init=False)
-    line_segs: list[list[vis.Line_Segment]] = field(init=False)
-    poly: list[Polygon] = field(init=False)
+    line_segs: List[List[vis.Line_Segment]] = field(init=False)
+    poly: List[Polygon] = field(init=False)
     search_area: BBox = field(init=False)  # Area Detector and Source will spawn in - each must be 1000 cm apart from the source
     walls: Polygon = field(init=False)
     world: vis.Environment = field(init=False)
     vis_graph: vis.Visibility_Graph = field(init=False)
     intensity: int = field(init=False)
     bkg_intensity: int = field(init=False)
-    obs_coord: list[list[Point]] = field(init=False)
+    obs_coord: List[List[Point]] = field(init=False)
 
     # Detector
     agents: Dict[int, Agent] = field(init=False)
@@ -322,7 +323,7 @@ class RadSearch(gym.Env):
     coord_noise: bool = False
     seed: Union[int, None] = field(default=None)  # TODO make env generation work with this
     scale: float = field(init=False)  # Used to deflate and inflate coordinates
-    scaled_grid_max: tuple = field(default_factory=lambda: (1,1)) # Max x and max y for grid after deflation   
+    scaled_grid_max: Tuple = field(default_factory=lambda: (1,1)) # Max x and max y for grid after deflation   
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
@@ -397,8 +398,8 @@ class RadSearch(gym.Env):
         """ 
         
         def agent_step(
-            action: Optional[Action], agent: Agent, proposed_coordinates: list[Point] = []
-        ) -> tuple[npt.NDArray[np.float32], float, bool, Dict[Any, Any]]:
+            action: Optional[Union[Action, None]], agent: Agent, proposed_coordinates: List[Point] = []
+        ) -> Tuple[npt.NDArray[np.float32], float, bool, Dict[Any, Any]]:
             """
             Method that takes an action and updates the detector position accordingly.
             Returns an observation, reward, and whether the termination criteria is met.
@@ -410,10 +411,15 @@ class RadSearch(gym.Env):
             Agent to take the action
             
             Proposed Coordinates:
-            A list of all resulting coordinates if all agents successfully take their actions. Used for collision prevention.
+            A List of all resulting coordinates if all agents successfully take their actions. Used for collision prevention.
             """
+            # Initial values
             agent.out_of_bounds = False
             agent.collision = False
+            
+            # Sanity check values
+            measurement: Union[None, float] = None
+            reward: Union[None, float] = None
                      
             if self.take_action(agent, action, proposed_coordinates):
                 # Returns the length of a Polyline, which is a double
@@ -423,17 +429,17 @@ class RadSearch(gym.Env):
                 ).length()
                 agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
                 agent.intersect = self.is_intersect(agent)  # checks if the line of sight is blocked by any obstructions in the environment.
-                meas: float = self.np_random.poisson(
+                measurement = self.np_random.poisson(
                     self.bkg_intensity
                     if agent.intersect
                     else self.intensity / agent.euc_dist + self.bkg_intensity
                 )
                 
-                assert meas >= 0
+                assert measurement >= 0
 
                 # Reward logic
                 if agent.sp_dist < 110:
-                    reward = 0.1  # TODO should this be higher?
+                    reward = 0.1  # NOTE: must be the same value as "step in correct direction", as episodes can be cut off prematurely by epoch ending.
                     self.done = True
                     agent.terminal_sto.append(True)
                 elif agent.sp_dist < agent.prev_det_dist:
@@ -446,6 +452,7 @@ class RadSearch(gym.Env):
                         reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
                     else:
                         reward = -0.5 * agent.sp_dist / self.max_dist
+                        
             # If take_action is false, usually due to agent being in obstacle or empty action on env reset.
             else:
                 agent.terminal_sto.append(False)                                    
@@ -457,7 +464,7 @@ class RadSearch(gym.Env):
                     #     self.source, agent.detector, self.vis_graph, EPSILON
                     # ).length()
                     agent.intersect = self.is_intersect(agent)  # checks if the line of sight is blocked by any obstructions in the environment.
-                    meas: float = self.np_random.poisson(
+                    measurement = self.np_random.poisson(
                         self.bkg_intensity
                         if agent.intersect # checks if the line of sight is blocked by any obstructions in the environment.
                         else self.intensity / agent.euc_dist + self.bkg_intensity
@@ -472,7 +479,7 @@ class RadSearch(gym.Env):
                     agent.sp_dist = agent.prev_det_dist  # Set in reset function with current coordinates
                     agent.euc_dist = dist_p(agent.det_coords, self.src_coords)
                     agent.intersect = self.is_intersect(agent)
-                    meas: float = self.np_random.poisson(
+                    measurement = self.np_random.poisson(
                         self.bkg_intensity
                         if agent.intersect # checks if the line of sight is blocked by any obstructions in the environment.
                         else self.intensity / agent.euc_dist + self.bkg_intensity
@@ -485,7 +492,7 @@ class RadSearch(gym.Env):
 
             # If detector coordinate noise is desired
             noise: Point = Point(
-                tuple(self.np_random.normal(scale=5, size=2))
+                tuple(self.np_random.normal(scale=5, size=2)) # type: ignore
                 if self.coord_noise
                 else (0.0, 0.0)
             )
@@ -495,18 +502,22 @@ class RadSearch(gym.Env):
                 sum_p(agent.det_coords, noise), 1 / self.search_area[2][1]
             )
 
-            # Observation with the radiation meas., detector coords and detector-obstruction range meas.
+            # Observation with the radiation measurement., detector coords and detector-obstruction range measurement.
             # TODO: State should really be better organized. If there are distinct components to it, why not make it
             # a named tuple?
 
             # Sensor measurement for obstacles and boundaries directly around agent
-            sensor_meas: npt.NDArray[np.float64] = self.obstruction_sensors(agent=agent) if self.num_obs > 0 or self.enforce_grid_boundaries else np.zeros(DETECTABLE_DIRECTIONS)  # type: ignore
+            sensor_meas: npt.NDArray[np.float64] = self.obstruction_sensors(agent=agent) if self.num_obs > 0 or self.enforce_grid_boundaries else np.zeros(DETECTABLE_DIRECTIONS)  
             # State is an 11-tuple ndarray
             # [intensity, x-coord, y-coord, 8 directions of obstacle detection]
-            state_observation: npt.NDArray[np.float32] = np.array([meas, *det_coord_scaled, *sensor_meas])  # type: ignore
+            state_observation: npt.NDArray[np.float32] = np.array([measurement, *det_coord_scaled, *sensor_meas])  
+            
+            # Sanity checks
+            assert measurement is not None
+            assert reward is not None
             
             agent.det_sto.append(agent.det_coords)
-            agent.meas_sto.append(meas)
+            agent.meas_sto.append(measurement)
             agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
             agent.action_sto.append(action)
@@ -602,7 +613,7 @@ class RadSearch(gym.Env):
 
             self.create_obs()
             self.walls = Polygon(list(self.bbox))
-            self.env_ls: list[Polygon] = [self.walls, *self.poly]
+            self.env_ls: List[Polygon] = [self.walls, *self.poly]
 
             # Create Visilibity environment
             self.world = vis.Environment(list(map(to_vis_poly, self.env_ls)))
@@ -647,7 +658,7 @@ class RadSearch(gym.Env):
         self.iter_count = 0
         return step
 
-    def take_action(self, agent: Agent, action: Optional[Action], proposed_coordinates: list, agent_id: int = 0) -> bool:
+    def take_action(self, agent: Agent, action: Optional[Action], proposed_coordinates: List, agent_id: int = 0) -> bool:
         """
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
@@ -723,10 +734,10 @@ class RadSearch(gym.Env):
         """
         ii = 0
         intersect = False
-        self.obs_coord: list[list[Point]] = [[] for _ in range(self.num_obs)]
-        self.poly: list[Polygon] = []
-        self.line_segs: list[list[vis.Line_Segment]] = []
-        obs_coord: list[Point] = []
+        self.obs_coord: List[List[Point]] = [[] for _ in range(self.num_obs)]
+        self.poly: List[Polygon] = []
+        self.line_segs: List[List[vis.Line_Segment]] = []
+        obs_coord: List[Point] = []
         
         while ii < self.num_obs:
             seed_x: float = self.np_random.integers(  # type: ignore
@@ -781,7 +792,7 @@ class RadSearch(gym.Env):
                 obs_coord = []
             intersect = False
 
-    def sample_source_loc_pos(self,) -> tuple[vis.Point, vis.Point, Point, Point]:
+    def sample_source_loc_pos(self,) -> Tuple[vis.Point, vis.Point, Point, Point]:
         """
         Method that randomly generate the detector and source starting locations.
         Locations can not be inside obstructions and must be at least 1000 cm apart.
@@ -929,7 +940,7 @@ class RadSearch(gym.Env):
         else:
             return False    
 
-    def obstruction_sensors(self, agent: Agent) -> list[float]:
+    def obstruction_sensors(self, agent: Agent) -> npt.NDArray[np.float64]:
         """
         Method that generates detector-obstruction range measurements with values between 0-1. 
         This detects obstructions within 1.1m of itself. 0 means no obstructions were detected.
@@ -939,7 +950,7 @@ class RadSearch(gym.Env):
         # Check for obstacles
         detector_p: Point = from_vis_p(agent.detector)
         
-        segs: list[vis.Line_Segment] = [
+        segs: List[vis.Line_Segment] = [
             vis.Line_Segment(
                 agent.detector, to_vis_p(sum_p(detector_p, get_step(action)))
             )
@@ -947,10 +958,10 @@ class RadSearch(gym.Env):
         ]
         # TODO: Currently there are only eight actions -- what happens if we change that?
         # This annotation would need to change as well.
-        dists: list[float] = [0.0] * len(segs)  # Directions where an obstacle is detected
-        obs_idx_ls: list[int] = [0] * len(self.poly)  # Keeps track of how many steps will interect with which obstacle
+        dists: List[float] = [0.0] * len(segs)  # Directions where an obstacle is detected
+        obs_idx_ls: List[int] = [0] * len(self.poly)  # Keeps track of how many steps will interect with which obstacle
         inter = 0  # Intersect flag
-        seg_dist: list[float] = [0.0] * 4  # TODO what is the purpose of this? Saves into dists, appears to be the max "distance", but only tracks intersects?
+        seg_dist: List[float] = [0.0] * 4  # TODO what is the purpose of this? Saves into dists, appears to be the max "distance", but only tracks intersects?
         if self.num_obs > 0:
             for idx, seg in enumerate(segs): # TODO change seg to direction_segment
                 for obs_idx, poly in enumerate(self.line_segs): # TODO change poly to obstacle
@@ -1007,21 +1018,21 @@ class RadSearch(gym.Env):
                 assert dists[2] == 0.0
                 dists[2] = line_distance                   
 
-        return dists
+        return np.array(dists, dtype=np.float64)
 
-    def correct_coords(self, poly: Polygon, agent: Agent) -> list[float]:
+    def correct_coords(self, poly: Polygon, agent: Agent) -> List[float]:
         """
         Method that corrects the detector-obstruction range measurement if more than the correct
         number of directions are being activated due to the Visilibity implementation.
         This often happens when an agent is on the edge of an obstruction.
         """
-        x_check: list[bool] = [False] * DETECTABLE_DIRECTIONS
+        x_check: List[bool] = [False] * DETECTABLE_DIRECTIONS
         dist = 0.1  # TODO Scaled?
         length = 1
         poly_p: vis.Polygon = to_vis_poly(poly)
 
-        qs: list[Point] = [from_vis_p(agent.detector)] * DETECTABLE_DIRECTIONS  # Offsets agent position by 0.1 to see if actually inside obstacle
-        dists: list[float] = [0.0] * DETECTABLE_DIRECTIONS
+        qs: List[Point] = [from_vis_p(agent.detector)] * DETECTABLE_DIRECTIONS  # Offsets agent position by 0.1 to see if actually inside obstacle
+        dists: List[float] = [0.0] * DETECTABLE_DIRECTIONS
         while not any(x_check):
             for action in cast(tuple[Directions], get_args(Directions)):
                 # Gets slight offset to remove effects of being "on" an obstruction
@@ -1055,7 +1066,7 @@ class RadSearch(gym.Env):
         obstacles=[],
         episode_rewards={},
         data=[],
-        measurements: Optional[list[float]] = None,
+        measurements: Optional[List[float]] = None,
         location_estimate=None,
     ):
         """
@@ -1070,14 +1081,14 @@ class RadSearch(gym.Env):
 
         def update(
             frame_number: int, 
-            #data: list, 
+            #data: List, 
             ax1: plt.Axes, 
             ax2: plt.Axes, 
             ax3: plt.Axes, 
             src: Point, 
             area_dim: BBox, 
-            measurements: list,
-            flattened_rewards: list
+            measurements: List,
+            flattened_rewards: List
             ) -> None:
             """
             Renders each frame
