@@ -853,8 +853,8 @@ class CCNBase:
         entire grid when boundaries are being enforced, not just the obstruction/spawning area. For the CNN, this expands the size of the network to accomodate these extra grid 
         coordinates. This is optional, but for this implementation, to remove this would require adjusting environment to not let agents through to that area when grid boundaries
         are being enforced. Removing this also makes renders look very odd, as agent will not be able to travel to bottom coordinates.
-    :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. For the rad-search environment, this is (1, 1). This is used for scaling
-        in the map buffer by the resolution variable.
+    :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. This represents the max x and the max y for the scaled coordinates 
+        in the rad-search environment (usually (1, 1)). This is used for scaling in the map buffer by the resolution variable.
     :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
         coordinates can be encompased in a matrix element.
     :param Critic: [Optional] For future work, this allows for the inclusion of a pointer to a global critic
@@ -870,29 +870,23 @@ class CCNBase:
     environment_scale: int
     bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function  
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
-    grid_bounds: Tuple[float] = field(default_factory= lambda: (1.0, 1.0))
+    grid_bounds: Tuple[int] = field(default_factory= lambda: (1, 1))
             
     # Initialized elsewhere
     #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
     Critic: Any = field(default=None)  # Eventually allows for a global critic
-
     #: Policy/Actor network
     pi: Actor = field(init=False)
-    
     #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
     model: PFGRUCell = field(init=False)
     #: Buffer that holds map-stacks and converts observations to maps
     maps: MapsBuffer = field(init=False)
-    
     #: Mean Squared Error for loss for critic network
     MseLoss: nn.MSELoss = field(init=False)
-    
     #: How much unscaling to do to reinflate agent coordinates to full representation.
     scaled_offset: float = field(init=False)
-    
     #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
     resolution_accuracy: float = field(init=False)
-    
     #: Ensures heatmap renders to not overwrite eachother
     render_counter: int = field(init=False)    
 

@@ -323,6 +323,7 @@ class RadSearch(gym.Env):
     coord_noise: bool = False
     seed: Union[int, None] = field(default=None)  # TODO make env generation work with this
     scale: float = field(init=False)  # Used to deflate and inflate coordinates
+    scaled_grid_max: tuple = field(default_factory=lambda: (1,1)) # Max x and max y for grid after deflation   
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps

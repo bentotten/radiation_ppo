@@ -405,19 +405,17 @@ def main():
         )
     else:
         ac_kwargs=dict(
-            number_of_agents=args.agent_count,
-            observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
             action_space=env.detectable_directions,
-            steps_per_episode=args.steps_per_episode,
+            observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
             steps_per_epoch=args.steps_per_epoch,
-            scaled_grid_bounds=(1, 1),        
-
-            net_type=args.net_type,
-            batch_s=args.minibatches,
+            steps_per_episode=args.steps_per_episode,
+            number_of_agents=args.agent_count,
+            detector_step_size=env.step_size,
+            environment_scale=env.scale,
+            bounds_offset=env.observation_area,
             enforce_boundaries=args.enforce_boundaries,
-            seed=args.seed,
-            pad_dim=2                     
-        )        
+            grid_bounds=env.scaled_grid_max
+        )         
 
     # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
     ppo_kwargs=dict(
