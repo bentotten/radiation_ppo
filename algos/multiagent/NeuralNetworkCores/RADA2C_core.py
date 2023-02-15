@@ -1,3 +1,6 @@
+# type: ignore
+# TODO typecheck this
+
 ''' RAD-A2C Network Architecture '''
 
 import numpy as np

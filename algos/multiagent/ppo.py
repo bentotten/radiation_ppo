@@ -288,7 +288,7 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
 
-    def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, dict]]:
+    def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, Dict]]:
         """
         Call this at the end of an epoch to get all of the data from
         the buffer, with advantages appropriately normalized (shifted to have
@@ -365,7 +365,7 @@ class PPOBuffer:
             )
         )
         
-        episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
+        episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)] # TODO investigate why this does not work for pop operation
         epForm: List[List[torch.Tensor]] = [[] for _ in range(epLenSize)]
         
         slice_b: int = 0
@@ -436,7 +436,7 @@ class AgentPPO:
     steps_per_epoch: int  # No default value - Critical that it match environment
     env_height: float
     seed: int = field(default= 0)
-    actor_critic_args: dict[str, Any] = field(default_factory= lambda: dict())
+    actor_critic_args: Dict[str, Any] = field(default_factory= lambda: dict())
     actor_critic_architecture: str = field(default="cnn")
     minibatch: int = field(default=1)    
     train_pi_iters: int = field(default= 40)
@@ -508,21 +508,22 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, standardized_observations: npt.NDArray, hiddens: dict = None, save_map: bool = True, message: dict =None) -> RADCNN_core.ActionChoice:
+    def step(self, standardized_observations: npt.NDArray, hiddens: Union[None, Dict] = None, save_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
         ''' Wrapper for neural network action selection'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            assert type(hiddens) == dict
             results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
         elif self.actor_critic_architecture == 'uniform':
             results = self.agent.select_action(observation=standardized_observations, message=message, id=self.id)         
         elif self.actor_critic_architecture == 'cnn':
-            results: RADCNN_core.ActionChoice = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
+            results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
         elif self.actor_critic_architecture == 'ff':
             results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)
         else:
             raise ValueError("Unknown architecture")
         return results         
     
-    def reset_neural_nets(self, batch_size: int = 1) -> tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    def reset_neural_nets(self, batch_size: int = 1) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         ''' Reset the neural networks at the end of an episode'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             hiddens = self.agent.reset_hidden()
@@ -558,7 +559,7 @@ class AgentPPO:
             return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
          
         # Get data from buffers
-        data: dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
+        data: Dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
         
         # NOTE: Not using observation tensor for CNN, using internal map buffer          
 
@@ -720,7 +721,7 @@ class AgentPPO:
         }
         return results
 
-    def compute_loss_pi(self, data: dict[torch.Tensor, List], map_stack: torch.Tensor, index:int = None):
+    def compute_loss_pi(self, data: Dict[torch.Tensor, List], map_stack: torch.Tensor, index:int = None):
         ''' Compute loss for actor network
             The difference between the probability of taking the action according to the current policy
             and the probability of taking the action according to the old policy, multiplied by the 
@@ -797,7 +798,7 @@ class AgentPPO:
         results = {'critic_loss': torch.stack(critic_loss_list).mean()}
         return results
             
-    def compute_loss_critic(self, data: dict[torch.Tensor, List], map_stack: torch.Tensor, index: int = None):
+    def compute_loss_critic(self, data: Dict[torch.Tensor, List], map_stack: torch.Tensor, index: int = None):
         ''' Compute loss for state-value approximator (critic network) using MSE. Calculates the MSE of the 
             predicted state value from the critic and the true state value
         
@@ -821,7 +822,7 @@ class AgentPPO:
         critic_loss = self.agent.MseLoss(torch.squeeze(predicted_value), true_return)
         return critic_loss
 
-    def update_model(self, data: dict[str, torch.Tensor]) -> torch.Tensor:
+    def update_model(self, data: Dict[str, torch.Tensor]) -> torch.Tensor:
         ''' Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details) '''      
         # Initial values and compatability
         args: BpArgs = self.bp_args
@@ -923,8 +924,8 @@ class AgentPPO:
         return model_loss
 
     def update_a2c(
-            self, data: dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
-        ) -> tuple[torch.Tensor, dict[str, torch.Tensor], bool, torch.Tensor]:
+            self, data: Dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
+        ) -> tuple[torch.Tensor, Dict[str, torch.Tensor], bool, torch.Tensor]:
         ''' RAD-A2C Actor and Critic updates'''
         # Start update
         if not minibatch:
