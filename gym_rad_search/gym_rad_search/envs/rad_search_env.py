@@ -3,8 +3,7 @@ from email.policy import default
 import os
 import sys
 import math
-from matplotlib.markers import MarkerStyle
-import matplotlib.collections as mcoll
+from matplotlib.markers import MarkerStyle # type: ignore
 
 import numpy as np
 import numpy.typing as npt
@@ -15,10 +14,10 @@ from gym import spaces  # type: ignore
 
 import visilibity as vis  # type: ignore
 
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.ticker import FormatStrFormatter
-from matplotlib.animation import PillowWriter
+import matplotlib.pyplot as plt 
+import matplotlib.animation as animation # type: ignore
+from matplotlib.ticker import FormatStrFormatter # type: ignore
+from matplotlib.animation import PillowWriter # type: ignore
 from matplotlib.patches import Polygon as PolygonPatches
 
 from typing import Any, List, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple

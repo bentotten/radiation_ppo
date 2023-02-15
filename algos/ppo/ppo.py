@@ -1,3 +1,4 @@
+# type: ignore
 from cgitb import reset
 from dataclasses import dataclass, field
 from typing import Any, NamedTuple, Type, Union

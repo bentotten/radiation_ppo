@@ -1,3 +1,4 @@
+# type: ignore
 import joblib
 import numpy as np
 import matplotlib.pyplot as plt

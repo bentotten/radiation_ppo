@@ -1,3 +1,4 @@
+# type: ignore
 import argparse
 from dataclasses import dataclass
 from typing import Literal

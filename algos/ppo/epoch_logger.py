@@ -1,3 +1,4 @@
+# type: ignore
 # Taken largely from https://github.com/peproctor/REU_rl/blob/350797ef99bf8405a95f8b8b7e1be3292ce41d11/rl_tools/rl_tools/logx.py
 """
 

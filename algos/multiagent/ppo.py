@@ -588,7 +588,7 @@ class AgentPPO:
             while not term and kk < self.train_pi_iters:
                 # Early stop training if KL-div above certain threshold
                 #pi_l, pi_info, term, loc_loss = self.update_a2c(agent, data, min_iters, kk)  # pi_l = policy loss
-                update_results = {}
+                update_results: Dict[str, Union[torch.Tensor, bool]] = {}
                 (
                     update_results['pi_l'], 
                     update_results['pi_info'], 
@@ -925,7 +925,7 @@ class AgentPPO:
 
     def update_a2c(
             self, data: Dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
-        ) -> tuple[torch.Tensor, Dict[str, torch.Tensor], bool, torch.Tensor]:
+        ) -> Tuple[torch.Tensor, Dict[str, Union[npt.NDArray, list]], bool, torch.Tensor]:
         ''' RAD-A2C Actor and Critic updates'''
         # Start update
         if not minibatch:
