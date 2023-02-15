@@ -78,17 +78,17 @@ def mlp(
 ) -> nn.Sequential:
     layers = []
     for j in range(len(sizes) - 1):
-        layer = [nn.Linear(sizes[j], sizes[j + 1])]
+        layer = [nn.Linear(sizes[j], sizes[j + 1])] # type: ignore
 
         if layer_norm:
-            ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None
-            layer.append(ln)
+            ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None  # type: ignore
+            layer.append(ln)  # type: ignore
 
         layer.append(activation() if j < len(sizes) - 1 else output_activation())
         layers += layer
 
     if layer_norm and None in layers:
-        layers.remove(None)
+        layers.remove(None) #  type: ignore
 
     return nn.Sequential(*layers)
 
@@ -162,17 +162,17 @@ class StatBuff:
 class RolloutBuffer:      
     # Buffers
     coordinate_buffer: List = field(init=False)
-    readings: Dict[Any, List] =field(init=False)
+    readings: Dict[Union[str, Tuple[float, float]], Union[np.floating[Any], List[np.floating[Any]]]] = field(init=False)
     
-    def __post_init__(self):
+    def __post_init__(self)-> None:
         self.coordinate_buffer: CoordinateStorage = []    
-        self.readings: Dict[Any, Union[int, List]] = {'max': 0, 'min': 0} # For heatmap resampling        
+        self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling        
     
-    def clear(self):
+    def clear(self)-> None:
         # Reset readings and coordinates buffers
         del self.coordinate_buffer[:]     
         self.readings.clear()
-        self.readings: Dict[Any, Union[int, List]] = {'max': 0, 'min': 0} # For heatmap resampling                
+        self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling                
 
 
 @dataclass()
@@ -216,7 +216,7 @@ class MapsBuffer:
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
     normalization_buffer: StatBuff = field(default_factory=lambda: StatBuff())
 
-    def __post_init__(self):
+    def __post_init__(self)-> None:
         self.base = self.steps_per_episode * self.number_of_agents
         
         # Scaled maps
@@ -228,7 +228,7 @@ class MapsBuffer:
         self.y_limit_scaled: int = self.map_dimensions[1]    
         self.clear()
 
-    def clear_maps(self):
+    def clear_maps(self)-> None:
         ''' Clear maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
         # TODO rethink this, this is very slow
         self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch or keep a ref count?
@@ -240,7 +240,7 @@ class MapsBuffer:
         self.buffer.clear()
         self.normalization_buffer.reset()
         
-    def clear(self):
+    def clear(self)-> None:
         ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
         del self.observation_buffer[:]
         self.clear_maps()        
@@ -300,7 +300,7 @@ class MapsBuffer:
             for agent_id in observation:
                 self.normalization_buffer.update(observation[agent_id][0])
         for agent_id in observation:
-            readings_scaled_coordinates: Tuple(int, int) = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
+            readings_scaled_coordinates: Tuple[int, int] = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             readings_x: int = int(readings_scaled_coordinates[0])
             readings_y: int = int(readings_scaled_coordinates[1])
             
@@ -316,10 +316,11 @@ class MapsBuffer:
             # Normalize
             if SIMPLE_NORMALIZATION:
                 normalized_reading = estimated_reading / self.buffer.readings['max']
+                assert normalized_reading <= 1.0 and normalized_reading >= 0.0 # Stat buffer can give 0 back as a reading
+                
             else:
                 normalized_reading = np.clip((observation[agent_id][0] - self.normalization_buffer.mu) / self.normalization_buffer.sig_obs, -8, 8)     
-            assert normalized_reading <= 1.0 and normalized_reading > 0.0
-            
+                # TODO Get range for this tool and add an assert        
             if estimated_reading > 0:
                 self.readings_map[readings_x][readings_y] = normalized_reading 
             else:
@@ -350,7 +351,7 @@ class MapsBuffer:
                                 np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
                             ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
                         )          
-                    assert self.visit_counts_map.max() <= 1.0 and self.visit_counts_map.min() > 0.0, "Normalization error" 
+                    assert self.visit_counts_map.max() <= 1.0 and self.visit_counts_map.min() >= 0.0, "Normalization error" 
             
         ### Process observation for obstacles_map 
         for agent_id in observation:
@@ -493,10 +494,10 @@ class Actor(nn.Module):
         print(x)
         pass
    
-    def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
+    def act(self, state_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
         ''' Select action from action probabilities returned by actor.'''
         action_probs: torch.Tensor = self.actor(state_map_stack)
-        dist: torch.Tensor = Categorical(action_probs)
+        dist = Categorical(action_probs)
         action: torch.Tensor = dist.sample()
         action_logprob: torch.Tensor = dist.log_prob(action)
         
@@ -510,7 +511,7 @@ class Actor(nn.Module):
         self.actor.train()
         
         action_probs: torch.Tensor = self.actor(state_map_stack)
-        dist: torch.Tensor  = Categorical(action_probs)
+        dist = Categorical(action_probs)
         action_logprobs: torch.Tensor  = dist.log_prob(action)
         dist_entropy: torch.Tensor  = dist.entropy()
             
@@ -601,7 +602,7 @@ class Critic(nn.Module):
         print(x)
         pass
    
-    def act(self, state_map_stack: torch.float) -> Tuple[torch.tensor, torch.tensor, torch.tensor]: 
+    def act(self, state_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
         # Get q-value from critic
         #self.test(state_map_stack)
         state_value = self.critic(state_map_stack)
@@ -668,8 +669,8 @@ class PFRNNBaseCell(nn.Module):
         ...
 
     def resampling(
-        self, particles: torch.Tensor | Tuple[torch.Tensor, torch.Tensor], prob: torch.Tensor
-    ) -> Tuple[Tuple[torch.Tensor, torch.Tensor] | torch.Tensor, torch.Tensor]:
+        self, particles: Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]], prob: torch.Tensor
+    ) -> Tuple[Union[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], torch.Tensor]:
         """soft-resampling
 
         Arguments:
@@ -705,7 +706,7 @@ class PFRNNBaseCell(nn.Module):
             )
         # PFGRU
         else:
-            particles_new = particles[flatten_indices]
+            particles_new = particles[flatten_indices]  # type: ignore
 
         prob_new = torch.exp(prob.view(-1, 1)[flatten_indices])
         prob_new = prob_new / (
@@ -778,9 +779,9 @@ class PFGRUCell(PFRNNBaseCell):
 
         z = torch.sigmoid(self.fc_z(obs_cat))
         r = torch.sigmoid(self.fc_r(obs_cat))
-        n = self.fc_n(torch.cat((r * h0, obs_in), dim=1))
+        n_1 = self.fc_n(torch.cat((r * h0, obs_in), dim=1))
 
-        mu_n, var_n = torch.split(n, split_size_or_sections=self.h_dim, dim=1)
+        mu_n, var_n = torch.split(n_1, split_size_or_sections=self.h_dim, dim=1)
         n: torch.Tensor = self.reparameterize(mu_n, var_n)
 
         if self.activation == "relu":
@@ -872,7 +873,7 @@ class CCNBase:
     environment_scale: int
     bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function  
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
-    grid_bounds: Tuple[int] = field(default_factory= lambda: (1, 1))
+    grid_bounds: Tuple[int, int] = field(default_factory= lambda: (1, 1))
             
     # Initialized elsewhere
     #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
@@ -926,7 +927,7 @@ class CCNBase:
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
         
-    def select_action(self, state_observation: Dict[int, StepResult], id: int, save_map=True) -> ActionChoice:
+    def select_action(self, state_observation: Dict[int, list], id: int, save_map=True) -> ActionChoice:
         ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
             to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
@@ -939,12 +940,13 @@ class CCNBase:
                 # Add intensity readings to a list if reading has not been seen before at that location. 
                 for observation in state_observation.values():
                     key: Tuple[float, float] = (observation[1], observation[2])
+                    intensity: np.floating[Any] = observation[0]
                     if key in self.maps.buffer.readings:
-                        if observation[0] not in self.maps.buffer.readings[key]:
-                            self.maps.buffer.readings[key].append(observation[0])
+                        if intensity not in self.maps.buffer.readings[key]: # type: ignore 
+                            self.maps.buffer.readings[key].append(intensity) # type: ignore 
                     else:
-                        self.maps.buffer.readings[key]: List[Tuple] = [observation[0]]
-                    assert observation[0] in self.maps.buffer.readings[key], "Observation not recorded into readings buffer"
+                        self.maps.buffer.readings[key] = [intensity]
+                    assert intensity in self.maps.buffer.readings[key], "Observation not recorded into readings buffer" # type: ignore 
 
                 (
                     location_map,
@@ -971,11 +973,11 @@ class CCNBase:
                     map_stack = self.maps.observation_buffer[-1][1]
                 
             # Add single batch tensor dimension for action selection
-            map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
+            batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
             
             # Get actions and values                          
-            action, action_logprob  = self.pi.act(map_stack) # Choose action
-            state_value = self.Critic.act(map_stack)  # Should be a pointer to either local critic or global critic
+            action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
+            state_value = self.Critic.act(batched_map_stack)  # Should be a pointer to either local critic or global critic
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
         #return action.item(), action_logprob.item(), state_value.item()

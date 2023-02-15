@@ -20,7 +20,6 @@ import numpy.typing as npt
 from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple, Type, Union
 from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
-from typing_extensions import TypeAlias
 
 # Simulation Environment
 import gym
@@ -139,7 +138,6 @@ class train_PPO:
     #: Time experiment was started
     start_time: float = field(default_factory= lambda: time.time()),    
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
-    # TODO change this to single statbuf
     stat_buffers: dict[int, StatBuff] = field(default_factory=lambda:dict())
     #: Object that holds agents
     agents: dict[int, AgentPPO] = field(default_factory=lambda:dict())
@@ -249,8 +247,9 @@ class train_PPO:
                 else:
                     # TODO observation is overwritten by obs_std; was this intentional? If so,why does it exist?                
                     standardized_observations = {id: observations[id] for id in self.agents}
-                    for id in self.agents:
-                        standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
+                        for id in self.agents:
+                            standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
                         
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts = {id: None for id in self.agents}
@@ -288,7 +287,9 @@ class train_PPO:
                     )
                     
                     self.loggers[id].store(VVals=agent_thoughts[id].state_value)
-                    self.stat_buffers[id].update(next_observations[id][0])                    
+                    
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                        self.stat_buffers[id].update(next_observations[id][0])                    
 
                 # Update obs (critical!)
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation'
@@ -326,10 +327,11 @@ class train_PPO:
                         else:
                             # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics                            
                             standardized_observations = {id: observations[id] for id in self.agents}
-                            for id in self.agents:
-                                standardized_observations[id][0] = np.clip(
-                                    (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
-                                )     
+                            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':    
+                                for id in self.agents:
+                                    standardized_observations[id][0] = np.clip(
+                                        (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
+                                    )     
                         for id, ac in self.agents.items():
                             if self.actor_critic_architecture == 'uniform':
                                 results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update
@@ -404,8 +406,9 @@ class train_PPO:
                                 )                            
 
                     # Reset the environment and counters
-                    for id in self.agents:
-                        self.stat_buffers[id].reset()
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
+                        for id in self.agents:
+                            self.stat_buffers[id].reset()
                          
                     # If not at the end of an epoch, reset hidden layers for incoming new episode    
                     if timeout and not epoch_ended: # not env.epoch_end:
@@ -431,8 +434,9 @@ class train_PPO:
                         _ = ac.reset_neural_nets()
 
                     # Update stat buffers for all agent observations for later observation normalization
-                    for id in self.agents:
-                        self.stat_buffers[id].update(observations[id][0])                              
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
+                        for id in self.agents:
+                            self.stat_buffers[id].update(observations[id][0])                              
                     
             # Save model
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
