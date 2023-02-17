@@ -180,39 +180,37 @@ class PPOBuffer:
     """
     
     def __post_init__(self):
-        self.ptr: int = 0
-        self.path_start_idx: int = 0     
+        self.ptr = 0
+        self.path_start_idx = 0     
            
-        self.obs_buf: npt.NDArray[np.float32] = np.zeros(
+        self.obs_buf= np.zeros(
             combined_shape(self.max_size, self.obs_dim), dtype=np.float32
         )
-        self.act_buf: npt.NDArray[np.float32] = np.zeros(
+        self.act_buf = np.zeros(
             combined_shape(self.max_size), dtype=np.float32
         )
-        self.adv_buf: npt.NDArray[np.float32] = np.zeros(
+        self.adv_buf = np.zeros(
             self.max_size, dtype=np.float32
         )
-        self.rew_buf: npt.NDArray[np.float32] = np.zeros(
+        self.rew_buf = np.zeros(
             self.max_size, dtype=np.float32
         )
-        self.ret_buf: npt.NDArray[np.float32] = np.zeros(
+        self.ret_buf = np.zeros(
             self.max_size, dtype=np.float32
         )
-        self.val_buf: npt.NDArray[np.float32] = np.zeros(
+        self.val_buf = np.zeros(
             self.max_size, dtype=np.float32
         )
-        self.source_tar: npt.NDArray[np.float32] = np.zeros(
+        self.source_tar = np.zeros(
             (self.max_size, 2), dtype=np.float32
         )
-        self.logp_buf: npt.NDArray[np.float32] = np.zeros(
+        self.logp_buf = np.zeros(
             self.max_size, dtype=np.float32
         )
 
         # TODO artifact - delete? Appears to be used in the location prediction, but is never updated        
-        self.obs_win: npt.NDArray[np.float32] = np.zeros(self.obs_dim, dtype=np.float32)
-        self.obs_win_std: npt.NDArray[np.float32] = np.zeros(
-            self.obs_dim, dtype=np.float32
-        )
+        self.obs_win = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win_std = np.zeros(self.obs_dim, dtype=np.float32)
         
         ################################## set device ##################################
         print("============================================================================================")
@@ -542,7 +540,7 @@ class AgentPPO:
         return hiddens
      
     #TODO Make this a Ray remote function 
-    def update_agent(self, logger = None) -> None: #         (env, bp_args, loss_fcn=loss)
+    def update_agent(self, logger = None) -> UpdateResult: #         (env, bp_args, loss_fcn=loss)
         """
         Update for the localization (PFGRU) and A2C modules
         Note: update functions perform multiple updates per call
@@ -588,7 +586,7 @@ class AgentPPO:
             while not term and kk < self.train_pi_iters:
                 # Early stop training if KL-div above certain threshold
                 #pi_l, pi_info, term, loc_loss = self.update_a2c(agent, data, min_iters, kk)  # pi_l = policy loss
-                update_results: Dict[str, Union[torch.Tensor, bool]] = {}
+                update_results: Dict[str, Union[torch.Tensor, npt.NDArray[Any], List[Any], bool]] = {}
                 (
                     update_results['pi_l'], 
                     update_results['pi_info'], 
@@ -605,13 +603,13 @@ class AgentPPO:
             # Log changes from update
             return UpdateResult(
                 StopIter=kk,
-                LossPi=update_results['pi_l'].item(),
-                LossV=update_results['pi_info']["val_loss"].item(),
+                LossPi=update_results['pi_l'].item(), # type: ignore
+                LossV=update_results['pi_info']["val_loss"].item(), # type: ignore
                 LossModel=model_losses.item(),  # TODO if using the regression GRU
-                KL=update_results['pi_info']["kl"],
-                Entropy=update_results['pi_info']["ent"],
-                ClipFrac=update_results['pi_info']["cf"],
-                LocLoss=update_results['loc_loss'],
+                KL=update_results['pi_info']["kl"], # type: ignore
+                Entropy=update_results['pi_info']["ent"], # type: ignore
+                ClipFrac=update_results['pi_info']["cf"], # type: ignore
+                LocLoss=update_results['loc_loss'], # type: ignore
                 VarExplain=0
             )
                             
@@ -684,7 +682,7 @@ class AgentPPO:
                 KL=actor_loss_results["kl"],
                 Entropy=actor_loss_results["entropy"],
                 ClipFrac=actor_loss_results["clip_fraction"],
-                LocLoss=0, # TODO implement when PFGRU is working for CNN
+                LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
                 VarExplain=0
             )
     
@@ -721,7 +719,7 @@ class AgentPPO:
         }
         return results
 
-    def compute_loss_pi(self, data: Dict[torch.Tensor, List], map_stack: torch.Tensor, index:int = None):
+    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int, map_stack: torch.Tensor):
         ''' Compute loss for actor network
             The difference between the probability of taking the action according to the current policy
             and the probability of taking the action according to the old policy, multiplied by the 
@@ -798,7 +796,7 @@ class AgentPPO:
         results = {'critic_loss': torch.stack(critic_loss_list).mean()}
         return results
             
-    def compute_loss_critic(self, data: Dict[torch.Tensor, List], map_stack: torch.Tensor, index: int = None):
+    def compute_loss_critic(self,  index: int, data: Dict[str, Union[torch.Tensor, List]], map_stack: torch.Tensor):
         ''' Compute loss for state-value approximator (critic network) using MSE. Calculates the MSE of the 
             predicted state value from the critic and the true state value
         
@@ -872,7 +870,6 @@ class AgentPPO:
 
                 pred_loss = args.l2_weight * l2_loss + args.l1_weight * l1_loss
 
-                total_loss = pred_loss
                 particle_pred = particle_pred.transpose(0, 1).contiguous()
 
                 particle_gt = src_tar.repeat(self.agent.model.num_particles, 1, 1) 
@@ -907,7 +904,7 @@ class AgentPPO:
                     args.l2_weight * l2_particle_loss
                     + args.l1_weight * l1_particle_loss
                 )
-                total_loss: torch.Tensor = total_loss + args.elbo_weight * belief_loss
+                total_loss: torch.Tensor = pred_loss + args.elbo_weight * belief_loss
 
                 model_loss_arr = torch.hstack((model_loss_arr, total_loss.unsqueeze(0)))
 
@@ -940,7 +937,7 @@ class AgentPPO:
         return_idx = 12
         source_loc_idx = 15
 
-        ep_form = data["ep_form"]
+        ep_form: List[torch.tensor] = data["ep_form"] # type: ignore
         
         # Policy info buffer
         # KL is for KL divergence
@@ -963,7 +960,7 @@ class AgentPPO:
 
         for ep in ep_form:
             # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]
+            trajectories = ep[0] # type: ignore
             hidden = self.reset_neural_nets() 
             obs, act, logp_old, adv, ret, src_tar = (
                 trajectories[:, :observation_idx],
@@ -1007,7 +1004,7 @@ class AgentPPO:
             loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
 
         mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)
+        means = loss_sto.mean(axis=0)  # type: ignore
         loss_pi, approx_kl, ent, clipfrac, loss_val = (
             mean_loss,
             means[0].detach(),
@@ -1015,12 +1012,12 @@ class AgentPPO:
             means[2].detach(),
             means[3].detach(),
         )
-        pi_info["kl"].append(approx_kl)
-        pi_info["ent"].append(ent)
-        pi_info["cf"].append(clipfrac)
-        pi_info["val_loss"].append(loss_val)
+        pi_info["kl"].append(approx_kl)  # type: ignore
+        pi_info["ent"].append(ent)  # type: ignore
+        pi_info["cf"].append(clipfrac)  # type: ignore
+        pi_info["val_loss"].append(loss_val)  # type: ignore
 
-        kl = pi_info["kl"][-1].mean()
+        kl = pi_info["kl"][-1].mean()  # type: ignore
         if kl.item() < 1.5 * self.target_kl:
             self.agent_optimizer.pi_optimizer.zero_grad()
             loss_pi.backward()
@@ -1030,10 +1027,10 @@ class AgentPPO:
             term = True
 
         pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-            pi_info["kl"][0].numpy(),
-            pi_info["ent"][0].numpy(),
-            pi_info["cf"][0].numpy(),
-            pi_info["val_loss"][0].numpy(),
+            pi_info["kl"][0].numpy(),  # type: ignore
+            pi_info["ent"][0].numpy(),  # type: ignore
+            pi_info["cf"][0].numpy(),  # type: ignore
+            pi_info["val_loss"][0].numpy(),  # type: ignore
         )
         loss_sum_new = loss_pi
         return (
@@ -1041,9 +1038,9 @@ class AgentPPO:
             pi_info,
             term,
             (self.env_height * loc - (src_tar)).square().mean().sqrt(),
-        )       
+        )  # type: ignore
         
-    def render(self, savepath: str=None, save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
+    def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")
         self.agent.render(
             savepath=savepath, save_map=save_map, add_value_text=add_value_text, interpolation_method=interpolation_method, epoch_count=epoch_count
