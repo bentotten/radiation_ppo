@@ -1,12 +1,13 @@
 from os import stat, path, mkdir, getcwd
 import sys
+from math import sqrt, log
+from statistics import median
 
 from dataclasses import dataclass, field, asdict
 from typing import Any, List, Tuple, Union, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union, List, Dict, NamedTuple
 
 import numpy as np
 import numpy.typing as npt
-import math
 
 import torch
 import torch.nn as nn
@@ -92,16 +93,16 @@ class IntensityEstimator():
         Future Work: Incorporate radionuclide identification module in conjunction with this (Carson et al.)
     '''
     #: Hash table containing explored coordinates (keys) and radiation readings detected there (list of values)
-    readings: Dict[Point, List[np.float32]] = field(default_factory=lambda: dict())
+    readings: Dict[Point, List[float]] = field(default_factory=lambda: dict())
     
     # Private
-    _min: np.float32 = field(default=np.float32(0.0))  # Minimum radiation reading estimate
-    _max: np.float32 = field(default=np.float32(0.0))  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
+    _min: float = field(default=0.0)  # Minimum radiation reading estimate
+    _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     
-    def update(self, key: Point, value: np.float32)-> None:
+    def update(self, key: Point, value: float)-> None:
         ''' 
             Adds value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
-            :param value: (np.float32) Sampled radiation intensity value
+            :param value: (float) Sampled radiation intensity value
             :param key: (Point) Coordinates where radiation intensity (value) was sampled
         '''
         if self.check_key(key=key):
@@ -116,41 +117,41 @@ class IntensityEstimator():
     def get_buffer(self, key: Point)-> List:
         ''' 
             Returns existing buffer for key. Raises exception if key does not exist.
-            :param value: (np.float32) Sampled radiation intensity value
+            :param value: (float) Sampled radiation intensity value
             :param key: (Point) Coordinates where radiation intensity (value) was sampled
         '''      
         if not self.check_key(key=key):
             raise ValueError("Key does not exist")
         return self.readings[key]
         
-    def get_estimate(self, key: Point)-> np.float32:
+    def get_estimate(self, key: Point)-> float:
         ''' 
             Returns radiation estimate for current coordinates. Raises exception if key does not exist.
             :param key: (Point) Coordinates for desired radiation intensity estimate
         '''      
         if not self.check_key(key=key):
             raise ValueError("Key does not exist")        
-        return np.median(self.readings[key])
+        return median(self.readings[key])
 
-    def get_max(self)-> np.float32:
+    def get_max(self)-> float:
         ''' 
             Return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
             NOTE: this is the maximum estimate, not the maximum value seen thus far. 
         '''
         return self._max
         
-    def get_min(self)-> np.float32:
+    def get_min(self)-> float:
         ''' 
             Return the minimum radiation reading estimated thus far. 
             NOTE: this is the minimum estimate, not the maximum value seen thus far.
         '''
         return self._min
     
-    def set_max(self, value: np.float32)-> None:
+    def set_max(self, value: float)-> None:
         ''' Set the maximum radiation reading estimated thus far.'''
         self._max = value
         
-    def set_min(self, value: np.float32)-> None:
+    def set_min(self, value: float)-> None:
         ''' Set the minimum radiation reading estimated thus far.'''
         self._min = value
             
@@ -209,7 +210,7 @@ class StatisticStandardization:
             sigma_new = self.sigma + (reading - self.mu) * (reading - mu_new)
             self.mu = mu_new
             self.sigma = sigma_new
-            self.sample_std = max(math.sqrt(sigma_new / (self.count - 1)), 1)
+            self.sample_std = max(sqrt(sigma_new / (self.count - 1)), 1)
             
         new_standard = self.standardize(reading=reading)
         if new_standard > self._max: self._max = new_standard
@@ -245,7 +246,7 @@ class StatisticStandardization:
 class Normalizer():
     ''' Normalization methods '''
     
-    def normalize(self, current_value: Any, max: Any, min: Any = 0.0):
+    def normalize(self, current_value: Any, max: Any, min: Any = 0.0)-> float:
         ''' 
             Standard linear normalization (without subtracting outliers). If min is below zero, the data will be shifted by the absolute value of the minimum
             :param current_value: (Any) value to be normalized
@@ -261,7 +262,7 @@ class Normalizer():
         else:
             return current_value / max
 
-    def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2):
+    def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2)-> float:
         ''' 
             Normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
             For TEAM-RAD, every time an agent accesses a grid coordinate, a visits count shadow table is incremented by 1.
@@ -273,10 +274,7 @@ class Normalizer():
             :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
             :param increment_value (int): Value from shadow table is expected to increment by this amount every time  
         '''
-        with np.errstate(all='raise'):
-            return (
-                    np.log(increment_value + current_value, dtype=np.float128) / np.log(base, dtype=np.float128) # Change base to max steps * num agents
-                ) * 1/(np.log(increment_value * base)/ np.log(base)) # Put in range [0, 1]
+        return (log(increment_value + current_value, base=base)) * 1/log(increment_value + current_value, base=base) # Put in range [0, 1]
 
         
 @dataclass
@@ -289,7 +287,7 @@ class ConversionTools:
     #: An intensity estimator class that samples every reading and estimates what the true intensity value is
     readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
     #: Statistics class for standardizing intensity readings from samples from the environment
-    standardizer:StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
+    standardizer: StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
     #: Normalization class for adjusting data to be between 0 and 1
     normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer()) 
     
@@ -435,12 +433,12 @@ class MapsBuffer:
             
             # Normalize
             self.tools.standardizer.update(observation[agent_id][0])                
-            standardized_reading = np.float32(self.tools.standardizer.standardize(observation[agent_id][0]))  # Put reading on same scale as other observations sampled thus far
+            standardized_reading = self.tools.standardizer.standardize(observation[agent_id][0])  # Put reading on same scale as other observations sampled thus far
             normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())  # Normalize that value to match other heatmaps
             assert normalized_reading <= 1.0 and normalized_reading >= 0.0
                 
             if normalized_reading > 0:
-                self.readings_map[readings_x][readings_y] = normalized_reading 
+                self.readings_map[readings_x][readings_y] = normalized_reading  # TODO verify a 64 bit float is ok, otherwise use np.float32
             else:
                 assert normalized_reading >= 0
 
@@ -1091,8 +1089,7 @@ class CCNBase:
                 for observation in state_observation.values():
                     key: Point = Point((observation[1], observation[2]))
                     intensity: np.floating[Any] = observation[0]
-                    self.maps.tools.readings.update(key=key, value=intensity)
-                    
+                    self.maps.tools.readings.update(key=key, value=float(intensity))
                 (
                     location_map,
                     others_locations_map,
