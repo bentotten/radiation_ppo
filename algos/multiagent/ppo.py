@@ -837,7 +837,7 @@ class AgentPPO:
         
         # Compare predicted return with true return and use MSE to indicate loss
         predicted_value = self.agent.Critic.evaluate(map_stack)
-        critic_loss = self.agent.MseLoss(torch.squeeze(predicted_value), true_return)
+        critic_loss = self.agent.mseLoss(torch.squeeze(predicted_value), true_return)
         return critic_loss
 
     def update_model(self, data: Dict[str, torch.Tensor]) -> torch.Tensor:

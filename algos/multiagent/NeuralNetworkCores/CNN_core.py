@@ -1,100 +1,41 @@
 from os import stat, path, mkdir, getcwd
 import sys
 
-from numpy import dtype
+from dataclasses import dataclass, field, asdict
+from typing import Any, List, Tuple, Union, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union, List, Dict, NamedTuple
+
 import numpy as np
 import numpy.typing as npt
-
-import scipy.signal # type: ignore
 import math
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import MultivariateNormal, Categorical
-from torchinfo import summary
-
-import pytorch_lightning as pl
-
-from dataclasses import dataclass, field, asdict
-from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, Union, List, Dict
-from typing_extensions import TypeAlias
+from torch.distributions import Categorical
 
 import matplotlib.pyplot as plt # type: ignore
-from mpl_toolkits.axes_grid1 import make_axes_locatable # type: ignore
-from matplotlib.streamplot import Grid # type: ignore
 
-# from epoch_logger import EpochLogger TODO not importing correctly
-
-from gym_rad_search.envs import StepResult # type: ignore
 
 # Maps
-Point = NewType("Point", Tuple[float, float])  # Array indicies to access a GridSquare
-Map = NewType("Map", npt.NDArray[np.float32]) # 2D array that holds gridsquare values
+#: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
+Point = NewType("Point", Tuple[float, float])
+#: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
+Map = NewType("Map", npt.NDArray[np.float32])
+#: [New Type] Tracks previous coordinates for all agents in order to update them on the current-location and others-locations heatmaps. Type: List[Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", List[Dict[int, Point]])
 
 # Helpers
+#: [Type Alias] Used in multi-layer perceptron in the prediction module (PFGRU). Type: int | Tuple[int, ...]
 Shape = Union[int, Tuple[int, ...]]
 
-DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm for inflating step size to obstruction
+#: [Global] Detector-obstruction range measurement threshold in cm for inflating step size for obstruction heatmap. Type: float
+DIST_TH = 110.0
+#: [Global] Toggle for simple value/max normalization vs stdbuffer for radiation intensity map and log-based for visit-counts map. Type: bool
 SIMPLE_NORMALIZATION = False
 
-def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
-    if shape is None:
-        return (length,)
-    elif np.isscalar(shape):
-        shape = cast(int, shape)
-        return (length, shape)
-    else:
-        shape = cast(Tuple[int, ...], shape)
-        return (length, *shape)
 
-
-def discount_cumsum(
-    x: npt.NDArray[np.float64], discount: float
-) -> npt.NDArray[np.float64]:
-    """
-    magic from rllab for computing discounted cumulative sums of vectors.
-
-    input:
-        vector x,
-        [x0,
-         x1,
-         x2]
-
-    output:
-        [x0 + discount * x1 + discount^2 * x2,
-         x1 + discount * x2,
-         x2]
-    """
-    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
-
-
-def mlp(
-    sizes: List[Shape],
-    activation,
-    output_activation=nn.Identity,
-    layer_norm: bool = False,
-) -> nn.Sequential:
-    layers = []
-    for j in range(len(sizes) - 1):
-        layer = [nn.Linear(sizes[j], sizes[j + 1])] # type: ignore
-
-        if layer_norm:
-            ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None  # type: ignore
-            layer.append(ln)  # type: ignore
-
-        layer.append(activation() if j < len(sizes) - 1 else output_activation())
-        layers += layer
-
-    if layer_norm and None in layers:
-        layers.remove(None) #  type: ignore
-
-    return nn.Sequential(*layers)
-
-
-def log_and_normalize_test(max: int = 120):
-    ''' explicitly for modeling expected values as visit count increases. This puts greater emphasis on lower step counts'''
+def _log_and_normalize_test(max: int = 120):
+    ''' For modeling expected values as visit count increases. This puts greater emphasis on lower step counts.'''
     
     x = [x for x in range(max)]
     y = []    
@@ -124,8 +65,8 @@ def log_and_normalize_test(max: int = 120):
     plt.show()
 
 
-@dataclass()
-class ActionChoice():
+class ActionChoice(NamedTuple):
+    ''' Standardized response from Actor-Critic for action selection '''
     id: int 
     action: npt.NDArray # size (1)
     action_logprob: npt.NDArray # size (1)
@@ -138,11 +79,11 @@ class ActionChoice():
 
 @dataclass
 class StatBuff:
+    ''' statistics buffer for normalizing intensity readings from environment '''
     mu: float = 0.0
     sig_sto: float = 0.0
     sig_obs: float = 1.0
     count: int = 0
-    ''' statistics buffer for normalizing intensity readings from environment '''
     
     def update(self, obs: float) -> None:
         self.count += 1
@@ -162,11 +103,11 @@ class StatBuff:
 @dataclass
 class RolloutBuffer:      
     # Buffers
-    coordinate_buffer: List = field(init=False)
+    coordinate_buffer: CoordinateStorage = field(init=False)
     readings: Dict[Union[str, Tuple[float, float]], Union[np.floating[Any], List[np.floating[Any]]]] = field(init=False)
     
     def __post_init__(self)-> None:
-        self.coordinate_buffer: CoordinateStorage = []    
+        self.coordinate_buffer: CoordinateStorage = CoordinateStorage(list())
         self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling        
     
     def clear(self)-> None:
@@ -624,7 +565,7 @@ class Critic(nn.Module):
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
-    """parent class for PFRNNs"""
+    """ Parent class for Particle Filter Recurrent Neural Networks """
 
     def __init__(
         self,
@@ -735,6 +676,7 @@ class PFRNNBaseCell(nn.Module):
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFGRUCell(PFRNNBaseCell):
+    ''' Particle Filter Gated Recurrent Unit '''
     def __init__(
         self,
         input_size: int,
@@ -753,6 +695,27 @@ class PFGRUCell(PFRNNBaseCell):
             use_resampling,
             activation,
         )
+        
+        def mlp(
+            sizes: List[Shape],
+            activation,
+            output_activation=nn.Identity,
+            layer_norm: bool = False,
+        ) -> nn.Sequential:
+            ''' Create a Multi-Layer Perceptron '''
+            layers = []
+            for j in range(len(sizes) - 1):
+                layer = [nn.Linear(sizes[j], sizes[j + 1])] # type: ignore
+
+                if layer_norm:
+                    ln = nn.LayerNorm(sizes[j + 1]) if j < len(sizes) - 1 else None  # type: ignore
+                    layer.append(ln)  # type: ignore
+
+                layer.append(activation() if j < len(sizes) - 1 else output_activation())
+                layers += layer
+            if layer_norm and None in layers:
+                layers.remove(None) #  type: ignore
+            return nn.Sequential(*layers)        
 
         self.fc_z: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
         self.fc_r: nn.Linear = nn.Linear(self.h_dim + self.input_size, self.h_dim)
@@ -834,33 +797,47 @@ class CCNBase:
     '''
     This is the base class for the Actor-Critic (A2C) Convolutional Neural Network (CNN) architecture. The Actor subclass is an approximator for an Agent's policy.
     The Critic subclass is an approximator for the value function (for more information, see Barto and Sutton's "Reinforcement Learning"). 
-    When an observation is fed to this base class, it is transformed into a series of stackable observation maps (numerican matrices/tensors). As these maps are fed 
+    When an observation is fed to this base class, it is transformed into a series of stackable observation heatmaps maps (stored as matrices/tensors). As these maps are fed 
     through the subclass networks, Convolutional and pooling layers train a series of filters that operate on the data and extract features from it. 
     
-    An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
+    An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Note: Higher accuracy increases training time.
     
     :param id: (int) Unique identifier key that is used to identify own observations from observation object during map conversions.
+    
     :param action_space: (int) Also called action-dimensions. From the environment, get the total number of actions an agent can take. This is used to configure the last 
         linear layer for action-selection in the Actor class.
+        
     :param observation_space: (int) Also called state-space or state-dimensions. The dimensions of the observation returned from the environment.For rad-search this will 
         be 11, for the 11 elements of the observation array. This is used for the PFGRU. Future work: make observation-to-map function accomodate differently sized state-spaces.
+        
     :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
         Used for determining stackable map buffer max size.
+        
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment. Used
         for resolution accuracy calculation and during normalization of visits-counts map and a multiplier for the log base.  
+        
     :param number_of_agents: (int) Number of agents. Used during normalization of visits-counts map and a multiplier for the log base.
+    
     :param detector_step_size: (int) Distance an agent can travel in one step (centimeters). Used for inflating scaled coordinates.
+    
     :param environment_scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for increased accuracy, though
         increased computation time, for convolutional networks.
+        
     :param bounds_offset: (tuple[float, float]) The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the 
         entire grid when boundaries are being enforced, not just the obstruction/spawning area. For the CNN, this expands the size of the network to accomodate these extra grid 
         coordinates. This is optional, but for this implementation, to remove this would require adjusting environment to not let agents through to that area when grid boundaries
         are being enforced. Removing this also makes renders look very odd, as agent will not be able to travel to bottom coordinates.
+        
     :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. This represents the max x and the max y for the scaled coordinates 
         in the rad-search environment (usually (1, 1)). This is used for scaling in the map buffer by the resolution variable.
+        
     :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
         coordinates can be encompased in a matrix element.
+        
     :param Critic: [Optional] For future work, this allows for the inclusion of a pointer to a global critic
+    
+    **Important variables that are initialized elsewhere:**
+    
     '''
         
     id: int    
@@ -877,7 +854,7 @@ class CCNBase:
             
     # Initialized elsewhere
     #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
-    Critic: Any = field(default=None)  # Eventually allows for a global critic
+    critic: Union[Critic, None] = field(default=None)  # Eventually allows for a global critic
     #: Policy/Actor network
     pi: Actor = field(init=False)
     #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
@@ -885,7 +862,7 @@ class CCNBase:
     #: Buffer that holds map-stacks and converts observations to maps
     maps: MapsBuffer = field(init=False)
     #: Mean Squared Error for loss for critic network
-    MseLoss: nn.MSELoss = field(init=False)
+    mseLoss: nn.MSELoss = field(init=False)
     #: How much unscaling to do to reinflate agent coordinates to full representation.
     scaled_offset: float = field(init=False)
     #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
@@ -922,7 +899,7 @@ class CCNBase:
         if not self.Critic:
             self.Critic = Critic(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device) # TODO these are really slow
             
-        self.MseLoss = nn.MSELoss()
+        self.mseLoss = nn.MSELoss()
         
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
@@ -963,7 +940,7 @@ class CCNBase:
                 #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
                 self.maps.buffer.coordinate_buffer.append({})
                 for i, observation in state_observation.items():
-                    self.maps.buffer.coordinate_buffer[-1][i] = (observation[1], observation[2])
+                    self.maps.buffer.coordinate_buffer[-1][i] = Point((observation[1], observation[2]))
                 
                 #print(state_observation[self.id])
                 #observation_key = hash(state_observation[self.id].flatten().tolist)
