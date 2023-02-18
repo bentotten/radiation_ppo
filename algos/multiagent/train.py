@@ -228,7 +228,7 @@ class train_PPO:
                             standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
                         
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
-                agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = {id: None for id in self.agents}
+                agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
                 for id, ac in self.agents.items():
                     agent_thoughts[id] = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step

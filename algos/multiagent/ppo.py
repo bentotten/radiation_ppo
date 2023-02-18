@@ -479,7 +479,7 @@ class AgentPPO:
     lam: float = field(default= 0.9)
     
     # Initialized elsewhere
-    agent: Union[RADCNN_core.CCNBase, RADA2C_core.RNNModelActorCritic] = field(init=False)
+    agent: Union[RADCNN_core.CCNBase, RADA2C_core.RNNModelActorCritic, RADFF_core.PPO] = field(init=False)
 
     def __post_init__(self):
         ''' Initialize Agent's neural network architecture'''
@@ -534,13 +534,11 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, standardized_observations: npt.NDArray, hiddens: Union[None, Dict] = None, save_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
+    def step(self, standardized_observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, save_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
         ''' Wrapper for neural network action selection'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
-            results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id])
-        elif self.actor_critic_architecture == 'uniform':
-            results = self.agent.select_action(observation=standardized_observations, message=message, id=self.id)         
+            results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id]) # type: ignore
         elif self.actor_critic_architecture == 'cnn':
             results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
         elif self.actor_critic_architecture == 'ff':
@@ -552,7 +550,7 @@ class AgentPPO:
     def reset_neural_nets(self, batch_size: int = 1) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         ''' Reset the neural networks at the end of an episode'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            hiddens = self.agent.reset_hidden()
+            hiddens = self.agent.reset_hidden() # type: ignore
         else:
             # TODO implement reset function that has return values
             # actor_hidden = self.agent.pi._reset_state()
@@ -620,7 +618,7 @@ class AgentPPO:
                     update_results['pi_info'], 
                     update_results['term'],  
                     update_results['loc_loss']
-                ) = self.update_a2c(data, min_iterations, logger=logger)  # pi_l = policy loss
+                ) = self.update_a2c(data, min_iterations, logger=logger)  # pi_l = policy loss # type: ignore
                 kk += 1
                 
             # Reduce learning rate
@@ -857,7 +855,7 @@ class AgentPPO:
             )
             for ep in ep_form:
                 sl = len(ep[0])
-                hidden = self.agent.reset_hidden()[0] 
+                hidden = self.agent.reset_hidden()[0] # type: ignore
                 #src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
                 src_tar: torch.Tensor = ep[0][:, source_loc_idx:].clone()
                 src_tar[:, :2] = src_tar[:, :2] / args.area_scale
@@ -993,7 +991,7 @@ class AgentPPO:
             
             # Calculate new action log probabilities
 
-            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
+            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden) # type: ignore
                 
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
