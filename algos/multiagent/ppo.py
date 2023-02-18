@@ -15,17 +15,17 @@ from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Di
 import scipy.signal # type: ignore
 
 try:
-    from epoch_logger import EpochLogger # type: ignore
-except:
-    from algos.multiagent.epoch_logger import EpochLogger 
-try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore 
-    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
+    import NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-except:
+    from epoch_logger import EpochLogger # type: ignore
+except ModuleNotFoundError:
     import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
+    from algos.multiagent.epoch_logger import EpochLogger 
+except: 
+    raise Exception
 
 
 Shape: TypeAlias = Union[int, Tuple[int, Any]]

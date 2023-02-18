@@ -244,6 +244,9 @@ class Normalizer():
             :param current_value: (Any) value to be normalized
             :param max: (Any) Maximum possible
         '''
+        if current_value == 0:
+            return 0.0
+        assert max > 0, "Value error - Max is 0 but current value is not."
         return current_value / max
 
     def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2):
@@ -262,6 +265,7 @@ class Normalizer():
             return (
                     np.log(increment_value + current_value, dtype=np.float128) / np.log(base, dtype=np.float128) # Change base to max steps * num agents
                 ) * 1/(np.log(increment_value * base)/ np.log(base)) # Put in range [0, 1]
+
         
 @dataclass
 class ConversionTools:
@@ -1056,6 +1060,10 @@ class CCNBase:
         
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
+
+    def set_reading(self, observation: npt.NDArray):
+        ''' Updates radiation standardization for rolling standardization module outside of a step'''
+        self.maps.tools.standardizer.update(observation[0])
         
     def select_action(self, state_observation: Dict[int, list], id: int, save_map=True) -> ActionChoice:
         ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location

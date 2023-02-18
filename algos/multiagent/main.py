@@ -8,23 +8,20 @@ from datetime import datetime
 
 import numpy as np
 import numpy.random as npr
-from typing import NamedTuple, Tuple
+from typing import Tuple
 
 import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from gym_rad_search.envs import RadSearch  # type: ignore
-from gym_rad_search.envs import rad_search_env
 
 try:
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from epoch_logger import setup_logger_kwargs, EpochLogger # type: ignore
-    import train as train # type: ignore
-    from ppo import BpArgs # type: ignore
-except:
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from algos.multiagent.epoch_logger import setup_logger_kwargs, EpochLogger # type: ignore
-    import algos.multiagent.train as train # type: ignore
-    from algos.multiagent.ppo import BpArgs     # type: ignore
+    import train  # type: ignore
+    from ppo import BpArgs  # type: ignore
+except ModuleNotFoundError:
+    import algos.multiagent.train as train  # type: ignore
+    from algos.multiagent.ppo import BpArgs  # type: ignore
+except: 
+    raise Exception
 
 
 @dataclass

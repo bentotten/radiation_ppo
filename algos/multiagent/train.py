@@ -27,29 +27,29 @@ from gym_rad_search.envs import rad_search_env # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
-# PPO
+# PPO and logger
 try:
     from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-except:
+    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
+except ModuleNotFoundError:
     from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
+    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
+except: 
+    raise Exception
 
 # Neural Networks
 try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore
-    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
+    import NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
-except:
+    from NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
+except ModuleNotFoundError:
     import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
-
-# Data Management Utility
-try:
-    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
-except:
-    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
+except: 
+    raise Exception
 
 
 ################################### Training ###################################
@@ -180,9 +180,11 @@ class train_PPO:
 
         # TODO move to PPO
         # Update stat buffers for all agent observations for later observation normalization
+        # Set initial reading value for standardization
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             for id in self.agents:
                 self.stat_buffers[id].update(observations[id][0])
+        # For RAD-TEAM, the update is done inside the step
 
         # TODO add PFGRU to FF and CNN networks
         for id in self.agents: 
@@ -201,16 +203,12 @@ class train_PPO:
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 for ac in self.agents.values():
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
-            elif self.actor_critic_architecture == 'uniform':
-                pass
             else:
                 for ac in self.agents.values():
-                    # Put actor and critic into eval mode
+                    # Put actor and critic into eval mode TODO move this somewhere else
                     #ac.model.eval()  # TODO add PFGRU
                     ac.agent.pi.eval()
-                    ac.agent.critic.eval() # TODO will need to be changed for global critic
-                    
-                for ac in self.agents.values():
+                    ac.agent.critic.eval() # TODO will need to be changed for global critic 
                     if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
                         raise ValueError("Maps did not reset")                       
             
