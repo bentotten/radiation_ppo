@@ -21,8 +21,8 @@ import matplotlib.pyplot as plt # type: ignore
 Point = NewType("Point", Tuple[float, float])
 #: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
 Map = NewType("Map", npt.NDArray[np.float32])
-#: [New Type] Tracks previous coordinates for all agents in order to update them on the current-location and others-locations heatmaps. Type: List[Dict[int, Point]]
-CoordinateStorage = NewType("CoordinateStorage", List[Dict[int, Point]])
+#: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. Type: Dict[str, Dict[int, Point]]
+CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
 # Helpers
 #: [Type Alias] Used in multi-layer perceptron in the prediction module (PFGRU). Type: int | Tuple[int, ...]
@@ -31,7 +31,7 @@ Shape = Union[int, Tuple[int, ...]]
 #: [Global] Detector-obstruction range measurement threshold in cm for inflating step size for obstruction heatmap. Type: float
 DIST_TH = 110.0
 #: [Global] Toggle for simple value/max normalization vs stdbuffer for radiation intensity map and log-based for visit-counts map. Type: bool
-SIMPLE_NORMALIZATION = False
+SIMPLE_NORMALIZATION = True
 
 
 def _log_and_normalize_test(max: int = 120):
@@ -124,7 +124,7 @@ class StatisticsBuffer:
             self.sigma = sigma_new
             self.sample_std = max(math.sqrt(sigma_new / (self.count - 1)), 1)
             
-    def standardize(self, reading: float, clip_value: float = 8.0) -> float:
+    def standardize(self, reading: float, standardization_clip_value: float = 8.0) -> float:
         ''' 
             Standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
             Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero and a standard deviation of one, 
@@ -135,7 +135,7 @@ class StatisticsBuffer:
             
             :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         '''
-        return np.clip((reading - self.mu) / self.sample_std, -clip_value, clip_value)   
+        return np.clip((reading - self.mu) / self.sample_std, -standardization_clip_value, standardization_clip_value)   
 
     def reset(self) -> None:
         ''' Reset statistics buffer '''
@@ -143,18 +143,23 @@ class StatisticsBuffer:
 
 
 @dataclass
-class RolloutBuffer:      
+class StorageBuffer:
+    '''
+        Buffer for storing values that assists the conversion from an observation from the environment to a heatmap for processing by the neural networks.
+    '''
     # Buffers
-    coordinate_buffer: CoordinateStorage = field(init=False)
-    readings: Dict[Union[str, Tuple[float, float]], Union[np.floating[Any], List[np.floating[Any]]]] = field(init=False)
+    #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
+    last_coords: CoordinateStorage = field(init=False)
+    
+    readings: Dict[Union[str, Point], Union[np.float32, List[np.float32]]] = field(init=False)
     
     def __post_init__(self)-> None:
-        self.coordinate_buffer: CoordinateStorage = CoordinateStorage(list())
+        self.last_coords = CoordinateStorage(dict())
         self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling        
     
     def clear(self)-> None:
         # Reset readings and coordinates buffers
-        del self.coordinate_buffer[:]     
+        self.last_coords = CoordinateStorage(dict())
         self.readings.clear()
         self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling                
 
@@ -196,7 +201,7 @@ class MapsBuffer:
     visit_counts_shadow: Dict = field(default_factory=lambda: dict()) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second sparce matrix than to inflate a log'd number
     
     # Buffers
-    buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
+    buffer: StorageBuffer = field(default_factory=lambda: StorageBuffer())
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
     intensity_stand_buffer: StatisticsBuffer = field(default_factory=lambda: StatisticsBuffer())
 
@@ -247,9 +252,9 @@ class MapsBuffer:
         deflated_y = observation[id][2]
         current_a_scaled_coordinates: Tuple[int, int] = (int(deflated_x * self.resolution_accuracy), int(deflated_y * self.resolution_accuracy))        
         # Capture current and reset previous location
-        if self.buffer.coordinate_buffer:
-            last_state = self.buffer.coordinate_buffer[-1][id]
-            scaled_last_coordinates = (int(last_state[0] * self.resolution_accuracy), int(last_state[1] * self.resolution_accuracy))
+        if self.buffer.last_coords:
+            last_coords = self.buffer.last_coords[id]
+            scaled_last_coordinates = (int(last_coords[0] * self.resolution_accuracy), int(last_coords[1] * self.resolution_accuracy))
             x_old = int(scaled_last_coordinates[0])
             y_old = int(scaled_last_coordinates[1])
             self.location_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
@@ -265,9 +270,9 @@ class MapsBuffer:
             if other_agent_id != id:
                 others_scaled_coordinates = (int(observation[other_agent_id][1] * self.resolution_accuracy), int(observation[other_agent_id][2] * self.resolution_accuracy))
                 # Capture current and reset previous location
-                if self.buffer.coordinate_buffer:
-                    last_state = self.buffer.coordinate_buffer[-1][other_agent_id]
-                    scaled_last_coordinates = (int(last_state[0] * self.resolution_accuracy), int(last_state[1] * self.resolution_accuracy))
+                if self.buffer.last_coords:
+                    last_coords = self.buffer.last_coords[other_agent_id]
+                    scaled_last_coordinates = (int(last_coords[0] * self.resolution_accuracy), int(last_coords[1] * self.resolution_accuracy))
                     x_old = int(scaled_last_coordinates[0])
                     y_old = int(scaled_last_coordinates[1])
                     self.others_locations_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
@@ -282,24 +287,24 @@ class MapsBuffer:
         # Update stat buffer for later normalization
         if not SIMPLE_NORMALIZATION:
             for agent_id in observation:
-                self.intensity_stand_buffer.update(observation[agent_id][0])
+                self.intensity_stand_buffer.update(observation[agent_id][0]) 
         for agent_id in observation:
             readings_scaled_coordinates: Tuple[int, int] = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             readings_x: int = int(readings_scaled_coordinates[0])
             readings_y: int = int(readings_scaled_coordinates[1])
             
             # Inflate coordinates
-            unscaled_coordinates: Tuple[float, float] = (observation[agent_id][1], observation[agent_id][2])
+            unscaled_coordinates: Point = Point((observation[agent_id][1], observation[agent_id][2]))
             assert len(self.buffer.readings[unscaled_coordinates]) > 0 # type: ignore
             
             # Get estimated reading and save new max for later normalization
-            estimated_reading = np.median(self.buffer.readings[unscaled_coordinates])
+            estimated_reading: np.float32 = np.median(self.buffer.readings[unscaled_coordinates])
             if estimated_reading > self.buffer.readings['max']:
                 self.buffer.readings['max'] = estimated_reading            
             
             # Normalize
             if SIMPLE_NORMALIZATION:
-                normalized_reading = estimated_reading / self.buffer.readings['max']
+                normalized_reading = estimated_reading / self.buffer.readings['max'] # type: ignore
                 assert normalized_reading <= 1.0 and normalized_reading >= 0.0 # Stat buffer can give 0 back as a reading
                 
             else:
@@ -958,7 +963,7 @@ class CCNBase:
             if save_map:     
                 # Add intensity readings to a list if reading has not been seen before at that location. 
                 for observation in state_observation.values():
-                    key: Tuple[float, float] = (observation[1], observation[2])
+                    key: Point = Point((observation[1], observation[2]))
                     intensity: np.floating[Any] = observation[0]
                     if key in self.maps.buffer.readings:
                         if intensity not in self.maps.buffer.readings[key]: # type: ignore 
@@ -980,9 +985,8 @@ class CCNBase:
                 
                 # Add to mapstack buffer to eventually be converted into tensor with minibatches
                 #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
-                self.maps.buffer.coordinate_buffer.append({})
                 for i, observation in state_observation.items():
-                    self.maps.buffer.coordinate_buffer[-1][i] = Point((observation[1], observation[2]))
+                    self.maps.buffer.last_coords[i] = Point((observation[1], observation[2]))
                 
                 #print(state_observation[self.id])
                 #observation_key = hash(state_observation[self.id].flatten().tolist)
