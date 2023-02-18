@@ -133,13 +133,16 @@ class IntensityEstimator():
         return np.median(self.readings[key])
 
     def get_max(self)-> np.float32:
-        ''' Return the maximum radiation reading estimate calculated thus far. This can be used for normalization in simple normalization mode.
-        NOTE: this is the maximum estimate, not the maximum value seen thus far. '''
+        ''' 
+            Return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
+            NOTE: this is the maximum estimate, not the maximum value seen thus far. 
+        '''
         return self._max
         
     def get_min(self)-> np.float32:
-        ''' Return the minimum radiation reading discovered thus far.
-        NOTE: this is the minimum estimate, not the maximum value seen thus far.
+        ''' 
+            Return the minimum radiation reading estimated thus far. 
+            NOTE: this is the minimum estimate, not the maximum value seen thus far.
         '''
         return self._min
     
@@ -152,6 +155,7 @@ class IntensityEstimator():
         self._min = value
             
     def check_key(self, key: Point):
+        ''' Check if coordinates (key) exist in hashtable '''
         return True if key in self.readings else False
         
     def clear(self):
@@ -219,9 +223,9 @@ class StatisticsBuffer:
 
 
 @dataclass
-class StorageBuffer:
+class ConversionTools:
     '''
-        Buffer for storing values that assists the conversion from an observation from the environment to a heatmap for processing by the neural networks.
+        Stores class objects that assist the conversion from an observation from the environment to a heatmap for processing by the neural networks.
     '''
     # Buffers
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
@@ -275,7 +279,7 @@ class MapsBuffer:
     visit_counts_shadow: Dict = field(default_factory=lambda: dict()) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second sparce matrix than to inflate a log'd number
     
     # Buffers
-    buffer: StorageBuffer = field(default_factory=lambda: StorageBuffer())
+    tools: ConversionTools = field(default_factory=lambda: ConversionTools())
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
     intensity_stand_buffer: StatisticsBuffer = field(default_factory=lambda: StatisticsBuffer())
 
@@ -300,7 +304,7 @@ class MapsBuffer:
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
-        self.buffer.clear()
+        self.tools.clear()
         self.intensity_stand_buffer.reset()
         
     def clear(self)-> None:
@@ -326,8 +330,8 @@ class MapsBuffer:
         deflated_y = observation[id][2]
         current_a_scaled_coordinates: Tuple[int, int] = (int(deflated_x * self.resolution_accuracy), int(deflated_y * self.resolution_accuracy))        
         # Capture current and reset previous location
-        if self.buffer.last_coords:
-            last_coords = self.buffer.last_coords[id]
+        if self.tools.last_coords:
+            last_coords = self.tools.last_coords[id]
             scaled_last_coordinates = (int(last_coords[0] * self.resolution_accuracy), int(last_coords[1] * self.resolution_accuracy))
             x_old = int(scaled_last_coordinates[0])
             y_old = int(scaled_last_coordinates[1])
@@ -344,8 +348,8 @@ class MapsBuffer:
             if other_agent_id != id:
                 others_scaled_coordinates = (int(observation[other_agent_id][1] * self.resolution_accuracy), int(observation[other_agent_id][2] * self.resolution_accuracy))
                 # Capture current and reset previous location
-                if self.buffer.last_coords:
-                    last_coords = self.buffer.last_coords[other_agent_id]
+                if self.tools.last_coords:
+                    last_coords = self.tools.last_coords[other_agent_id]
                     scaled_last_coordinates = (int(last_coords[0] * self.resolution_accuracy), int(last_coords[1] * self.resolution_accuracy))
                     x_old = int(scaled_last_coordinates[0])
                     y_old = int(scaled_last_coordinates[1])
@@ -369,15 +373,15 @@ class MapsBuffer:
             
             # Inflate coordinates
             unscaled_coordinates: Point = Point((observation[agent_id][1], observation[agent_id][2]))
-            assert len(self.buffer.readings.get_buffer(key=unscaled_coordinates)) > 0 
+            assert len(self.tools.readings.get_buffer(key=unscaled_coordinates)) > 0 
             
             # Get estimated reading and save new max for later normalization
-            estimated_reading: np.float32 = self.buffer.readings.get_estimate(key=unscaled_coordinates)
+            estimated_reading: np.float32 = self.tools.readings.get_estimate(key=unscaled_coordinates)
             
             # Normalize
             normalized_reading: np.float32
             if SIMPLE_NORMALIZATION:
-                normalized_reading = estimated_reading / self.buffer.readings.get_max()
+                normalized_reading = estimated_reading / self.tools.readings.get_max()
                 assert normalized_reading <= 1.0 and normalized_reading >= 0.0 
                 
             else:
@@ -1038,7 +1042,7 @@ class CCNBase:
                 for observation in state_observation.values():
                     key: Point = Point((observation[1], observation[2]))
                     intensity: np.floating[Any] = observation[0]
-                    self.maps.buffer.readings.update(key=key, value=intensity)
+                    self.maps.tools.readings.update(key=key, value=intensity)
                     
                 (
                     location_map,
@@ -1054,7 +1058,7 @@ class CCNBase:
                 # Add to mapstack buffer to eventually be converted into tensor with minibatches
                 #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
                 for i, observation in state_observation.items():
-                    self.maps.buffer.last_coords[i] = Point((observation[1], observation[2]))
+                    self.maps.tools.last_coords[i] = Point((observation[1], observation[2]))
                 
                 #print(state_observation[self.id])
                 #observation_key = hash(state_observation[self.id].flatten().tolist)
