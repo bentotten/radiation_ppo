@@ -4,8 +4,8 @@ import torch
 from dataclasses import field
 import numpy as np
 
-from gym_rad_search.envs import StepResult
-from algos.multiagent.NeuralNetworkCores.CNN_core import  MapsBuffer, Actor, PPO
+from gym_rad_search.envs import StepResult # type: ignore
+from algos.multiagent.NeuralNetworkCores.CNN_core import  MapsBuffer, Actor, PPO # type: ignore
 
 # https://github.com/cgoldberg/python-unittest-tutorial
 

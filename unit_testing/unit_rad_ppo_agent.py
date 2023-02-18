@@ -2,8 +2,8 @@ import unittest
 import torch
 from dataclasses import field
 import numpy as np
-
-from algos.multiagent.NeuralNetworkCores.RADA2C_core import RNNModelActorCritic
+from typing import Dict
+from algos.multiagent.NeuralNetworkCores.RADA2C_core import RNNModelActorCritic # type: ignore
 
 class TestAgentCreation(unittest.TestCase):
     def setUp(self)-> None:
@@ -30,7 +30,7 @@ class TestAgentCreation(unittest.TestCase):
             pad_dim=2
         )
               
-        self.agents: dict[int, RNNModelActorCritic] = {i: RNNModelActorCritic(observation_space, action_space, **ac_kwargs) for i in range(number_of_agents)}
+        self.agents: Dict[int, RNNModelActorCritic] = {i: RNNModelActorCritic(observation_space, action_space, **ac_kwargs) for i in range(number_of_agents)}
 
     def tearDown(self):
         self.agents.clear()
