@@ -288,7 +288,7 @@ class MapsBuffer:
                 assert normalized_reading <= 1.0 and normalized_reading >= 0.0 # Stat buffer can give 0 back as a reading
                 
             else:
-                normalized_reading = np.clip((observation[agent_id][0] - self.intensity_standardization.mu) / self.intensity_standardization.sig_obs, -8, 8)     
+                normalized_reading = np.clip((observation[agent_id][0] - self.intensity_standardization.mu) / self.intensity_standardization.sample_std, -8, 8)     
                 # TODO Get range for this tool and add an assert        
             if estimated_reading > 0:
                 self.readings_map[readings_x][readings_y] = normalized_reading 
