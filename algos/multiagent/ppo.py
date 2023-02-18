@@ -20,11 +20,11 @@ except:
     from algos.multiagent.epoch_logger import EpochLogger 
 try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore 
-    import NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
 except:
     import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
-    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
 
 

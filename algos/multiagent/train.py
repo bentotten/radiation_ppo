@@ -36,14 +36,14 @@ except:
 # Neural Networks
 try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore
-    import NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from NeuralNetworkCores.CNN_core import StatisticsBuffer # type: ignore
+    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticsBuffer # type: ignore
 except:
     import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
-    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from algos.multiagent.NeuralNetworkCores.CNN_core import StatisticsBuffer # type: ignore
+    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticsBuffer # type: ignore
 
 # Data Management Utility
 try:
