@@ -430,16 +430,16 @@ class MapsBuffer:
             assert len(self.tools.readings.get_buffer(key=unscaled_coordinates)) > 0 
             
             # Get estimated reading and save new max for later normalization
-            estimated_reading: np.float32 = self.tools.readings.get_estimate(key=unscaled_coordinates)
+            estimated_reading: float = self.tools.readings.get_estimate(key=unscaled_coordinates)
             
             # Normalize
-            self.tools.standardizer.update(observation[agent_id][0])                
-            standardized_reading = self.tools.standardizer.standardize(observation[agent_id][0])  # Put reading on same scale as other observations sampled thus far
+            self.tools.standardizer.update(estimated_reading)                
+            standardized_reading = self.tools.standardizer.standardize(estimated_reading)  # Put reading on same scale as other observations sampled thus far
             normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())  # Normalize that value to match other heatmaps
             assert normalized_reading <= 1.0 and normalized_reading >= 0.0
-                
+            
             if normalized_reading > 0:
-                self.readings_map[readings_x][readings_y] = normalized_reading  # TODO verify a 64 bit float is ok, otherwise use np.float32
+                self.readings_map[readings_x][readings_y] = normalized_reading 
             else:
                 assert normalized_reading >= 0
 
@@ -457,7 +457,11 @@ class MapsBuffer:
             else:
                 current = 0
                 self.visit_counts_shadow[visits_scaled_coordinates] = 2
-                    
+
+            # Sanity check
+            if self.visit_counts_map[readings_x][readings_y] != 0.0:
+                print(self.visit_counts_shadow[visits_scaled_coordinates])
+
             if SIMPLE_NORMALIZATION:
                 self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize(current_value=current, max=self.base)
             else: 
