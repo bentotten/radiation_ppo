@@ -221,7 +221,7 @@ class train_PPO:
                     # TODO add back in for PFGRU
                     standardized_observations = observations
                 else:
-                    # TODO observation is overwritten by obs_std; was this intentional? If so,why does it exist?                
+                    # TODO observation is overwritten by obs_std; was this intentional? If so, why does it exist?                
                     standardized_observations = {id: observations[id] for id in self.agents}
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                         for id in self.agents:

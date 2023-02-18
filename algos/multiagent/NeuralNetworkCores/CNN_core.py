@@ -84,11 +84,86 @@ class ActionChoice(NamedTuple):
 
 
 @dataclass
+class IntensityEstimator():
+    ''' 
+        Hash table that stores radiation intensity levels as seen at each unscaled coordinate into a buffer. Because radiation intensity readings are drawn from a poisson distribution, 
+        the more samples that are available, the more accurate the reading. This can be used before standardizing the input for processing in order to get the most accurate radiation reading possible. 
+        
+        Future Work: Incorporate radionuclide identification module in conjunction with this (Carson et al.)
+    '''
+    #: Hash table containing explored coordinates (keys) and radiation readings detected there (list of values)
+    readings: Dict[Point, List[np.float32]] = field(default_factory=lambda: dict())
+    
+    # Private
+    _min: np.float32 = field(default=np.float32(0.0))  # Minimum radiation reading discovered
+    _max: np.float32 = field(default=np.float32(0.0))  # Maximum radiation reading discovered. This is used for normalization in simple normalization mode.
+    
+    def update(self, key: Point, value: np.float32)-> None:
+        ''' 
+            Adds value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
+            :param value: (np.float32) Sampled radiation intensity value
+            :param key: (Point) Coordinates where radiation intensity (value) was sampled
+        '''
+        if self.check_key(key=key):
+            self.readings[key].append(value)
+        else:
+            self.readings[key] = [value]
+        
+        estimate = self.get_estimate(key)
+        if estimate > self._max: self._max = estimate
+        if estimate < self._min: self._min = estimate
+        
+    def get_buffer(self, key: Point)-> List:
+        ''' 
+            Returns existing buffer for key. Raises exception if key does not exist.
+            :param value: (np.float32) Sampled radiation intensity value
+            :param key: (Point) Coordinates where radiation intensity (value) was sampled
+        '''      
+        if not self.check_key(key=key):
+            raise ValueError("Key does not exist")
+        return self.readings[key]
+        
+    def get_estimate(self, key: Point)-> np.float32:
+        ''' 
+            Returns radiation estimate for current coordinates. Raises exception if key does not exist.
+            :param key: (Point) Coordinates for desired radiation intensity estimate
+        '''      
+        if not self.check_key(key=key):
+            raise ValueError("Key does not exist")        
+        return np.median(self.readings[key])
+
+    def get_max(self)-> np.float32:
+        ''' Return the maximum radiation reading estimate calculated thus far. This can be used for normalization in simple normalization mode.
+        NOTE: this is the maximum estimate, not the maximum value seen thus far. '''
+        return self._max
+        
+    def get_min(self)-> np.float32:
+        ''' Return the minimum radiation reading discovered thus far.
+        NOTE: this is the minimum estimate, not the maximum value seen thus far.
+        '''
+        return self._min
+    
+    def set_max(self, value: np.float32)-> None:
+        ''' Set the maximum radiation reading estimated thus far.'''
+        self._max = value
+        
+    def set_min(self, value: np.float32)-> None:
+        ''' Set the minimum radiation reading estimated thus far.'''
+        self._min = value
+            
+    def check_key(self, key: Point):
+        return True if key in self.readings else False
+        
+    def clear(self):
+        self = IntensityEstimator()
+
+@dataclass
 class StatisticsBuffer:
     ''' 
     Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares and products").
     Because an Agent does not know the maximum radiation intensity it may encounter, it uses this estimated running sample mean and variance instead. 
     '''
+    # TODO do we want to use numpy floats here?
     #: Running mean
     mu: float = 0.0
     #: Squared distance from the mean
@@ -128,14 +203,15 @@ class StatisticsBuffer:
         ''' 
             Standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
             Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero and a standard deviation of one, 
-            and thus, the same scale.
+            and thus, the same scale. NOTE: Because the first reading will always be standardized to zero, it is important to standardize after a reset before the first step to ensure 
+            first steps reading is not wasted.s
             
             :param reading: (float) radiation intensity reading
             :clip_value: (float) Maximum deviation from zero. If the return value should deviate further than this value, it will be clipped to this value (+/-)
             
             :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         '''
-        return np.clip((reading - self.mu) / self.sample_std, -standardization_clip_value, standardization_clip_value)   
+        return np.clip((reading - self.mu) / self.sample_std, -standardization_clip_value, standardization_clip_value)
 
     def reset(self) -> None:
         ''' Reset statistics buffer '''
@@ -149,19 +225,17 @@ class StorageBuffer:
     '''
     # Buffers
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
-    last_coords: CoordinateStorage = field(init=False)
-    
-    readings: Dict[Union[str, Point], Union[np.float32, List[np.float32]]] = field(init=False)
+    last_coords: CoordinateStorage = field(init=False, default_factory=lambda: CoordinateStorage(dict()))
+    #: An intensity estimator class that samples every reading and estimates what the true intensity value is
+    readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
     
     def __post_init__(self)-> None:
-        self.last_coords = CoordinateStorage(dict())
-        self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling        
+        pass
     
     def clear(self)-> None:
-        # Reset readings and coordinates buffers
+        ''' Reset and clear all members '''
         self.last_coords = CoordinateStorage(dict())
         self.readings.clear()
-        self.readings = {'max': np.float32(0.0), 'min': np.float32(0.0)} # For heatmap resampling                
 
 
 @dataclass()
@@ -295,21 +369,20 @@ class MapsBuffer:
             
             # Inflate coordinates
             unscaled_coordinates: Point = Point((observation[agent_id][1], observation[agent_id][2]))
-            assert len(self.buffer.readings[unscaled_coordinates]) > 0 # type: ignore
+            assert len(self.buffer.readings.get_buffer(key=unscaled_coordinates)) > 0 
             
             # Get estimated reading and save new max for later normalization
-            estimated_reading: np.float32 = np.median(self.buffer.readings[unscaled_coordinates])
-            if estimated_reading > self.buffer.readings['max']:
-                self.buffer.readings['max'] = estimated_reading            
+            estimated_reading: np.float32 = self.buffer.readings.get_estimate(key=unscaled_coordinates)
             
             # Normalize
+            normalized_reading: np.float32
             if SIMPLE_NORMALIZATION:
-                normalized_reading = estimated_reading / self.buffer.readings['max'] # type: ignore
-                assert normalized_reading <= 1.0 and normalized_reading >= 0.0 # Stat buffer can give 0 back as a reading
+                normalized_reading = estimated_reading / self.buffer.readings.get_max()
+                assert normalized_reading <= 1.0 and normalized_reading >= 0.0 
                 
             else:
-                normalized_reading = self.intensity_stand_buffer.standardize(observation[agent_id][0])
-                # TODO Get range for this tool and add an assert        
+                normalized_reading= np.float32(self.intensity_stand_buffer.standardize(observation[agent_id][0]))
+                assert normalized_reading <= 8.0 and normalized_reading >= 8.0 
             if estimated_reading > 0:
                 self.readings_map[readings_x][readings_y] = normalized_reading 
             else:
@@ -965,13 +1038,8 @@ class CCNBase:
                 for observation in state_observation.values():
                     key: Point = Point((observation[1], observation[2]))
                     intensity: np.floating[Any] = observation[0]
-                    if key in self.maps.buffer.readings:
-                        if intensity not in self.maps.buffer.readings[key]: # type: ignore 
-                            self.maps.buffer.readings[key].append(intensity) # type: ignore 
-                    else:
-                        self.maps.buffer.readings[key] = [intensity]
-                    assert intensity in self.maps.buffer.readings[key], "Observation not recorded into readings buffer" # type: ignore 
-
+                    self.maps.buffer.readings.update(key=key, value=intensity)
+                    
                 (
                     location_map,
                     others_locations_map,
