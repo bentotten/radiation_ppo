@@ -95,8 +95,8 @@ class IntensityEstimator():
     readings: Dict[Point, List[np.float32]] = field(default_factory=lambda: dict())
     
     # Private
-    _min: np.float32 = field(default=np.float32(0.0))  # Minimum radiation reading discovered
-    _max: np.float32 = field(default=np.float32(0.0))  # Maximum radiation reading discovered. This is used for normalization in simple normalization mode.
+    _min: np.float32 = field(default=np.float32(0.0))  # Minimum radiation reading estimate
+    _max: np.float32 = field(default=np.float32(0.0))  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     
     def update(self, key: Point, value: np.float32)-> None:
         ''' 
@@ -158,11 +158,12 @@ class IntensityEstimator():
         ''' Check if coordinates (key) exist in hashtable '''
         return True if key in self.readings else False
         
-    def clear(self):
+    def reset(self):
         self = IntensityEstimator()
 
+
 @dataclass
-class StatisticsBuffer:
+class StatisticStandardization:
     ''' 
     Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares and products").
     Because an Agent does not know the maximum radiation intensity it may encounter, it uses this estimated running sample mean and variance instead. 
@@ -176,9 +177,13 @@ class StatisticsBuffer:
     sample_std: float = 1.0 
     #: Count of how many samples have been seen so far
     count: int = 0
+            
+    # Private
+    _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     
     def update(self, reading: float) -> None:
-        ''' Update estimate running sample mean and variance for standardizing radiation intensity readings.
+        ''' Update estimate running sample mean and variance for standardizing radiation intensity readings. Also updates max standardized value 
+            for normalization, if applicable.
             
             #. The existing mean is subtracted from the new reading to get the initial delta. 
             #. This delta is then divided by the number of samples seen so far and added to the existing mean to create a new mean.
@@ -193,6 +198,8 @@ class StatisticsBuffer:
             
             :param reading: (float) radiation intensity reading
         '''
+        assert reading >= 0
+        
         self.count += 1
         if self.count == 1:
             self.mu = reading  # For first reading, mu is equal to that reading
@@ -203,43 +210,81 @@ class StatisticsBuffer:
             self.sigma = sigma_new
             self.sample_std = max(math.sqrt(sigma_new / (self.count - 1)), 1)
             
-    def standardize(self, reading: float, standardization_clip_value: float = 8.0) -> float:
+        new_standard = self.standardize(reading=reading)
+        if new_standard > self._max: self._max = new_standard
+            
+    def standardize(self, reading: float) -> float:
         ''' 
             Standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
             Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero and a standard deviation of one, 
             and thus, the same scale. NOTE: Because the first reading will always be standardized to zero, it is important to standardize after a reset before the first step to ensure 
-            first steps reading is not wasted.s
+            first steps reading is not wasted.
             
             :param reading: (float) radiation intensity reading
-            :clip_value: (float) Maximum deviation from zero. If the return value should deviate further than this value, it will be clipped to this value (+/-)
-            
             :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         '''
-        return np.clip((reading - self.mu) / self.sample_std, -standardization_clip_value, standardization_clip_value)
+        return (reading - self.mu) / self.sample_std
+
+    def get_max(self)-> float:
+        ''' Return the current maximum standardized sample (updated during update function)'''
+        return self._max
 
     def reset(self) -> None:
         ''' Reset statistics buffer '''
-        self = StatisticsBuffer()
+        self = StatisticStandardization()
 
 
+@dataclass
+class Normalizer():
+    ''' Normalizes a data set '''
+    
+    def normalize(self, current_value: Any, max: Any):
+        ''' 
+            Standard linear normalization (without subtracting outliers)
+            :param current_value: (Any) value to be normalized
+            :param max: (Any) Maximum possible
+        '''
+        return current_value / max
+
+    def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2):
+        ''' 
+            Normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
+            For TEAM-RAD, every time an agent accesses a grid coordinate, a visits count shadow table is incremented by 1.
+            That value is multiplied by the increment_value (here using 2 due to log(1) == 0) and the log is taken. This value
+            is then multiplied by 1/ the increment value multiplied by the base in order to put it between 0 and 1. The base is 
+            the maximum number of possible steps in an episode multiplied by the number of agents.
+            
+            :param current_value: (Any) value to be normalized
+            :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
+            :param increment_value (int): Value from shadow table is expected to increment by this amount every time  
+        '''
+        with np.errstate(all='raise'):
+            return (
+                    np.log(increment_value + current_value, dtype=np.float128) / np.log(base, dtype=np.float128) # Change base to max steps * num agents
+                ) * 1/(np.log(increment_value * base)/ np.log(base)) # Put in range [0, 1]
+        
 @dataclass
 class ConversionTools:
     '''
         Stores class objects that assist the conversion from an observation from the environment to a heatmap for processing by the neural networks.
     '''
-    # Buffers
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
     last_coords: CoordinateStorage = field(init=False, default_factory=lambda: CoordinateStorage(dict()))
     #: An intensity estimator class that samples every reading and estimates what the true intensity value is
     readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
+    #: Statistics class for standardizing intensity readings from samples from the environment
+    standardizer:StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
+    #: Normalization class for adjusting data to be between 0 and 1
+    normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer()) 
     
     def __post_init__(self)-> None:
         pass
     
-    def clear(self)-> None:
+    def reset(self)-> None:
         ''' Reset and clear all members '''
         self.last_coords = CoordinateStorage(dict())
-        self.readings.clear()
+        self.readings.reset()
+        self.standardizer.reset()
 
 
 @dataclass()
@@ -281,7 +326,6 @@ class MapsBuffer:
     # Buffers
     tools: ConversionTools = field(default_factory=lambda: ConversionTools())
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
-    intensity_stand_buffer: StatisticsBuffer = field(default_factory=lambda: StatisticsBuffer())
 
     def __post_init__(self)-> None:
         self.base = self.steps_per_episode * self.number_of_agents
@@ -304,8 +348,7 @@ class MapsBuffer:
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
-        self.tools.clear()
-        self.intensity_stand_buffer.reset()
+        self.tools.reset()
         
     def clear(self)-> None:
         ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
@@ -361,11 +404,7 @@ class MapsBuffer:
                 other_a_y: int = int(others_scaled_coordinates[1])
                 self.others_locations_map[other_a_x][other_a_y] += 1  # Initial agents begin at same location        
 
-        ### Process observation for readings_map
-        # Update stat buffer for later normalization
-        if not SIMPLE_NORMALIZATION:
-            for agent_id in observation:
-                self.intensity_stand_buffer.update(observation[agent_id][0]) 
+        ### Process observation for readings_map   
         for agent_id in observation:
             readings_scaled_coordinates: Tuple[int, int] = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             readings_x: int = int(readings_scaled_coordinates[0])
@@ -379,18 +418,15 @@ class MapsBuffer:
             estimated_reading: np.float32 = self.tools.readings.get_estimate(key=unscaled_coordinates)
             
             # Normalize
-            normalized_reading: np.float32
-            if SIMPLE_NORMALIZATION:
-                normalized_reading = estimated_reading / self.tools.readings.get_max()
-                assert normalized_reading <= 1.0 and normalized_reading >= 0.0 
+            self.tools.standardizer.update(observation[agent_id][0])                
+            standardized_reading = np.float32(self.tools.standardizer.standardize(observation[agent_id][0]))  # Put reading on same scale as other observations sampled thus far
+            normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max())  # Normalize that value to match other heatmaps
+            assert normalized_reading <= 1.0 and normalized_reading >= 0.0
                 
-            else:
-                normalized_reading= np.float32(self.intensity_stand_buffer.standardize(observation[agent_id][0]))
-                assert normalized_reading <= 8.0 and normalized_reading >= 8.0 
-            if estimated_reading > 0:
+            if normalized_reading > 0:
                 self.readings_map[readings_x][readings_y] = normalized_reading 
             else:
-                assert estimated_reading >= 0
+                assert normalized_reading >= 0
 
         ### Process observation for visit_counts_map
         for agent_id in observation:
@@ -408,16 +444,9 @@ class MapsBuffer:
                 self.visit_counts_shadow[visits_scaled_coordinates] = 2
                     
             if SIMPLE_NORMALIZATION:
-                self.visit_counts_map[visits_x][visits_y] = current / self.base
+                self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize(current_value=current, max=self.base)
             else: 
-                with np.errstate(all='raise'):
-                    # Using 2 due to log(1) == 0
-                    self.visit_counts_map[visits_x][visits_y] = (
-                            (
-                                np.log(2 + current, dtype=np.float128) / np.log(self.base, dtype=np.float128) # Change base to max steps * num agents
-                            ) * 1/(np.log(2 * self.base)/ np.log(self.base)) # Put in range [0, 1]
-                        )          
-                    assert self.visit_counts_map.max() <= 1.0 and self.visit_counts_map.min() >= 0.0, "Normalization error" 
+                self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
             
         ### Process observation for obstacles_map 
         for agent_id in observation:

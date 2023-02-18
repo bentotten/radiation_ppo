@@ -479,7 +479,7 @@ class AgentPPO:
     lam: float = field(default= 0.9)
     
     # Initialized elsewhere
-    agent: RADCNN_core.CCNBase = field(init=False)
+    agent: Union[RADCNN_core.CCNBase, RADA2C_core.RNNModelActorCritic] = field(init=False)
 
     def __post_init__(self):
         ''' Initialize Agent's neural network architecture'''

@@ -38,12 +38,12 @@ try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticsBuffer # type: ignore
+    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
 except:
     import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
-    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticsBuffer # type: ignore
+    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
 
 # Data Management Utility
 try:
@@ -114,7 +114,7 @@ class train_PPO:
     #: Time experiment was started
     start_time: float = field(default_factory= lambda: time.time())
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
-    stat_buffers: Dict[int, StatisticsBuffer] = field(default_factory=lambda:dict())
+    stat_buffers: Dict[int, StatisticStandardization] = field(default_factory=lambda:dict())
     #: Object that holds agents
     agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
     #: Object that holds agent loggers
@@ -146,7 +146,7 @@ class train_PPO:
         for i in range(self.number_of_agents):
             # If RAD-A2C, set up statistics buffers         
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                self.stat_buffers[i] = StatisticsBuffer()          
+                self.stat_buffers[i] = StatisticStandardization()          
                 
             self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
             

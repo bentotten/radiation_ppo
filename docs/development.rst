@@ -63,17 +63,35 @@ This contains the base class, the actor (policy) class, the critic (value) class
     :members:
 
 
-Buffers
---------
+Observation to Map Processing 
+------------------------------
+This contains tools for estimating the true radiation intensity value, standardizing it to one standard deviation from other samples, and normalizing it.
 
-StatisticsBuffer
-^^^^^^^^^^^^^^^^^^^
-
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.StatisticsBuffer
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.ConversionTools
     :members:
 
-RolloutBuffer
-^^^^^^^^^^^^^^
+
+Intensity Sampling and Estimation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.IntensityEstimator
+    :members:
+
+
+Standardizing Intensity Value
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.StatisticStandardization
+    :members:
+
+
+Normalizing Intensity Value
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.Normalizer 
+    :members:
+
+
 
 Maps Buffer
 ^^^^^^^^^^^^
