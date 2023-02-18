@@ -225,7 +225,7 @@ class train_PPO:
                     standardized_observations = {id: observations[id] for id in self.agents}
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                         for id in self.agents:
-                            standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sample_std, -8, 8)     
+                            standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
                         
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = {id: None for id in self.agents}
@@ -305,7 +305,7 @@ class train_PPO:
                             standardized_observations = {id: observations[id] for id in self.agents}
                             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':    
                                 for id in self.agents:
-                                    standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sample_std, -8, 8)
+                                    standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
                         for id, ac in self.agents.items():
                             if self.actor_critic_architecture == 'uniform':
                                 results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update

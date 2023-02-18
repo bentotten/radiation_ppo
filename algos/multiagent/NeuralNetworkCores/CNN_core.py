@@ -111,6 +111,8 @@ class StatisticsBuffer:
             Thank you to `Wiki - Algorithms for calculating variance <https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#cite_ref-5>`_ 
             and `NZMaths - Sample Variance <https://nzmaths.co.nz/category/glossary/sample-variance>`_
             Original: B. Welford, "Note on a method for calculating corrected sums of squares and products"
+            
+            :param reading: (float) radiation intensity reading
         '''
         self.count += 1
         if self.count == 1:
@@ -121,6 +123,19 @@ class StatisticsBuffer:
             self.mu = mu_new
             self.sigma = sigma_new
             self.sample_std = max(math.sqrt(sigma_new / (self.count - 1)), 1)
+            
+    def standardize(self, reading: float, clip_value: float = 8.0) -> float:
+        ''' 
+            Standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
+            Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero and a standard deviation of one, 
+            and thus, the same scale.
+            
+            :param reading: (float) radiation intensity reading
+            :clip_value: (float) Maximum deviation from zero. If the return value should deviate further than this value, it will be clipped to this value (+/-)
+            
+            :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
+        '''
+        return np.clip((reading - self.mu) / self.sample_std, -clip_value, clip_value)   
 
     def reset(self) -> None:
         ''' Reset statistics buffer '''
@@ -183,7 +198,7 @@ class MapsBuffer:
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
-    intensity_standardization: StatisticsBuffer = field(default_factory=lambda: StatisticsBuffer())
+    intensity_stand_buffer: StatisticsBuffer = field(default_factory=lambda: StatisticsBuffer())
 
     def __post_init__(self)-> None:
         self.base = self.steps_per_episode * self.number_of_agents
@@ -207,7 +222,7 @@ class MapsBuffer:
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
         self.buffer.clear()
-        self.intensity_standardization.reset()
+        self.intensity_stand_buffer.reset()
         
     def clear(self)-> None:
         ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
@@ -267,7 +282,7 @@ class MapsBuffer:
         # Update stat buffer for later normalization
         if not SIMPLE_NORMALIZATION:
             for agent_id in observation:
-                self.intensity_standardization.update(observation[agent_id][0])
+                self.intensity_stand_buffer.update(observation[agent_id][0])
         for agent_id in observation:
             readings_scaled_coordinates: Tuple[int, int] = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             readings_x: int = int(readings_scaled_coordinates[0])
@@ -288,7 +303,7 @@ class MapsBuffer:
                 assert normalized_reading <= 1.0 and normalized_reading >= 0.0 # Stat buffer can give 0 back as a reading
                 
             else:
-                normalized_reading = np.clip((observation[agent_id][0] - self.intensity_standardization.mu) / self.intensity_standardization.sample_std, -8, 8)     
+                normalized_reading = self.intensity_stand_buffer.standardize(observation[agent_id][0])
                 # TODO Get range for this tool and add an assert        
             if estimated_reading > 0:
                 self.readings_map[readings_x][readings_y] = normalized_reading 
