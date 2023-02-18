@@ -31,7 +31,7 @@ Shape = Union[int, Tuple[int, ...]]
 #: [Global] Detector-obstruction range measurement threshold in cm for inflating step size for obstruction heatmap. Type: float
 DIST_TH = 110.0
 #: [Global] Toggle for simple value/max normalization vs stdbuffer for radiation intensity map and log-based for visit-counts map. Type: bool
-SIMPLE_NORMALIZATION = True
+SIMPLE_NORMALIZATION = False
 
 
 def _log_and_normalize_test(max: int = 120):
@@ -180,6 +180,7 @@ class StatisticStandardization:
             
     # Private
     _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
+    _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
     
     def update(self, reading: float) -> None:
         ''' Update estimate running sample mean and variance for standardizing radiation intensity readings. Also updates max standardized value 
@@ -212,6 +213,8 @@ class StatisticStandardization:
             
         new_standard = self.standardize(reading=reading)
         if new_standard > self._max: self._max = new_standard
+        if new_standard < self._min: self._min = new_standard
+        
             
     def standardize(self, reading: float) -> float:
         ''' 
@@ -228,6 +231,10 @@ class StatisticStandardization:
     def get_max(self)-> float:
         ''' Return the current maximum standardized sample (updated during update function)'''
         return self._max
+    
+    def get_min(self)-> float:
+        ''' Return the current minimum standardized sample (updated during update function)'''
+        return self._min
 
     def reset(self) -> None:
         ''' Reset statistics buffer '''
@@ -236,18 +243,23 @@ class StatisticStandardization:
 
 @dataclass
 class Normalizer():
-    ''' Normalizes a data set '''
+    ''' Normalization methods '''
     
-    def normalize(self, current_value: Any, max: Any):
+    def normalize(self, current_value: Any, max: Any, min: Any = 0.0):
         ''' 
-            Standard linear normalization (without subtracting outliers)
+            Standard linear normalization (without subtracting outliers). If min is below zero, the data will be shifted by the absolute value of the minimum
             :param current_value: (Any) value to be normalized
             :param max: (Any) Maximum possible
         '''
         if current_value == 0:
             return 0.0
         assert max > 0, "Value error - Max is 0 but current value is not."
-        return current_value / max
+        
+        if min < 0:
+            offset: Any = abs(min)
+            return (current_value + offset) / (max + offset)
+        else:
+            return current_value / max
 
     def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2):
         ''' 
@@ -424,7 +436,7 @@ class MapsBuffer:
             # Normalize
             self.tools.standardizer.update(observation[agent_id][0])                
             standardized_reading = np.float32(self.tools.standardizer.standardize(observation[agent_id][0]))  # Put reading on same scale as other observations sampled thus far
-            normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max())  # Normalize that value to match other heatmaps
+            normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())  # Normalize that value to match other heatmaps
             assert normalized_reading <= 1.0 and normalized_reading >= 0.0
                 
             if normalized_reading > 0:
