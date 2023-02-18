@@ -274,7 +274,8 @@ class Normalizer():
             :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
             :param increment_value (int): Value from shadow table is expected to increment by this amount every time  
         '''
-        return (log(increment_value + current_value, base=base)) * 1/log(increment_value + current_value, base=base) # Put in range [0, 1]
+        result = (log(increment_value + current_value, base)) * 1/log(increment_value * base, base) # Put in range [0, 1]
+        return result
 
         
 @dataclass
@@ -461,6 +462,8 @@ class MapsBuffer:
                 self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize(current_value=current, max=self.base)
             else: 
                 self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
+                if self.visit_counts_map[visits_x][visits_y] == 1.0: raise Warning("Visit count is normalized to 1; either Agents did not move entire episode or there is a normalization error")
+                assert self.visit_counts_map[visits_x][visits_y] != 1.0 # TODO remove after confident working correctly
             
         ### Process observation for obstacles_map 
         for agent_id in observation:
