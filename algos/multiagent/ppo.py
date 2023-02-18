@@ -1,5 +1,5 @@
 '''
-Original single-agent RAD-A2C Module.
+    Original single-agent RAD-A2C Module.
 '''
 
 import torch
@@ -391,43 +391,71 @@ class PPOBuffer:
 @dataclass 
 class AgentPPO:
     '''
-    This class handles PPO-related functions/calculations, the experience buffer, and holds the agent object. This class also is responsible for calculating advantages after an epoch,
-    calling actor/critic update functions located in the agent's individual neural networks, and handling all optimizers and learning cut-offs. Minibatches are sampled
-    here. One AgentPPO object per agent. Future work: add functionality for sharing single policy/critic and copying network to new "agents" (see OpenAI 5 by Berner et al. and
-    Target Localization by Alagha et al.)
-    
-    :param id: (int) unique identifier for agent that is used as key for identification of correct observations, rewards, etc within shared objects
-    :param observation_space: (int) The dimensions of the observation returned from the environment. Also known as state dimensions. For rad-search this will be 11, for the 11 elements of 
-        the observation array. This is used for the PPO buffer.
-    :param bp_args: (BpArgs) Set up bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
-    :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
-    :param env_height: (float) Max y axis bound of search area from environment grid. Note that this is only in spawnable coordinates, so likely is shorter than the full grid.
-    :param seed: (int) For random number generator.
-    :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
-    :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
-    :param minibatch: (int) How many observations to sample out of a batch. Used to reduce the impact of fully online learning    
-    :param pi_learning_rate: (float) Learning rate for Actor/policy optimizer.
-    :param critic_learning_rate: (float) Learning rate for Critic (value) function optimizer.
-    :param pfgru_learning_rate: (float) Learning rate for the source prediction module (PFGRU)
-    :param train_pi_iters: (int) Maximum number of gradient descent steps to take on actor policy loss per epoch. (Early stopping may cause optimizer to take fewer than this.)
-    :param train_v_iters: (int) Number of gradient descent steps to take on critic state-value function per epoch.
-    :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit)           
-    :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training 
-    :param actor_learning_rate: (float) For actor/policy. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
-        reduced as the agent's learning progresses.
-    :param critic_learning_rate: (float) For critic/value function. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
-        reduced as the agent's learning progresses.
-    :param pfgru_learning_rate: (float) For the PFGRU/location predictor module. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
-        reduced as the agent's learning progresses.        
-    :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
-    :param alpha: (float) Entropy reward term scaling.
-    :param clip_ratio: (float) Usually seen as Epsilon Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy while 
-        still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
-        (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, it goes with a clipped value instead.
-    :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used for early stopping. (Usually small, 0.01 or 0.05.)   
-    :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
-      
+        This class handles PPO-related functions/calculations, the experience buffer, and holds the agent object. This class also is responsible for calculating advantages after an epoch,
+        calling actor/critic update functions located in the agent's individual neural networks, and handling all optimizers and learning cut-offs. Minibatches are sampled
+        here. One AgentPPO object per agent. Future work: add functionality for sharing single policy/critic and copying network to new "agents" (see OpenAI 5 by Berner et al. and
+        Target Localization by Alagha et al.)
+        
+        
+        :param id: (int) unique identifier for agent that is used as key for identification of correct observations, rewards, etc within shared objects.
+        
+        :param observation_space: (int) The dimensions of the observation returned from the environment. Also known as state dimensions. For rad-search this will be 11, for the 11 elements of 
+            the observation array. This is used for the PPO buffer.
+            
+        :param bp_args: (BpArgs) Set up bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
+        
+        :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
+        
+        :param env_height: (float) Max y axis bound of search area from environment grid. Note that this is only in spawnable coordinates, so likely is shorter than the full grid.
+        
+        :param seed: (int) For random number generator.
+        
+        :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
+        
+        :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent.
+        
+        :param minibatch: (int) How many observations to sample out of a batch. Used to reduce the impact of fully online learning.
+        
+        :param pi_learning_rate: (float) Learning rate for Actor/policy optimizer.
+        
+        :param critic_learning_rate: (float) Learning rate for Critic (value) function optimizer.
+        
+        :param pfgru_learning_rate: (float) Learning rate for the source prediction module (PFGRU).
+        
+        :param train_pi_iters: (int) Maximum number of gradient descent steps to take on actor policy loss per epoch (Early stopping may cause optimizer to take fewer than this).
+        
+        :param train_v_iters: (int) Number of gradient descent steps to take on critic state-value function per epoch.
+        
+        :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit).
+        
+        :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training.
+        
+        :param actor_learning_rate: (float) For actor/policy. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
+            reduced as the agent's learning progresses.
+            
+        :param critic_learning_rate: (float) For critic/value function. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
+            reduced as the agent's learning progresses.
+            
+        :param pfgru_learning_rate: (float) For the PFGRU/location predictor module. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
+            reduced as the agent's learning progresses.    
+                        
+        :param alpha: (float) Entropy reward term scaling.
+        
+        :param clip_ratio: (float) Usually seen as Epsilon Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy while 
+            still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
+            (Usually small, 0.1 to 0.3.).Basically if the policy wants to perform too large an update, it goes with a clipped value instead.
+            
+        :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update; This will get used for early stopping (Usually small, 0.01 or 0.05).  
+
+        :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1).
+         
+        :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1).
+        
+        :return: None
+        
+        test test
     '''
+    
     id: int
     observation_space: int
     bp_args: BpArgs     # No default due to need for environment height parameter.
@@ -720,36 +748,28 @@ class AgentPPO:
         return results
 
     def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int, map_stack: torch.Tensor):
-        ''' Compute loss for actor network
-            The difference between the probability of taking the action according to the current policy
-            and the probability of taking the action according to the old policy, multiplied by the 
-            advantage of the action.            
-            
-            data (array): data from PPO buffer
-                obs (tensor): Unused - batch of observations from the PPO buffer. Currently only used to ensure
-                    map buffer observations are correct.
-                act (tensor): batch of actions taken
-                adv (tensor): batch of advantages cooresponding to actions. 
-                    These are the difference between the expected reward for taking that action and the baseline expected reward
-                logp (tensor): batch of action logprobabilities
-                loc_pred (tensor): batch of predicted location by PFGRU
-                ep_len (tensor[int]): single dimension int of length of episode
-                ep_form (tensor): 
-                
-            map_stacks (tensor): Either a single observations worth of maps, or a batch of maps
-            index (int): If doing a single observation at a time, index for data[]
-            
-            Adapted from https://github.com/nikhilbarhate99/PPO-PyTorch
+        ''' 
+            Compute loss for actor network. Loss is the difference between the probability of taking the action according to the current policy
+            and the probability of taking the action according to the old policy, multiplied by the advantage of the action.
             
             Process:
-                Calculate how much the policy has changed: 
-                    ratio = policy_new / policy_old
-                Take log form of this: 
-                    ratio = [log(policy_new) - log(policy_old)].exp()
-                Calculate Actor loss as the minimum of two functions: 
-                    p1 = ratio * advantage
-                    p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
-                    actor_loss = min(p1, p2)   
+                #. Calculate how much the policy has changed:  ratio = policy_new / policy_old
+                #. Take log form of this:  ratio = [log(policy_new) - log(policy_old)].exp()
+                #. Calculate Actor loss as the minimum of two functions: 
+                    #. p1 = ratio * advantage
+                    #. p2 = clip(ratio, 1-epsilon, 1+epsilon) * advantage
+                    #. actor_loss = min(p1, p2)               
+            
+            :param data: (array) data from PPO buffer. Contains:
+                * obs: (tensor) Unused: batch of observations from the PPO buffer. Currently only used to ensure map buffer observations are correct.
+                * act: (tensor) batch of actions taken.
+                * adv: (tensor) batch of advantages cooresponding to actions. These are the difference between the expected reward for taking that action and the true reward (See: TD Error, GAE).
+                * logp: (tensor) batch of action logprobabilities.
+                * loc_pred: (tensor) batch of predicted location by PFGRU.
+                * ep_len: (tensor[int]) single dimension int of length of episode.
+                * ep_form: (tensor) Episode form (TODO)
+            :param map_stacks: (tensor) Either a single observations worth of maps, or a batch of maps
+            :param index: (int) If doing a single observation at a time, index for data[]
         '''
         # NOTE: Not using observation tensor, using internal map buffer
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']

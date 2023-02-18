@@ -123,6 +123,7 @@ def log_and_normalize_test(max: int = 120):
     # Show the plot
     plt.show()
 
+
 @dataclass()
 class ActionChoice():
     id: int 
@@ -826,7 +827,6 @@ class PFGRUCell(PFRNNBaseCell):
         )
         hidden = (h0, p0)
         return hidden
-
 
 
 @dataclass

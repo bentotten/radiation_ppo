@@ -1,17 +1,13 @@
 Development
 ------------
+Code flows from CLI -> Main -> Train -> Radiation Environment, PPO -> Neural Networks
+
 
 Command Line Arguments
 =======================
 
 .. autoclass:: algos.multiagent.main.CliArgs
 
-
-Simulation Environment
-=======================
-
-.. autoclass:: gym_rad_search.envs.RadSearch
-    :members:
 
 Train
 ======
@@ -20,6 +16,23 @@ Train
     :members:
     :inherited-members:
 
-.. autoclass::  algos.multiagent.train.train_PPO
+
+Simulation Environment
+=======================
+
+.. autoclass:: gym_rad_search.envs.RadSearch
     :members:
-    :inherited-members:
+
+
+Proximal Policy Optimization
+=============================
+
+.. autoclass:: algos.multiagent.ppo.AgentPPO
+    :members:
+
+
+Neural Networks
+================
+
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.CCNBase
+    :members:
