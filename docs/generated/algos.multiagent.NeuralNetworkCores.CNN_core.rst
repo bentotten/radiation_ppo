@@ -36,7 +36,7 @@
       PFGRUCell
       PFRNNBaseCell
       RolloutBuffer
-      StatBuff
+      StatisticsBuffer
    
    
 

@@ -66,8 +66,11 @@ This contains the base class, the actor (policy) class, the critic (value) class
 Buffers
 --------
 
-StatBuff
-^^^^^^^^^
+StatisticsBuffer
+^^^^^^^^^^^^^^^^^^^
+
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.StatisticsBuffer
+    :members:
 
 RolloutBuffer
 ^^^^^^^^^^^^^^
@@ -76,15 +79,13 @@ Maps Buffer
 ^^^^^^^^^^^^
 
 
-Auxiliary Functions
-------------------------
+Auxiliary
+-----------
 
 ActionChoice
 ^^^^^^^^^^^^^^
-
-
-
-
+.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.ActionChoice
+    :members:
 
 
 *********

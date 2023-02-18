@@ -66,38 +66,65 @@ def _log_and_normalize_test(max: int = 120):
 
 
 class ActionChoice(NamedTuple):
-    ''' Standardized response from Actor-Critic for action selection '''
+    ''' Named Tuple - Standardized response/return template from Actor-Critic for action selection '''
+    #: An Agent's unique identifier that serves as a hash key. 
     id: int 
-    action: npt.NDArray # size (1)
-    action_logprob: npt.NDArray # size (1)
-    state_value: npt.NDArray # size(1)
+    #: A single integer that represents an agent action in the environment. Stored in a single-element numpy array for processing convinience.
+    action: npt.NDArray[np.int32] # size (1)
+    #: The log of the policy distribution. Taking the gradient of the log probability is more stable than using the actual density.
+    action_logprob: npt.NDArray[np.float32] # size (1)
+    #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
+    state_value: npt.NDArray[np.float32] # size(1)
+    #: Coordinates predicted by the location prediction model (PFGRU). TODO: Implement for CNN
+    loc_pred: Union[torch.Tensor, None] = None
 
     # For compatibility with RAD-PPO
-    hiddens: Union[torch.Tensor, None] = field(default=None)
-    loc_pred: Union[npt.NDArray, None] = field(default=None)
+    #: Hidden state (for compatibility with RAD-PPO)
+    hiddens: Union[torch.Tensor, None] = None
 
 
 @dataclass
-class StatBuff:
-    ''' statistics buffer for normalizing intensity readings from environment '''
+class StatisticsBuffer:
+    ''' 
+    Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares and products").
+    Because an Agent does not know the maximum radiation intensity it may encounter, it uses this estimated running sample mean and variance instead. 
+    '''
+    #: Running mean
     mu: float = 0.0
-    sig_sto: float = 0.0
-    sig_obs: float = 1.0
+    #: Squared distance from the mean
+    sigma: float = 0.0 
+    #: Sample standard-deviation
+    sample_std: float = 1.0 
+    #: Count of how many samples have been seen so far
     count: int = 0
     
-    def update(self, obs: float) -> None:
+    def update(self, reading: float) -> None:
+        ''' Update estimate running sample mean and variance for standardizing radiation intensity readings.
+            
+            #. The existing mean is subtracted from the new reading to get the initial delta. 
+            #. This delta is then divided by the number of samples seen so far and added to the existing mean to create a new mean.
+            #. This new mean is then subtracted from the reading to get new delta.
+            #. This new delta is multiplied by the old delta and added to the existing squared distance from the mean. 
+            #. To get the sample variance, the new existing squared distance from the mean is divided by the number of samples seen so far minus 1. 
+            #. To get the sample standard deviation, the square root of this value is taken.
+            
+            Thank you to `Wiki - Algorithms for calculating variance <https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#cite_ref-5>`_ 
+            and `NZMaths - Sample Variance <https://nzmaths.co.nz/category/glossary/sample-variance>`_
+            Original: B. Welford, "Note on a method for calculating corrected sums of squares and products"
+        '''
         self.count += 1
         if self.count == 1:
-            self.mu = obs
+            self.mu = reading  # For first reading, mu is equal to that reading
         else:
-            mu_n = self.mu + (obs - self.mu) / (self.count)
-            s_n = self.sig_sto + (obs - self.mu) * (obs - mu_n)
-            self.mu = mu_n
-            self.sig_sto = s_n
-            self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
+            mu_new = self.mu + (reading - self.mu) / (self.count) 
+            sigma_new = self.sigma + (reading - self.mu) * (reading - mu_new)
+            self.mu = mu_new
+            self.sigma = sigma_new
+            self.sample_std = max(math.sqrt(sigma_new / (self.count - 1)), 1)
 
     def reset(self) -> None:
-        self = StatBuff()
+        ''' Reset statistics buffer '''
+        self = StatisticsBuffer()
 
 
 @dataclass
@@ -156,7 +183,7 @@ class MapsBuffer:
     # Buffers
     buffer: RolloutBuffer = field(default_factory=lambda: RolloutBuffer())
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
-    normalization_buffer: StatBuff = field(default_factory=lambda: StatBuff())
+    intensity_standardization: StatisticsBuffer = field(default_factory=lambda: StatisticsBuffer())
 
     def __post_init__(self)-> None:
         self.base = self.steps_per_episode * self.number_of_agents
@@ -180,7 +207,7 @@ class MapsBuffer:
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
         self.buffer.clear()
-        self.normalization_buffer.reset()
+        self.intensity_standardization.reset()
         
     def clear(self)-> None:
         ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
@@ -240,7 +267,7 @@ class MapsBuffer:
         # Update stat buffer for later normalization
         if not SIMPLE_NORMALIZATION:
             for agent_id in observation:
-                self.normalization_buffer.update(observation[agent_id][0])
+                self.intensity_standardization.update(observation[agent_id][0])
         for agent_id in observation:
             readings_scaled_coordinates: Tuple[int, int] = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
             readings_x: int = int(readings_scaled_coordinates[0])
@@ -261,7 +288,7 @@ class MapsBuffer:
                 assert normalized_reading <= 1.0 and normalized_reading >= 0.0 # Stat buffer can give 0 back as a reading
                 
             else:
-                normalized_reading = np.clip((observation[agent_id][0] - self.normalization_buffer.mu) / self.normalization_buffer.sig_obs, -8, 8)     
+                normalized_reading = np.clip((observation[agent_id][0] - self.intensity_standardization.mu) / self.intensity_standardization.sig_obs, -8, 8)     
                 # TODO Get range for this tool and add an assert        
             if estimated_reading > 0:
                 self.readings_map[readings_x][readings_y] = normalized_reading 
@@ -441,7 +468,7 @@ class Actor(nn.Module):
         action_probs: torch.Tensor = self.actor(state_map_stack)
         dist = Categorical(action_probs)
         action: torch.Tensor = dist.sample()
-        action_logprob: torch.Tensor = dist.log_prob(action)
+        action_logprob: torch.Tensor = dist.log_prob(action) # log of the policy distribution. Taking the gradient of the log probability is more stable than using the actual density
         
         return action, action_logprob
 
@@ -544,8 +571,8 @@ class Critic(nn.Module):
         print(x)
         pass
    
-    def act(self, state_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: 
-        # Get q-value from critic
+    def act(self, state_map_stack: torch.Tensor) -> torch.Tensor: 
+        # Get state-value from critic
         #self.test(state_map_stack)
         state_value = self.critic(state_map_stack)
         return state_value
@@ -854,7 +881,7 @@ class CCNBase:
             
     # Initialized elsewhere
     #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
-    critic: Union[Critic, None] = field(default=None)  # Eventually allows for a global critic
+    critic: Union[Critic] = field(default=None)  # type: ignore
     #: Policy/Actor network
     pi: Actor = field(init=False)
     #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
@@ -896,8 +923,8 @@ class CCNBase:
         
         self.pi = Actor(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device)
         
-        if not self.Critic:
-            self.Critic = Critic(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device) # TODO these are really slow
+        if not self.critic:
+            self.critic = Critic(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device) # TODO these are really slow
             
         self.mseLoss = nn.MSELoss()
         
@@ -954,10 +981,9 @@ class CCNBase:
             
             # Get actions and values                          
             action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
-            state_value = self.Critic.act(batched_map_stack)  # Should be a pointer to either local critic or global critic
+            state_value: torch.Tensor = self.critic.act(batched_map_stack)  # size(1)
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
-        #return action.item(), action_logprob.item(), state_value.item()
     
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic

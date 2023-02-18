@@ -38,42 +38,18 @@ try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
+    from NeuralNetworkCores.CNN_core import StatisticsBuffer # type: ignore
 except:
     import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
+    from algos.multiagent.NeuralNetworkCores.CNN_core import StatisticsBuffer # type: ignore
 
 # Data Management Utility
 try:
     from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
 except:
     from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
-
-
-################################### Functions for algorithm/implementation conversions ###################################
-@dataclass
-class StatBuff:
-    ''' [Backwards Compatibility] Statistics buffer for normalizing returns from environment. Left in train.py for backwards compatability
-        with RADPPO
-    '''    
-    mu: float = 0.0
-    sig_sto: float = 0.0
-    sig_obs: float = 1.0
-    count: int = 0
-    
-    def update(self, obs: float) -> None:
-        self.count += 1
-        if self.count == 1:
-            self.mu = obs
-        else:
-            mu_n = self.mu + (obs - self.mu) / (self.count)
-            s_n = self.sig_sto + (obs - self.mu) * (obs - mu_n)
-            self.mu = mu_n
-            self.sig_sto = s_n
-            self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
-
-    def reset(self) -> None:
-        self = StatBuff()
 
 
 ################################### Training ###################################
@@ -138,7 +114,7 @@ class train_PPO:
     #: Time experiment was started
     start_time: float = field(default_factory= lambda: time.time())
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
-    stat_buffers: Dict[int, StatBuff] = field(default_factory=lambda:dict())
+    stat_buffers: Dict[int, StatisticsBuffer] = field(default_factory=lambda:dict())
     #: Object that holds agents
     agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
     #: Object that holds agent loggers
@@ -170,7 +146,7 @@ class train_PPO:
         for i in range(self.number_of_agents):
             # If RAD-A2C, set up statistics buffers         
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                self.stat_buffers[i] = StatBuff()          
+                self.stat_buffers[i] = StatisticsBuffer()          
                 
             self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
             
@@ -232,7 +208,7 @@ class train_PPO:
                     # Put actor and critic into eval mode
                     #ac.model.eval()  # TODO add PFGRU
                     ac.agent.pi.eval()
-                    ac.agent.Critic.eval() # TODO will need to be changed for global critic
+                    ac.agent.critic.eval() # TODO will need to be changed for global critic
                     
                 for ac in self.agents.values():
                     if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
@@ -249,7 +225,7 @@ class train_PPO:
                     standardized_observations = {id: observations[id] for id in self.agents}
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                         for id in self.agents:
-                            standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
+                            standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sample_std, -8, 8)     
                         
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = {id: None for id in self.agents}
@@ -329,9 +305,7 @@ class train_PPO:
                             standardized_observations = {id: observations[id] for id in self.agents}
                             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':    
                                 for id in self.agents:
-                                    standardized_observations[id][0] = np.clip(
-                                        (observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8
-                                    )     
+                                    standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sample_std, -8, 8)
                         for id, ac in self.agents.items():
                             if self.actor_critic_architecture == 'uniform':
                                 results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update

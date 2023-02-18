@@ -497,7 +497,7 @@ class AgentPPO:
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = Adam(self.agent.Critic.parameters(), lr=self.critic_learning_rate),
+                critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 loss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
@@ -836,7 +836,7 @@ class AgentPPO:
         true_return = data['ret'][index]
         
         # Compare predicted return with true return and use MSE to indicate loss
-        predicted_value = self.agent.Critic.evaluate(map_stack)
+        predicted_value = self.agent.critic.evaluate(map_stack)
         critic_loss = self.agent.mseLoss(torch.squeeze(predicted_value), true_return)
         return critic_loss
 

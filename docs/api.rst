@@ -35,8 +35,6 @@ Updates the neural network and holds algorithm-specific processes for Proximal P
    algos.multiagent.ppo
 
 
-.. _Neural Networks Overview:
-
 Neural Networks Overview
 *************************
 Contains the Actor-Critic neural networks augmented with the Particle Filter Gated Recurrent Unit for location prediction. 

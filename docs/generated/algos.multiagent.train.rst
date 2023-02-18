@@ -17,7 +17,6 @@
 
    .. autosummary::
    
-      StatBuff
       train_PPO
    
    
