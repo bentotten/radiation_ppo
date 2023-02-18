@@ -17,35 +17,35 @@ import numpy as np
 import numpy.random as npr
 import numpy.typing as npt
 
-from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple, Type, Union
+from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, NamedTuple, Type, Union, Tuple
 from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
 
 # Simulation Environment
-import gym
+import gym  # type: ignore
 from gym_rad_search.envs import rad_search_env # type: ignore
 from gym_rad_search.envs.rad_search_env import RadSearch, StepResult  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # PPO
 try:
-    from ppo import OptimizationStorage, PPOBuffer, AgentPPO
+    from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
 except:
-    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO
+    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
 
 # Neural Networks
 try:
-    import NeuralNetworkCores.FF_core as RADFF_core
-    import NeuralNetworkCores.CNN_core as RADCNN_core
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core
+    import NeuralNetworkCores.FF_core as RADFF_core # type: ignore
+    import NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
 except:
-    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core
-    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core
+    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.CNN_core as RADCNN_core # type: ignore
+    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
 
 # Data Management Utility
 try:
-    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
+    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
 except:
     from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
 
@@ -110,7 +110,7 @@ class train_PPO:
     
     # Pass-through arguments
     logger_kwargs: EpochLoggerKwargs
-    ppo_kwargs: dict[str, Any] = field(default_factory= lambda: dict())
+    ppo_kwargs: Dict[str, Any] = field(default_factory= lambda: dict())
 
     # Random seed
     seed: int = field(default= 0)    
@@ -127,36 +127,36 @@ class train_PPO:
     # Rendering information
     render: bool = field(default= False)    
     save_freq: int = field(default= 500)
-    save_gif_freq: int = field(default= float('inf'))
+    save_gif_freq: Union[int, float] = field(default_factory= lambda:  float('inf'))
     save_gif: bool = field(default= False)
     render_first_episode: bool = field(default=True)     
     
     #: DEBUG mode adds extra print statements/rendering to train function
-    DEBUG: bool = field(default=False),
+    DEBUG: bool = field(default=False)
 
     # Initialized elsewhere
     #: Time experiment was started
-    start_time: float = field(default_factory= lambda: time.time()),    
+    start_time: float = field(default_factory= lambda: time.time())
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
-    stat_buffers: dict[int, StatBuff] = field(default_factory=lambda:dict())
+    stat_buffers: Dict[int, StatBuff] = field(default_factory=lambda:dict())
     #: Object that holds agents
-    agents: dict[int, AgentPPO] = field(default_factory=lambda:dict())
+    agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
     #: Object that holds agent loggers
-    loggers: dict[int, EpochLogger] = field(default_factory=lambda:dict())
+    loggers: Dict[int, EpochLogger] = field(default_factory=lambda:dict())
     
-    def __post_init__(self):  
+    def __post_init__(self)-> None:  
         # Set Pytorch random seed
         if self.seed:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)    
 
         # Save configuration   
-        config_json: dict[str, Any] = convert_json(locals())                       
+        config_json: Dict[str, Any] = convert_json(locals())                       
                                   
         # Instatiate loggers and save initial parameters in the first agent slot
         # TODO save configurations in parent directory
         for id in range(self.number_of_agents):
-            logger_kwargs_set: dict = setup_logger_kwargs(
+            logger_kwargs_set: Dict = setup_logger_kwargs(
                 exp_name=f"{self.logger_kwargs['exp_name']}_agent{id}",
                 seed=self.logger_kwargs['seed'],
                 data_dir=self.logger_kwargs['data_dir'],
@@ -176,7 +176,7 @@ class train_PPO:
             
             self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy        
                       
-    def train(self):
+    def train(self)-> None:
         ''' Function that executes training simulation. 
             #. Begin experiment.
             #. While epoch count is less than max epochs, 
@@ -195,12 +195,12 @@ class train_PPO:
         
         # Prepare environment variables and reset
         source_coordinates: npt.NDArray = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-        episode_return: dict[int, float] = {id: 0.0 for id in self.agents}
+        episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
         steps_in_episode: int = 0
         
         # Prepare epoch variables
-        out_of_bounds_count: dict[int, int] = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
-        terminal_counter: dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
+        out_of_bounds_count: Dict[int, int] = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
+        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
         # TODO move to PPO
         # Update stat buffers for all agent observations for later observation normalization
@@ -221,7 +221,7 @@ class train_PPO:
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
         for epoch in range(self.total_epochs):
             # Reset hidden layers and sets Actor into "eval" mode. For CNN, resets maps
-            hiddens: dict[int, tuple[tuple[torch.Tensor, torch.Tensor], torch.Tensor]] = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
+            hiddens: Dict[int, Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]] = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 for ac in self.agents.values():
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
@@ -252,9 +252,9 @@ class train_PPO:
                             standardized_observations[id][0] = np.clip((observations[id][0] - self.stat_buffers[id].mu) / self.stat_buffers[id].sig_obs, -8, 8)     
                         
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
-                agent_thoughts = {id: None for id in self.agents}
+                agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = {id: None for id in self.agents}
                 for id, ac in self.agents.items():
-                    agent_thoughts[id]: RADCNN_core.ActionChoice = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
+                    agent_thoughts[id] = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                     
                 # Create action list to send to environment
@@ -270,7 +270,7 @@ class train_PPO:
                 
                 # Incremement Counters and save new (individual) cumulative returns
                 for id in rewards:
-                    episode_return[id] += np.array(rewards[id], dtype="float32") 
+                    episode_return[id] += np.array(rewards[id], dtype="float32").item()
                 steps_in_episode += 1    
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
@@ -309,9 +309,9 @@ class train_PPO:
                         out_of_bounds_count[id] += 1
                                     
                 # Stopping conditions for episode
-                timeout = steps_in_episode == self.steps_per_episode
-                terminal = terminal_reached_flag or timeout
-                epoch_ended = steps_in_epoch == self.steps_per_epoch - 1
+                timeout: bool = steps_in_episode == self.steps_per_episode
+                terminal: bool = terminal_reached_flag or timeout
+                epoch_ended: bool = steps_in_epoch == self.steps_per_epoch - 1
 
                 if terminal or epoch_ended:
                     if epoch_ended and not (terminal):

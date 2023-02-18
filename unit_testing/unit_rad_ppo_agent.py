@@ -6,7 +6,7 @@ import numpy as np
 from algos.multiagent.NeuralNetworkCores.RADA2C_core import RNNModelActorCritic
 
 class TestAgentCreation(unittest.TestCase):
-    def setUp(self):
+    def setUp(self)-> None:
         number_of_agents: int = 2
         hid_pol: int = 32
         l_pol: int = 1

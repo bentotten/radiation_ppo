@@ -145,7 +145,7 @@ def count_matching_p(p1: Point, point_list: List[Point]) -> int:
     return count    
 
 
-def get_step_size(action: Action) -> float:
+def get_step_size(action: Union[Action, int]) -> float:
     """
     Return the step size for the given action.
     """
@@ -154,7 +154,7 @@ def get_step_size(action: Action) -> float:
 
 
 # TODO Get the new Y for an arbritrary action angle to work
-def get_y_step_coeff(action: int) -> float:
+def get_y_step_coeff(action: Union[Action, int]) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
@@ -165,7 +165,7 @@ def get_y_step_coeff(action: int) -> float:
 
 # TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
-def get_x_step_coeff(action: int, ) -> float:
+def get_x_step_coeff(action: Union[Action, int] ) -> float:
     '''
     action (Action): Scalar representing desired travel angle
     idle_action (Action): Action representing idle state (usually the maximum action)
@@ -174,7 +174,7 @@ def get_x_step_coeff(action: int, ) -> float:
     return get_y_step_coeff((action + 6) % 8) 
 
 
-def get_step(action: Action) -> Point:
+def get_step(action: Union[Action, int]) -> Point:
     # TODO needs updated documentation for arbritrary angles
     """
     Return the step offset for the given action, scaled
@@ -247,11 +247,11 @@ class Agent():
     action_sto: List = field(init=False)  # Stores actions for render
     terminal_sto: List = field(init=False)
 
-    def __post_init__(self):
+    def __post_init__(self)-> None:
         self.marker_color: Color = create_color(self.id)
         self.reset()
     
-    def reset(self):
+    def reset(self)-> None:
         self.obstacle_blocking = False
         self.out_of_bounds = False  
         self.out_of_bounds_count = 0
@@ -335,7 +335,7 @@ class RadSearch(gym.Env):
     DEBUG_DETECTOR_LOCATION: Point = Point((1000.0, 1000.0))  
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    def __post_init__(self):
+    def __post_init__(self)-> None:
         self.search_area: BBox = BBox(
             (
                 Point(
@@ -382,7 +382,7 @@ class RadSearch(gym.Env):
         ''' Test environemnt communication '''
         return 'PONG'
 
-    def step( self, action: Optional[Union[Action, Dict]] = None ) -> StepResult:
+    def step( self, action: Optional[Union[int, Dict, Action]] = None ) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
         Wrapper that captures gymAI env.step() and expands to include multiple agents for one "timestep". 
         Accepts literal action for single agent, or a Dict of agent-IDs and actions.
@@ -398,7 +398,7 @@ class RadSearch(gym.Env):
         """ 
         
         def agent_step(
-            action: Optional[Union[Action, None]], agent: Agent, proposed_coordinates: List[Point] = []
+            action: Optional[Union[int, Action]], agent: Agent, proposed_coordinates: List[Point] = []
         ) -> Tuple[npt.NDArray[np.float32], float, bool, Dict[Any, Any]]:
             """
             Method that takes an action and updates the detector position accordingly.
@@ -421,7 +421,7 @@ class RadSearch(gym.Env):
             measurement: Union[None, float] = None
             reward: Union[None, float] = None
                      
-            if self.take_action(agent, action, proposed_coordinates):
+            if self.take_action(agent=agent, action=action, proposed_coordinates=proposed_coordinates):
                 # Returns the length of a Polyline, which is a double
                 # https://github.com/tsaoyu/PyVisiLibity/blob/80ce1356fa31c003e29467e6f08ffdfbd74db80f/visilibity.cpp#L1398
                 agent.sp_dist: float = self.world.shortest_path(  # type: ignore
@@ -563,7 +563,7 @@ class RadSearch(gym.Env):
                 ) = agent_step(agent=self.agents[agent_id], action=a, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
-        else:
+        elif type(action) is Union[int, Action]:
             # Provides backwards compatability for single actions instead of action lists for single agents.
             if type(action) == int and len(self.agents) > 1:
                 print("WARNING: Passing single action to mutliple agents during step! Collision avoidance has been disabled!", file=sys.stderr)
@@ -574,8 +574,11 @@ class RadSearch(gym.Env):
                     aggregate_reward_result[agent_id], 
                     aggregate_success_result[agent_id],
                     aggregate_info_result[agent_id],
-                ) = agent_step(action=action, agent=agent)
+                ) = agent_step(action=action, agent=agent) # type: ignore
             self.iter_count += 1
+            
+        else:
+            raise ValueError("Incompatible Action type")
             
         # To meet Gym compliance, must be in form observation, reward, done, info            
         # if self.DEBUG:
@@ -592,7 +595,7 @@ class RadSearch(gym.Env):
         
         return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
 
-    def reset(self) -> StepResult:
+    def reset(self) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
         Method to reset the environment.
         """
@@ -642,8 +645,8 @@ class RadSearch(gym.Env):
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!   HARDCODE TEST DELETE ME  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! 
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         if self.DEBUG:  
-            self.intensity = np.int_(1000000)
-            self.bkg_intensity = np.int_(0)
+            self.intensity = np.array(1000000, dtype=np.int32).item()
+            self.bkg_intensity = np.array(0, dtype=np.int32).item()
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
         # Check if the environment is valid
@@ -658,7 +661,7 @@ class RadSearch(gym.Env):
         self.iter_count = 0
         return step
 
-    def take_action(self, agent: Agent, action: Optional[Action], proposed_coordinates: List, agent_id: int = 0) -> bool:
+    def take_action(self, agent: Agent, action: Optional[Union[Action, int]], proposed_coordinates: List, agent_id: int = 0) -> bool:
         """
         Method that checks which direction to move the detector based on the action.
         If the action moves the detector into an obstruction, the detector position
@@ -954,7 +957,7 @@ class RadSearch(gym.Env):
             vis.Line_Segment(
                 agent.detector, to_vis_p(sum_p(detector_p, get_step(action)))
             )
-            for action in cast(tuple[Directions], get_args(Directions))
+            for action in cast(Tuple[Directions], get_args(Directions))
         ]
         # TODO: Currently there are only eight actions -- what happens if we change that?
         # This annotation would need to change as well.
@@ -1034,7 +1037,7 @@ class RadSearch(gym.Env):
         qs: List[Point] = [from_vis_p(agent.detector)] * DETECTABLE_DIRECTIONS  # Offsets agent position by 0.1 to see if actually inside obstacle
         dists: List[float] = [0.0] * DETECTABLE_DIRECTIONS
         while not any(x_check):
-            for action in cast(tuple[Directions], get_args(Directions)):
+            for action in cast(Tuple[Directions], get_args(Directions)):
                 # Gets slight offset to remove effects of being "on" an obstruction
                 step = scale_p(
                     # TODO update once no longer using -1 as idle            
@@ -1068,13 +1071,13 @@ class RadSearch(gym.Env):
         data=[],
         measurements: Optional[List[float]] = None,
         location_estimate=None,
-    ):
+    )-> None:
         """
         Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
         """       
         reward_length = field(init=False) # Prevent from being unbound
         # Set up global saver (for changing colors of last graph's agents)      
-        self.plot_saver = {i: None for i in range(self.number_agents)}
+        self.plot_saver = {i: field(init=False) for i in range(self.number_agents)}
             
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
