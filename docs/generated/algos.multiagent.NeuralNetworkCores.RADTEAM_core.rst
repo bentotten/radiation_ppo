@@ -1,7 +1,7 @@
-﻿algos.multiagent.NeuralNetworkCores.CNN\_core
-=============================================
+﻿algos.multiagent.NeuralNetworkCores.RADTEAM\_core
+=================================================
 
-.. automodule:: algos.multiagent.NeuralNetworkCores.CNN_core
+.. automodule:: algos.multiagent.NeuralNetworkCores.RADTEAM_core
 
    
    
@@ -31,12 +31,14 @@
       ActionChoice
       Actor
       CCNBase
+      ConversionTools
       Critic
+      IntensityEstimator
       MapsBuffer
+      Normalizer
       PFGRUCell
       PFRNNBaseCell
-      RolloutBuffer
-      StatisticsBuffer
+      StatisticStandardization
    
    
 

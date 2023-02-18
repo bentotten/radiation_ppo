@@ -42,7 +42,7 @@ Contains the Actor-Critic neural networks augmented with the Particle Filter Gat
 .. autosummary::
    :toctree: generated
 
-   algos.multiagent.NeuralNetworkCores.CNN_core
+   algos.multiagent.NeuralNetworkCores.RADTEAM_core
 
 
 Auxiliary Overview

@@ -101,28 +101,6 @@ def discount_cumsum(
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
-# TODO is this necessary for our environment?
-@dataclass
-class StatBuff:
-    mu: float = 0.0
-    sig_sto: float = 0.0
-    sig_obs: float = 1.0
-    count: int = 0
-
-    def update(self, obs: float) -> None:
-        self.count += 1
-        if self.count == 1:
-            self.mu = obs
-        else:
-            mu_n = self.mu + (obs - self.mu) / (self.count)
-            s_n = self.sig_sto + (obs - self.mu) * (obs - mu_n)
-            self.mu = mu_n
-            self.sig_sto = s_n
-            self.sig_obs = max(math.sqrt(s_n / (self.count - 1)), 1)
-
-    def reset(self) -> None:
-        self = StatBuff()
-
 
 class PFRNNBaseCell(nn.Module):
     """parent class for PFRNNs"""

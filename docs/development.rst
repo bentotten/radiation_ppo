@@ -51,46 +51,46 @@ Neural Networks
 
 These are the compatible neural network frameworks.
 
-Convolutional Neural Networks (CNN)
-====================================
-This contains the CNN framework. See :ref:`Neural Networks Overview` for global types and variables.
+RAD-TEAM Augmented Actor-Critic with Convolutional Neural Networks
+====================================================================
+This contains the TEAMRAD framework. See :ref:`Neural Networks Overview` for global types and variables.
 
-RAD-TEAM Augmented Actor-Critic Model
+Augmented Actor-Critic Model
 --------------------------------------
 This contains the base class, the actor (policy) class, the critic (value) class, and the particle filter gated recurrent unit class/subclass (location prediction).
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.CCNBase
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.CCNBase
     :members:
 
 
 Observation to Map Processing 
 ------------------------------
-This contains tools for estimating the true radiation intensity value, standardizing it to one standard deviation from other samples, and normalizing it.
+This contains tools for estimating the true radiation intensity value, standardizing it to one standard deviation from other samples, and normalizing it. The normalization tool also 
+normalizes a total visitics count value for the visits count heatmap.
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.ConversionTools
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.ConversionTools
     :members:
 
 
 Intensity Sampling and Estimation
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.IntensityEstimator
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.IntensityEstimator
     :members:
 
 
-Standardizing Intensity Value
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Standardizing Intensity Value and Visits Counts
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.StatisticStandardization
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.StatisticStandardization
     :members:
 
 
 Normalizing Intensity Value
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.Normalizer 
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.Normalizer 
     :members:
-
 
 
 Maps Buffer
@@ -102,7 +102,7 @@ Auxiliary
 
 ActionChoice
 ^^^^^^^^^^^^^^
-.. autoclass:: algos.multiagent.NeuralNetworkCores.CNN_core.ActionChoice
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.ActionChoice
     :members:
 
 
