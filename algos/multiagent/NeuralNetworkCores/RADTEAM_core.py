@@ -167,15 +167,18 @@ class IntensityEstimator():
 class StatisticStandardization:
     ''' 
     Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares and products").
-    Because an Agent does not know the maximum radiation intensity it may encounter, it uses this estimated running sample mean and variance instead. 
+    Because an Agent collects observations online and does not know the intensity values it will encounter beforehand, it uses this estimated running sample mean and variance instead. 
     '''
     # TODO do we want to use numpy floats here?
-    #: Running mean
+    #: Running mean of entire dataset
     mu: float = 0.0
-    #: Squared distance from the mean
+    #: Aggregated squared distance from the mean
     sigma: float = 0.0 
     #: Sample standard-deviation
     sample_std: float = 1.0 
+    #: Sample variance
+    variance: float = 0.0 
+    
     #: Count of how many samples have been seen so far
     count: int = 0
             
@@ -210,7 +213,8 @@ class StatisticStandardization:
             sigma_new = self.sigma + (reading - self.mu) * (reading - mu_new)
             self.mu = mu_new
             self.sigma = sigma_new
-            self.sample_std = max(sqrt(sigma_new / (self.count - 1)), 1)
+            self.variance = sigma_new / (self.count - 1)
+            self.sample_std = max(sqrt(self.variance), 1)
             
         new_standard = self.standardize(reading=reading)
         if new_standard > self._max: self._max = new_standard
