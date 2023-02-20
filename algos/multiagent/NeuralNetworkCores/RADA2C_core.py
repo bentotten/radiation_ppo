@@ -197,11 +197,11 @@ class PFRNNBaseCell(nn.Module):
 
         return particles_new, prob_new
 
-    def reparameterize(self, mu: Tensor, var: Tensor) -> Tensor:
+    def reparameterize(self, mean: Tensor, var: Tensor) -> Tensor:
         """Implements the reparameterization trick introduced in [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
 
         Arguments:
-            mu {tensor} -- learned mean
+            mean {tensor} -- learned mean
             var {tensor} -- learned variance
 
         Returns:
@@ -209,7 +209,7 @@ class PFRNNBaseCell(nn.Module):
         """
         std: Tensor = F.softplus(var)
         eps: Tensor = torch.FloatTensor(std.shape).normal_()
-        return mu + eps * std
+        return mean + eps * std
 
 
 class PFGRUCell(PFRNNBaseCell):

@@ -170,14 +170,14 @@ class StatisticStandardization:
     Because an Agent collects observations online and does not know the intensity values it will encounter beforehand, it uses this estimated running sample mean and variance instead. 
     '''
     # TODO do we want to use numpy floats here?
-    #: Running mean of entire dataset
-    mu: float = 0.0
-    #: Aggregated squared distance from the mean
-    sigma: float = 0.0 
-    #: Sample standard-deviation
-    sample_std: float = 1.0 
-    #: Sample variance
-    variance: float = 0.0 
+    #: Running mean of entire dataset, represented by mu
+    mean: float = 0.0
+    #: Aggregated squared distance from the mean, represented by M_2
+    mean_squared: float = 0.0 
+    #: Sample variance, represented by s^2. This is used instead of the running variance to reduce bias.
+    sample_variance: float = 0.0 
+    #: Standard-deviation, represented by sigma
+    std: float = 1.0     
     
     #: Count of how many samples have been seen so far
     count: int = 0
@@ -187,7 +187,7 @@ class StatisticStandardization:
     _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
     
     def update(self, reading: float) -> None:
-        ''' Update estimate running sample mean and variance for standardizing radiation intensity readings. Also updates max standardized value 
+        ''' Update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized value 
             for normalization, if applicable.
             
             #. The existing mean is subtracted from the new reading to get the initial delta. 
@@ -207,14 +207,14 @@ class StatisticStandardization:
         
         self.count += 1
         if self.count == 1:
-            self.mu = reading  # For first reading, mu is equal to that reading
+            self.mean = reading  # For first reading, mean is equal to that reading
         else:
-            mu_new = self.mu + (reading - self.mu) / (self.count) 
-            sigma_new = self.sigma + (reading - self.mu) * (reading - mu_new)
-            self.mu = mu_new
-            self.sigma = sigma_new
-            self.variance = sigma_new / (self.count - 1)
-            self.sample_std = max(sqrt(self.variance), 1)
+            mean_new = self.mean + (reading - self.mean) / (self.count) 
+            mean_squared_new = self.mean_squared + (reading - self.mean) * (reading - mean_new)
+            self.mean = mean_new
+            self.mean_squared = mean_squared_new
+            self.sample_variance = mean_squared_new / (self.count - 1)
+            self.std = max(sqrt(self.sample_variance), 1)
             
         new_standard = self.standardize(reading=reading)
         if new_standard > self._max: self._max = new_standard
@@ -231,7 +231,7 @@ class StatisticStandardization:
             :param reading: (float) radiation intensity reading
             :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         '''
-        return (reading - self.mu) / self.sample_std
+        return (reading - self.mean) / self.std
 
     def get_max(self)-> float:
         ''' Return the current maximum standardized sample (updated during update function)'''
@@ -837,11 +837,11 @@ class PFRNNBaseCell(nn.Module):
 
         return particles_new, prob_new
 
-    def reparameterize(self, mu: torch.Tensor, var: torch.Tensor) -> torch.Tensor:
+    def reparameterize(self, mean: torch.Tensor, var: torch.Tensor) -> torch.Tensor:
         """Implements the reparameterization trick introduced in [Auto-Encoding Variational Bayes](https://arxiv.org/abs/1312.6114)
 
         Arguments:
-            mu {tensor} -- learned mean
+            mean {tensor} -- learned mean
             var {tensor} -- learned variance
 
         Returns:
@@ -849,7 +849,7 @@ class PFRNNBaseCell(nn.Module):
         """
         std: torch.Tensor = F.softplus(var)
         eps: torch.Tensor = torch.FloatTensor(std.shape).normal_()
-        return mu + eps * std
+        return mean + eps * std
 
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
