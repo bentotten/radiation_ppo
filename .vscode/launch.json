@@ -13,15 +13,6 @@
       "args": []
     },
     {
-      "name": "Python: Module",
-      "type": "python",
-      "request": "launch",
-      "module": "unittest",
-      "justMyCode": true,
-      "args": ["unit_testing/unit_rad_ppo_agent.py"],
-      "cwd": "${workspaceFolder}"
-    },
-    {
       "name": "RAD-A2C",
       "type": "python",
       //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
