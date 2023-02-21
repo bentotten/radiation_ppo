@@ -298,3 +298,41 @@ class Test_Normalizer:
 
         with pytest.raises(Warning):
             normalizer.normalize_incremental_logscale(current_value=10.0, base=10, increment_value=1)        
+            
+            
+class Test_ConversionTools:
+    def test_Init(self):
+        ''' Test the conversion tool initialization. Should initialize all desired objects'''
+
+        tools = RADTEAM_core.ConversionTools()
+        
+        assert isinstance(tools.last_coords, dict)
+        assert isinstance(tools.readings, RADTEAM_core.IntensityEstimator)
+        assert isinstance(tools.standardizer, RADTEAM_core.StatisticStandardization)
+
+
+    def test_Reset(self)-> None:
+        ''' Reset and clear all members '''
+        tools = RADTEAM_core.ConversionTools()
+        baseline = RADTEAM_core.ConversionTools()
+        baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
+        
+        baseline_readings = [a for a in dir(baseline.readings) if not a.startswith('__') and not callable(getattr(baseline.readings, a))]
+        baseline_standardizer = [a for a in dir(baseline.standardizer) if not a.startswith('__') and not callable(getattr(baseline.standardizer, a))]
+
+        tools.last_coords[(1, 1)] = [30, 20, 10]
+        tools.readings.update(value=1500, key=RADTEAM_core.Point((1,1)))
+        tools.standardizer.update(1500)
+        
+        tools.reset()
+
+        # Immediate members
+        for baseline_att, tools_att in zip(baseline_list, [a for a in dir(tools) if not a.startswith('__') and not callable(getattr(tools, a))]):
+            assert getattr(tools, tools_att) == getattr(baseline, baseline_att)
+            
+        # Stored class objects
+        for baseline_att, tools_att in zip(baseline_readings, [a for a in dir(tools.readings) if not a.startswith('__') and not callable(getattr(tools.readings, a))]):
+            assert getattr(tools.readings, tools_att) == getattr(baseline.readings, baseline_att)
+            
+        for baseline_att, tools_att in zip(baseline_standardizer, [a for a in dir(tools.standardizer) if not a.startswith('__') and not callable(getattr(tools.standardizer, a))]):
+            assert getattr(tools.standardizer, tools_att) == getattr(baseline.standardizer, baseline_att)            

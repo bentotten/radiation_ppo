@@ -328,10 +328,7 @@ class ConversionTools:
     standardizer: StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
     #: Normalization class for adjusting data to be between 0 and 1
     normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer()) 
-    
-    def __post_init__(self)-> None:
-        pass
-    
+
     def reset(self)-> None:
         ''' Reset and clear all members '''
         self.last_coords = CoordinateStorage(dict())
