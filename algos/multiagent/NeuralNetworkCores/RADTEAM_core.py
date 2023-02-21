@@ -251,22 +251,38 @@ class StatisticStandardization:
 @dataclass
 class Normalizer():
     ''' Normalization methods '''
+    _base_check: Any = field(default=None)
+    _increment_check: Any = field(default=None)
     
-    def normalize(self, current_value: Any, max: Any, min: Any = 0.0)-> float:
+    def normalize(self, current_value: Any, max: Any, min: Union[float, None] = None)-> float:
         ''' 
-            Standard linear normalization (without subtracting outliers). If min is below zero, the data will be shifted by the absolute value of the minimum
+            Standard linear normalization (without subtracting outliers) to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
             :param current_value: (Any) value to be normalized
             :param max: (Any) Maximum possible
         '''
+        # Check for edge cases and invalid inputs
         if current_value == 0:
             return 0.0
         assert max > 0, "Value error - Max is 0 but current value is not."
+        assert max >= current_value, "Value error - Current value is less than max"
         
-        if min < 0:
-            offset: Any = abs(min)
-            return (current_value + offset) / (max + offset)
-        else:
-            return current_value / max
+        # Process min (if current is negative, that is ok as it will be offset by min's absolute value)
+        offset: Union[float, int]
+        if min:
+            assert current_value >= min, "Value error - current is more than max."
+            offset = abs(min) if min < 0 else 0
+        # If no min provided, assume min == 0 and adjust negative current values
+        elif not min:
+            min = 0.0
+            # If current value is less than 0, it will always be offset to equal 0
+            if current_value < 0:
+                return 0
+            offset =  0
+        
+        result = ((current_value + offset) - (min + offset))  / ((max + offset) - (min + offset))
+        assert result >= 0 and result <= 1, "Normalization error"
+        return result
+
 
     def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2)-> float:
         ''' 
@@ -280,7 +296,22 @@ class Normalizer():
             :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
             :param increment_value (int): Value from shadow table is expected to increment by this amount every time  
         '''
+        
+        assert current_value >= 0 and base > 0 and increment_value > 0, "Value error - input was negative that should not be"
+        
+        # Warnings for different scales
+        if not self._base_check:
+            self._base_check = base
+        elif self._base_check != base:
+            raise Warning("Base mismatch from first use of this function! Ensure this was intentional")
+        if not self._increment_check:
+            self._increment_check = increment_value
+        if self._increment_check != increment_value:
+            raise Warning("increment mismatch from first use of this function! Ensure this was intentional")
+            
         result = (log(increment_value + current_value, base)) * 1/log(increment_value * base, base) # Put in range [0, 1]
+        assert result >= 0 and result <= 1, "Normalization error"
+        
         return result
 
         

@@ -124,6 +124,8 @@ class Test_IntensityEstimator:
         '''                
         estimator = RADTEAM_core.IntensityEstimator()
         baseline = RADTEAM_core.IntensityEstimator()
+        assert estimator is not baseline
+        
         baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
 
         # Add values        
@@ -228,3 +230,71 @@ class Test_StatisticStandardization:
         
         for baseline_att, stats_att in zip(baseline_list, [a for a in dir(stats) if not a.startswith('__') and not callable(getattr(stats, a))]):
             assert getattr(stats, stats_att) == getattr(baseline, baseline_att)
+            
+            
+class Test_Normalizer:
+    def test_Normalize(self):
+        ''' Test the normalization function. Should put between range of [0,1]'''
+        normalizer = RADTEAM_core.Normalizer()
+        
+        # Negative max, 0 max, or max that is smaller than current
+        with pytest.raises(AssertionError):
+            normalizer.normalize(current_value=1.0, max=0.0)
+
+        with pytest.raises(AssertionError):
+            normalizer.normalize(current_value=1.0, max=-1.0)
+            
+        with pytest.raises(AssertionError):
+            normalizer.normalize(current_value=100, max=1.0)            
+
+        # Min greater than current 
+        with pytest.raises(AssertionError):
+            normalizer.normalize(current_value=10, max=100, min=11)
+                   
+        # Processing without min, regular, zero, and negative values
+        assert normalizer.normalize(current_value=50, max=100) == 0.5
+        assert normalizer.normalize(current_value=-501.0, max=100) == 0.0
+        assert normalizer.normalize(current_value=0, max=100) == 0.0        
+        
+        # Process with min, regular, zero, and negative values
+        assert normalizer.normalize(current_value=50, max=100, min=10) == pytest.approx(0.4444444444444444)
+        assert normalizer.normalize(current_value=50, max=100, min=-10) == pytest.approx(0.5454545454545454)
+        assert normalizer.normalize(current_value=0, max=100, min=-10) == 0.0
+        assert normalizer.normalize(current_value=50, max=100, min=0) == pytest.approx(0.5)
+
+    def test_LogNormalize(self):
+        ''' Test the normalization function. Should put between range of [0,1]'''
+        normalizer = RADTEAM_core.Normalizer()
+        
+        # Test invalid inputs
+        with pytest.raises(AssertionError):
+            normalizer.normalize_incremental_logscale(current_value=-1.0, base=10)
+        with pytest.raises(AssertionError):
+            normalizer.normalize_incremental_logscale(current_value=1.0, base=-10)
+        with pytest.raises(AssertionError):
+            normalizer.normalize_incremental_logscale(current_value=1.0, base=0)            
+        with pytest.raises(AssertionError):
+            normalizer.normalize_incremental_logscale(current_value=1.0, base=10, increment_value=0)
+        with pytest.raises(AssertionError):            
+            normalizer.normalize_incremental_logscale(current_value=1.0, base=10, increment_value=-1)         
+
+        # Test normal
+        assert normalizer.normalize_incremental_logscale(current_value=4.0, base=10, increment_value=2) == pytest.approx(0.598104004)
+        assert normalizer.normalize_incremental_logscale(current_value=4.0, base=10, increment_value=2) == ( 
+                                                pytest.approx(normalizer.normalize_incremental_logscale(current_value=4.0, base=10)) )
+        # Test Max
+        assert normalizer.normalize_incremental_logscale(current_value=18.0, base=10, increment_value=2) == 1
+
+        # Test realistic min
+        assert normalizer.normalize_incremental_logscale(current_value=1.0, base=10, increment_value=2) == pytest.approx(0.366725791)
+        
+        # Test assert fail for out of boundaries
+        with pytest.raises(AssertionError):
+            normalizer.normalize_incremental_logscale(current_value=30.0, base=10, increment_value=2)
+            
+        # Test warning for change of base or increment value
+        with pytest.raises(Warning):
+            normalizer.normalize_incremental_logscale(current_value=10.0, base=100, increment_value=2)        
+
+        with pytest.raises(Warning):
+            normalizer.normalize_incremental_logscale(current_value=10.0, base=10, increment_value=1)        
