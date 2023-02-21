@@ -161,7 +161,8 @@ class IntensityEstimator():
         return True if key in self.readings else False
         
     def reset(self):
-        self.__init__()
+        ''' Reset class members to defaults '''
+        self.__init__()  # TODO after attributes have settled, write a proper reset function   
 
 
 @dataclass
@@ -170,11 +171,10 @@ class StatisticStandardization:
     Statistics buffer for standardizing intensity readings from environment (B. Welford, "Note on a method for calculating corrected sums of squares and products").
     Because an Agent collects observations online and does not know the intensity values it will encounter beforehand, it uses this estimated running sample mean and variance instead. 
     '''
-    # TODO do we want to use numpy floats here?
     #: Running mean of entire dataset, represented by mu
     mean: float = 0.0
     #: Aggregated squared distance from the mean, represented by M_2
-    mean_squared: float = 0.0 
+    square_dist_mean: float = 0.0 
     #: Sample variance, represented by s^2. This is used instead of the running variance to reduce bias.
     sample_variance: float = 0.0 
     #: Standard-deviation, represented by sigma
@@ -208,20 +208,19 @@ class StatisticStandardization:
         
         self.count += 1
         if self.count == 1:
-            self.mean = reading  # For first reading, mean is equal to that reading
+            self.mean = reading  # For first reading, mean is equal to that reading        
         else:
             mean_new = self.mean + (reading - self.mean) / (self.count) 
-            mean_squared_new = self.mean_squared + (reading - self.mean) * (reading - mean_new)
+            square_dist_mean_new = self.square_dist_mean + (reading - self.mean) * (reading - mean_new)
             self.mean = mean_new
-            self.mean_squared = mean_squared_new
-            self.sample_variance = mean_squared_new / (self.count - 1)
+            self.square_dist_mean = square_dist_mean_new
+            self.sample_variance = square_dist_mean_new / (self.count - 1)
             self.std = max(sqrt(self.sample_variance), 1)
             
         new_standard = self.standardize(reading=reading)
         if new_standard > self._max: self._max = new_standard
         if new_standard < self._min: self._min = new_standard
-        
-            
+             
     def standardize(self, reading: float) -> float:
         ''' 
             Standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
@@ -232,6 +231,8 @@ class StatisticStandardization:
             :param reading: (float) radiation intensity reading
             :return: (float) Standardized radiation reading (z-score) where all existing samples have a std of 1
         '''
+        assert reading >= 0
+                
         return (reading - self.mean) / self.std
 
     def get_max(self)-> float:
@@ -243,8 +244,8 @@ class StatisticStandardization:
         return self._min
 
     def reset(self) -> None:
-        ''' Reset statistics buffer '''
-        self.__init__()
+        ''' Reset class members to defaults '''
+        self.__init__()  # TODO after attributes have settled, write a proper reset function
 
 
 @dataclass
