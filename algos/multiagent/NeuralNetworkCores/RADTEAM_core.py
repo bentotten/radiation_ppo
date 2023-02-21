@@ -102,6 +102,7 @@ class IntensityEstimator():
     def update(self, key: Point, value: float)-> None:
         ''' 
             Adds value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
+            Note that the max/min is the ESTIMATE of the true value, not the observed value.
             :param value: (float) Sampled radiation intensity value
             :param key: (Point) Coordinates where radiation intensity (value) was sampled
         '''
@@ -111,9 +112,17 @@ class IntensityEstimator():
             self.readings[key] = [value]
         
         estimate = self.get_estimate(key)
-        if estimate > self._max: self._max = estimate
-        if estimate < self._min: self._min = estimate
+        if estimate > self._max or self._max == 0: self._set_max(estimate)
+        if estimate < self._min or self._min == 0: self._set_min(estimate)
+
+    def _set_max(self, value: float)-> None:
+        ''' Set the maximum radiation reading estimated thus far.'''
+        self._max = value
         
+    def _set_min(self, value: float)-> None:
+        ''' Set the minimum radiation reading estimated thus far.'''
+        self._min = value
+            
     def get_buffer(self, key: Point)-> List:
         ''' 
             Returns existing buffer for key. Raises exception if key does not exist.
@@ -136,31 +145,23 @@ class IntensityEstimator():
     def get_max(self)-> float:
         ''' 
             Return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
-            NOTE: this is the maximum estimate, not the maximum value seen thus far. 
+            NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
         '''
         return self._max
         
     def get_min(self)-> float:
         ''' 
             Return the minimum radiation reading estimated thus far. 
-            NOTE: this is the minimum estimate, not the maximum value seen thus far.
+            NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
         '''
         return self._min
-    
-    def set_max(self, value: float)-> None:
-        ''' Set the maximum radiation reading estimated thus far.'''
-        self._max = value
-        
-    def set_min(self, value: float)-> None:
-        ''' Set the minimum radiation reading estimated thus far.'''
-        self._min = value
-            
+
     def check_key(self, key: Point):
         ''' Check if coordinates (key) exist in hashtable '''
         return True if key in self.readings else False
         
     def reset(self):
-        self = IntensityEstimator()
+        self.__init__()
 
 
 @dataclass
@@ -243,7 +244,7 @@ class StatisticStandardization:
 
     def reset(self) -> None:
         ''' Reset statistics buffer '''
-        self = StatisticStandardization()
+        self.__init__()
 
 
 @dataclass
