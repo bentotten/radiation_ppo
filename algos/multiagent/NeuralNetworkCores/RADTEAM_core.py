@@ -101,7 +101,7 @@ class IntensityEstimator():
     
     def update(self, key: Point, value: float)-> None:
         ''' 
-            Adds value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
+            Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
             Note that the max/min is the ESTIMATE of the true value, not the observed value.
             :param value: (float) Sampled radiation intensity value
             :param key: (Point) Coordinates where radiation intensity (value) was sampled
@@ -116,16 +116,16 @@ class IntensityEstimator():
         if estimate < self._min or self._min == 0: self._set_min(estimate)
 
     def _set_max(self, value: float)-> None:
-        ''' Set the maximum radiation reading estimated thus far.'''
+        ''' Method to set the maximum radiation reading estimated thus far.'''
         self._max = value
         
     def _set_min(self, value: float)-> None:
-        ''' Set the minimum radiation reading estimated thus far.'''
+        ''' Method to set the minimum radiation reading estimated thus far.'''
         self._min = value
             
     def get_buffer(self, key: Point)-> List:
         ''' 
-            Returns existing buffer for key. Raises exception if key does not exist.
+            Method to return existing buffer for key. Raises exception if key does not exist.
             :param value: (float) Sampled radiation intensity value
             :param key: (Point) Coordinates where radiation intensity (value) was sampled
         '''      
@@ -135,7 +135,7 @@ class IntensityEstimator():
         
     def get_estimate(self, key: Point)-> float:
         ''' 
-            Returns radiation estimate for current coordinates. Raises exception if key does not exist.
+            Method to returns radiation estimate for current coordinates. Raises exception if key does not exist.
             :param key: (Point) Coordinates for desired radiation intensity estimate
         '''      
         if not self.check_key(key=key):
@@ -144,24 +144,24 @@ class IntensityEstimator():
 
     def get_max(self)-> float:
         ''' 
-            Return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
+            Method to return the maximum radiation reading estimated thus far. This can be used for normalization in simple normalization mode.
             NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
         '''
         return self._max
         
     def get_min(self)-> float:
         ''' 
-            Return the minimum radiation reading estimated thus far. 
+            Method to return the minimum radiation reading estimated thus far. 
             NOTE: the max/min is the ESTIMATE of the true value, not the observed value.
         '''
         return self._min
 
     def check_key(self, key: Point):
-        ''' Check if coordinates (key) exist in hashtable '''
+        ''' Method to check if coordinates (key) exist in hashtable '''
         return True if key in self.readings else False
         
     def reset(self):
-        ''' Reset class members to defaults '''
+        ''' Method to reset class members to defaults '''
         self.__init__()  # TODO after attributes have settled, write a proper reset function   
 
 
@@ -188,7 +188,7 @@ class StatisticStandardization:
     _min: float = field(default=0.0)  # Minimum radiation reading estimate. This is used for shifting normalization data in the case of a negative.
     
     def update(self, reading: float) -> None:
-        ''' Update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized value 
+        ''' Method to update estimate running mean and sample variance for standardizing radiation intensity readings. Also updates max standardized value 
             for normalization, if applicable.
             
             #. The existing mean is subtracted from the new reading to get the initial delta. 
@@ -223,7 +223,7 @@ class StatisticStandardization:
              
     def standardize(self, reading: float) -> float:
         ''' 
-            Standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
+            Method to standardize input data using the Z-score method by by subtracting the mean and dividing by the standard deviation. 
             Standardizing input data increases training stability and speed. Once the standardization is done, all the features will have a mean of zero and a standard deviation of one, 
             and thus, the same scale. NOTE: Because the first reading will always be standardized to zero, it is important to standardize after a reset before the first step to ensure 
             first steps reading is not wasted.
@@ -236,15 +236,15 @@ class StatisticStandardization:
         return (reading - self.mean) / self.std
 
     def get_max(self)-> float:
-        ''' Return the current maximum standardized sample (updated during update function)'''
+        ''' Method to return the current maximum standardized sample (updated during update function)'''
         return self._max
     
     def get_min(self)-> float:
-        ''' Return the current minimum standardized sample (updated during update function)'''
+        ''' Method to return the current minimum standardized sample (updated during update function)'''
         return self._min
 
     def reset(self) -> None:
-        ''' Reset class members to defaults '''
+        ''' Method to reset class members to defaults '''
         self.__init__()  # TODO after attributes have settled, write a proper reset function
 
 
@@ -256,14 +256,13 @@ class Normalizer():
     
     def normalize(self, current_value: Any, max: Any, min: Union[float, None] = None)-> float:
         ''' 
-            Standard linear normalization (without subtracting outliers) to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
+            Method to do min-max normalization to the range [0,1]. If min is below zero, the data will be shifted by the absolute value of the minimum
             :param current_value: (Any) value to be normalized
             :param max: (Any) Maximum possible
         '''
         # Check for edge cases and invalid inputs
         if current_value == 0:
             return 0.0
-        assert max > 0, "Value error - Max is 0 but current value is not."
         assert max >= current_value, "Value error - Current value is less than max"
         
         # Process min (if current is negative, that is ok as it will be offset by min's absolute value)
@@ -278,6 +277,8 @@ class Normalizer():
             if current_value < 0:
                 return 0
             offset =  0
+
+        assert max + offset > 0, "Value error - Max is 0 but current value is not."
         
         result = ((current_value + offset) - (min + offset))  / ((max + offset) - (min + offset))
         assert result >= 0 and result <= 1, "Normalization error"
@@ -286,7 +287,7 @@ class Normalizer():
 
     def normalize_incremental_logscale(self, current_value: Any, base: Any, increment_value: int = 2)-> float:
         ''' 
-            Normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
+            Method to normalize on a logarithmic scale. This is specifically for a value that increases incrementally every time.
             For TEAM-RAD, every time an agent accesses a grid coordinate, a visits count shadow table is incremented by 1.
             That value is multiplied by the increment_value (here using 2 due to log(1) == 0) and the log is taken. This value
             is then multiplied by 1/ the increment value multiplied by the base in order to put it between 0 and 1. The base is 
@@ -330,7 +331,7 @@ class ConversionTools:
     normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer()) 
 
     def reset(self)-> None:
-        ''' Reset and clear all members '''
+        ''' Method to reset and clear all members '''
         self.last_coords = CoordinateStorage(dict())
         self.readings.reset()
         self.standardizer.reset()
@@ -338,102 +339,139 @@ class ConversionTools:
 
 @dataclass()
 class MapsBuffer:        
+    ''' Handles all maps operations. Holds the locations maps, readings map, visit counts maps, and obstacles map. 
+        Additionally holds toolbox to convert observations into normalized/standardized values and updates maps with these values.
+        
+        5 maps: 
+        
+        * Location Map: a 2D matrix showing the individual agent's location.
+        
+        * Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
+        
+        * Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
+        
+        * Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
+        
+        * Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
+        
+        :param observation_dimension: (int) Shape of state space. This is how many elements are in the observation array that is returned from the environment. For Rad-Search, this should be 11.
+        :param steps_per_episode: (int) Maximum steps per episode. This is used for the base calculation for the log_normalizing for visit counts in visits map.
+        :param number_of_agents: (int) Total number of agents. This is used for the base calculation for the log_normalizing for visit counts in visits map.
+        
+        :param grid_bounds: (tuple) Initial grid boundaries for the scaled x and y coordinates observed from the environment. For Rad-Search, these are scaled to the range [0, 1], 
+            so the default bounds are 1x1. Defaults to (1, 1).
+            
+        :param resolution_accuracy: This is the value to multiply grid bounds and agent coordinates by to inflate them to a more useful size. This is calculated by the CNNBase class
+            and indicates the level of accuracy desired. For this class, its function is to inflate grid coordinates to the appropriate size in order to convert an observation into a
+            map stack. Defaults to 22, where the graph is inflated to a 22x22 grid + offset.
+            
+        :param offset: Scaled offset for when boundaries are different than "search area". This parameter increases the number of nodes around the "search area" to accomodate possible 
+            detector positions in the bounding-box area that are not in the search area. Further clarification: In the Rad-Search environment, the bounding box indicates the rendered
+            grid area, however the search area is where agents, sources, and obstacles spawn. Due to limits with the visilibity library and obstacle generation, there needed to be two 
+            grids to contain them. Default is 0.22727272727272727 to increase the grid size to 27.
+            
+        :param obstacle_state_offset: Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords. 
+            Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.          
     '''
-    5 maps: 
-        1. Location Map: a 2D matrix showing the individual agent's location.
-        2. Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
-        3. Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
-        4. Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-        5. Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
-    '''
+    #TODO change env return to a named tuple instead.   
     # Inputs
-    observation_dimension: int  # Shape of state space aka how many elements in the observation returned from the environment
-    max_size: int  # steps_per_epoch
-    steps_per_episode: int # Used for normalizing visits count in visits map
+    observation_dimension: int  
+    steps_per_episode: int # 
     number_of_agents: int # Used for normalizing visists count in visits map
             
-    # Parameters
-    grid_bounds: Tuple = field(default_factory= lambda: (1,1))  # Initial grid bounds for state x and y coordinates. For RADPPO, these are scaled to be below 0, so bounds are 1x1
-    resolution_accuracy: float = field(default=100) # How much to multiply grid bounds and state coordinates by. 100 will return to full accuracy for RADPPO
-    obstacle_state_offset: int = field(default=3) # Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords
-    offset: float = field(default=0)  # Offset for when boundaries are different than "search area".
+    # Option Parameters
+    grid_bounds: Tuple = field(default_factory= lambda: (1,1)) 
+    resolution_accuracy: float = field(default=22.0) 
+    offset: float = field(default=0.22727272727272727) 
+    obstacle_state_offset: int = field(default=3)     
     
     # Initialized elsewhere
-    x_limit_scaled: int = field(init=False)  # maximum x value in maps
-    y_limit_scaled: int = field(init=False)  # maximum y value in maps
-    map_dimensions: Tuple = field(init=False)  # Scaled dimensions of each map - used to create the CNNs
-    base: int = field(init=False) # Base for log() for visit count map normalization
+    #: Maximum x bound in observation maps, used to fill observation maps with zeros during initialization. This defaults to 27.
+    x_limit_scaled: int = field(init=False) 
+    #: Maximum y bound in observation maps, used to fill observation maps with zeros during initialization. This defaults to 27. 
+    y_limit_scaled: int = field(init=False)
+    #: Actual dimensions of each map. These need to match the convolutional setup in order to not cause errors when being processed by the linear layer during action selection (and state-value estimating).
+    #:  this defaults to (27, 27).
+    map_dimensions: Tuple = field(init=False)
+    #: The base for log() for visit count map normalization. This is equivilant to the maximum number of steps possible in one location, T*n where T is the maximum number of steps per episode and n is the 
+    #:  number of agents.
+    base: int = field(init=False) 
         
     # Maps
-    location_map: Map = field(init=False)  # Location Map: a 2D matrix showing the individual agent's location.
-    others_locations_map: Map = field(init=False)  # Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).
-    readings_map: Map = field(init=False)  # Readings map: a grid of the last reading collected in each grid square - unvisited squares are given a reading of 0.
-    obstacles_map: Map = field(init=False) # bstacles Map: a grid of how far from an obstacle each agent was when they detected it
-    visit_counts_map: Map = field(init=False) # Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-    visit_counts_shadow: Dict = field(default_factory=lambda: dict()) # Due to lazy allocation and python floating point precision, it is cheaper to calculate the log on the fly with a second sparce matrix than to inflate a log'd number
+    #: Location Map: a 2D matrix showing the individual agent's location.
+    location_map: Map = field(init=False) 
+    #: Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).    
+    others_locations_map: Map = field(init=False)
+    #: Readings map: a grid of the last estimated reading in each grid square - unvisited squares are given a reading of 0.
+    readings_map: Map = field(init=False)  
+    #: Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
+    obstacles_map: Map = field(init=False) 
+    #: Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
+    visit_counts_map: Map = field(init=False) 
+    #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization to reduce computational complexity and python floating 
+    #:  point precision errors, it is "cheaper" to calculate the log on the fly with a second sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
+    visit_counts_shadow: Dict = field(default_factory=lambda: dict()) 
     
     # Buffers
+    #: Data preprocessing tools for standardization, normalization, and estimating values in order to input into a observation map.
     tools: ConversionTools = field(default_factory=lambda: ConversionTools())
+    #: This needs to be moved to PPO, but currently holds a set of stackable maps in an experience buffer to later be used for updates.
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
 
     def __post_init__(self)-> None:
+        # Set logrithmic base for visits counts normalization
         self.base = self.steps_per_episode * self.number_of_agents
         
-        # Scaled maps
+        # Calculate map x and y bounds for observation maps
         self.map_dimensions = (
             int(self.grid_bounds[0] * self.resolution_accuracy) + int(self.offset  * self.resolution_accuracy),
             int(self.grid_bounds[1] * self.resolution_accuracy) + int(self.offset  * self.resolution_accuracy)
         )
         self.x_limit_scaled: int = self.map_dimensions[0]
-        self.y_limit_scaled: int = self.map_dimensions[1]    
+        self.y_limit_scaled: int = self.map_dimensions[1]
+        
+        # Initialize maps and buffer
         self.clear()
 
     def clear_maps(self)-> None:
-        ''' Clear maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
-        # TODO rethink this, this is very slow
-        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  # TODO rethink this, this is very slow - potentially change to torch or keep a ref count?
+        ''' Method to clear and reset maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.visit_counts_shadow.clear() # Stored tuples (x, y, 2(i)) where i increments every hit
-        self.tools.reset()
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.visit_counts_shadow.clear()
+        self.tools.reset()                
         
     def clear(self)-> None:
-        ''' Clear maps and buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations'''
+        ''' Method to reset maps AND reset buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations
+        '''
+        # TODO delete this after moving observation buffer to PPO.
         del self.observation_buffer[:]
         self.clear_maps()        
         
     def observation_to_map(self, observation: Dict[int, list], id: int
                      ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
         '''
-        Convert an 11-element observation dictionary from all agents into maps. Normalize Data
+        Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation.
         
-        observation (Dict): observations from environment for all agents
-            id (int): ID of agent to reference in observation object 
-            
-            Returns a Tuple of 2d map arrays
+        :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
+        :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
+        :return: Returns a tuple of five 2d map arrays.
         '''
+        # Calculate current agent inflated location
+        deflated_x_coordinate = observation[id][1]
+        deflated_y_coordinate = observation[id][2]
+        inflated_agent_coordinates: Tuple[int, int] = (int(deflated_x_coordinate * self.resolution_accuracy), int(deflated_y_coordinate * self.resolution_accuracy))
+        inflated_last_coordinates: Union[Tuple[int, int], None] = (
+                int(self.tools.last_coords[id][0] * self.resolution_accuracy), int(self.tools.last_coords[id][1] * self.resolution_accuracy)
+            ) if self.tools.last_coords else None
+            
+        self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
         
-        # TODO Remove redundant calculations and massively consolidate
-        
-        # Process observation for current agent's locations map
-        deflated_x = observation[id][1]
-        deflated_y = observation[id][2]
-        current_a_scaled_coordinates: Tuple[int, int] = (int(deflated_x * self.resolution_accuracy), int(deflated_y * self.resolution_accuracy))        
-        # Capture current and reset previous location
-        if self.tools.last_coords:
-            last_coords = self.tools.last_coords[id]
-            scaled_last_coordinates = (int(last_coords[0] * self.resolution_accuracy), int(last_coords[1] * self.resolution_accuracy))
-            x_old = int(scaled_last_coordinates[0])
-            y_old = int(scaled_last_coordinates[1])
-            self.location_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
-            assert self.location_map[x_old][y_old] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."
-        # Set new location
-        current_a_x: int = int(current_a_scaled_coordinates[0])
-        current_a_y: int = int(current_a_scaled_coordinates[1])
-        self.location_map[current_a_x][current_a_y] = 1
-        
+        for agent_id in observation:
+            _update_other_agent_locations_map(id=agent_id)
+            
         ### Process observation for other agent's locations map
         for other_agent_id in observation:
             # Do not add current agent to other_agent map
@@ -492,10 +530,6 @@ class MapsBuffer:
                 current = 0
                 self.visit_counts_shadow[visits_scaled_coordinates] = 2
 
-            # Sanity check
-            if self.visit_counts_map[readings_x][readings_y] != 0.0:
-                print(self.visit_counts_shadow[visits_scaled_coordinates])
-
             if SIMPLE_NORMALIZATION:
                 self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize(current_value=current, max=self.base)
             else: 
@@ -521,6 +555,28 @@ class MapsBuffer:
         
         return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
 
+    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+        ''' 
+            Method to update the current agents location observation map. If prior location exists, this is reset to zero.
+            
+            :param current_coordinates: (Point) Inflated current location of agent
+            :param last_coordindates: (Point) Inflated previous location of agent. Note: These must be ints.
+            :return: None
+        '''
+        if last_coordinates:
+            self.location_map[last_coordinates[0]][last_coordinates[1]] -= 1 
+            assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
+        self.location_map[current_coordinates[0]][current_coordinates[1]] = 1 
+
+    def _update_other_agent_locations_map(self, id: int, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+        ''' 
+            Method to update the other-agent locations observation map. If prior location exists, this is reset to zero.
+            
+            :param id: (int) ID of current agent being processed
+            :param current_coordinates: (Point) Inflated current location of agent to be processed
+            :param last_coordindates: (Point) Inflated previous location of agent to be processed. Note: These must be ints.
+            :return: None
+        '''
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
@@ -1018,9 +1074,6 @@ class CCNBase:
     :param observation_space: (int) Also called state-space or state-dimensions. The dimensions of the observation returned from the environment.For rad-search this will 
         be 11, for the 11 elements of the observation array. This is used for the PFGRU. Future work: make observation-to-map function accomodate differently sized state-spaces.
         
-    :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
-        Used for determining stackable map buffer max size.
-        
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment. Used
         for resolution accuracy calculation and during normalization of visits-counts map and a multiplier for the log base.  
         
@@ -1051,7 +1104,6 @@ class CCNBase:
     id: int    
     action_space: int
     observation_space: int
-    steps_per_epoch: int
     steps_per_episode: int
     number_of_agents: int
     detector_step_size: int  # No default to ensure changes to step size in environment are propogated to this function
@@ -1094,7 +1146,6 @@ class CCNBase:
         # Initialize buffers and neural networks
         self.maps = MapsBuffer(
                 observation_dimension = self.observation_space,
-                max_size=self.steps_per_epoch,
                 grid_bounds=self.grid_bounds, 
                 resolution_accuracy=self.resolution_accuracy,
                 offset=self.scaled_offset,
@@ -1113,11 +1164,11 @@ class CCNBase:
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
 
     def set_reading(self, observation: npt.NDArray):
-        ''' Updates radiation standardization for rolling standardization module outside of a step'''
+        ''' Method to Update radiation standardization for rolling standardization module outside of a step'''
         self.maps.tools.standardizer.update(observation[0])
         
     def select_action(self, state_observation: Dict[int, list], id: int, save_map=True) -> ActionChoice:
-        ''' Takes a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
+        ''' Method to take a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
             to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
         '''

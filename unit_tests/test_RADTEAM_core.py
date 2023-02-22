@@ -245,18 +245,21 @@ class Test_Normalizer:
             normalizer.normalize(current_value=1.0, max=-1.0)
             
         with pytest.raises(AssertionError):
-            normalizer.normalize(current_value=100, max=1.0)            
-
+            normalizer.normalize(current_value=100, max=1.0)
+            
+        # Test negative current with zero max
+        assert normalizer.normalize(current_value=-50.0, max=0.0) == 0
+        
         # Min greater than current 
         with pytest.raises(AssertionError):
             normalizer.normalize(current_value=10, max=100, min=11)
                    
-        # Processing without min, regular, zero, and negative values
+        # Processing without min, regular, zero, and negative values for current
         assert normalizer.normalize(current_value=50, max=100) == 0.5
         assert normalizer.normalize(current_value=-501.0, max=100) == 0.0
         assert normalizer.normalize(current_value=0, max=100) == 0.0        
         
-        # Process with min, regular, zero, and negative values
+        # Process with min, regular, zero, and negative values for min
         assert normalizer.normalize(current_value=50, max=100, min=10) == pytest.approx(0.4444444444444444)
         assert normalizer.normalize(current_value=50, max=100, min=-10) == pytest.approx(0.5454545454545454)
         assert normalizer.normalize(current_value=0, max=100, min=-10) == 0.0
@@ -320,7 +323,7 @@ class Test_ConversionTools:
         baseline_readings = [a for a in dir(baseline.readings) if not a.startswith('__') and not callable(getattr(baseline.readings, a))]
         baseline_standardizer = [a for a in dir(baseline.standardizer) if not a.startswith('__') and not callable(getattr(baseline.standardizer, a))]
 
-        tools.last_coords[(1, 1)] = [30, 20, 10]
+        tools.last_coords[(1, 1)] = [30, 20, 10] # type: ignore
         tools.readings.update(value=1500, key=RADTEAM_core.Point((1,1)))
         tools.standardizer.update(1500)
         

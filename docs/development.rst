@@ -63,12 +63,15 @@ This contains the base class, the actor (policy) class, the critic (value) class
     :members:
 
 
-Observation to Map Processing 
+Map Handling 
 ------------------------------
-This contains tools for estimating the true radiation intensity value, standardizing it to one standard deviation from other samples, and normalizing it. The normalization tool also 
-normalizes a total visitics count value for the visits count heatmap.
+Storage of maps and conversion from observations to maps.
 
 .. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.ConversionTools
+    :members:
+
+
+.. autoclass:: algos.multiagent.NeuralNetworkCores.RADTEAM_core.MapsBuffer
     :members:
 
 

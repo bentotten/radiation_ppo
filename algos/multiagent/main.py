@@ -405,7 +405,6 @@ def main() -> None:
         ac_kwargs=dict(
             action_space=env.detectable_directions,
             observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
-            steps_per_epoch=args.steps_per_epoch,
             steps_per_episode=args.steps_per_episode,
             number_of_agents=args.agent_count,
             detector_step_size=env.step_size,
