@@ -22,6 +22,8 @@ import matplotlib.pyplot as plt # type: ignore
 Point = NewType("Point", Tuple[float, float])
 #: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
 Map = NewType("Map", npt.NDArray[np.float32])
+#: [New Type] Mapstack - a Tuple of all existing maps.
+MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map])
 #: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. Type: Dict[str, Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
@@ -297,7 +299,6 @@ class Normalizer():
             :param base: (Any) Maximum possible value (steps per episode multiplied by the number of agents)
             :param increment_value (int): Value from shadow table is expected to increment by this amount every time  
         '''
-        
         assert current_value >= 0 and base > 0 and increment_value > 0, "Value error - input was negative that should not be"
         
         # Warnings for different scales
@@ -450,8 +451,7 @@ class MapsBuffer:
         del self.observation_buffer[:]
         self.clear_maps()        
         
-    def observation_to_map(self, observation: Dict[int, list], id: int
-                     ) -> Tuple[npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32], npt.NDArray[np.float32]]:  
+    def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation.
         
@@ -459,108 +459,70 @@ class MapsBuffer:
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
         :return: Returns a tuple of five 2d map arrays.
         '''
-        # Calculate current agent inflated location
-        deflated_x_coordinate = observation[id][1]
-        deflated_y_coordinate = observation[id][2]
-        inflated_agent_coordinates: Tuple[int, int] = (int(deflated_x_coordinate * self.resolution_accuracy), int(deflated_y_coordinate * self.resolution_accuracy))
-        inflated_last_coordinates: Union[Tuple[int, int], None] = (
-                int(self.tools.last_coords[id][0] * self.resolution_accuracy), int(self.tools.last_coords[id][1] * self.resolution_accuracy)
-            ) if self.tools.last_coords else None
-            
-        self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
-        
-        for agent_id in observation:
-            _update_other_agent_locations_map(id=agent_id)
-            
-        ### Process observation for other agent's locations map
-        for other_agent_id in observation:
-            # Do not add current agent to other_agent map
-            if other_agent_id != id:
-                others_scaled_coordinates = (int(observation[other_agent_id][1] * self.resolution_accuracy), int(observation[other_agent_id][2] * self.resolution_accuracy))
-                # Capture current and reset previous location
-                if self.tools.last_coords:
-                    last_coords = self.tools.last_coords[other_agent_id]
-                    scaled_last_coordinates = (int(last_coords[0] * self.resolution_accuracy), int(last_coords[1] * self.resolution_accuracy))
-                    x_old = int(scaled_last_coordinates[0])
-                    y_old = int(scaled_last_coordinates[1])
-                    self.others_locations_map[x_old][y_old] -= 1 # In case agents are at same location, usually the start-point
-                    assert self.others_locations_map[x_old][y_old] > -1, "Location map grid coordinate reset where agent was not present"
-        
-                # Set new location
-                other_a_x: int = int(others_scaled_coordinates[0])
-                other_a_y: int = int(others_scaled_coordinates[1])
-                self.others_locations_map[other_a_x][other_a_y] += 1  # Initial agents begin at same location        
-
-        ### Process observation for readings_map   
-        for agent_id in observation:
-            readings_scaled_coordinates: Tuple[int, int] = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
-            readings_x: int = int(readings_scaled_coordinates[0])
-            readings_y: int = int(readings_scaled_coordinates[1])
-            
-            # Inflate coordinates
-            unscaled_coordinates: Point = Point((observation[agent_id][1], observation[agent_id][2]))
-            assert len(self.tools.readings.get_buffer(key=unscaled_coordinates)) > 0 
-            
-            # Get estimated reading and save new max for later normalization
-            estimated_reading: float = self.tools.readings.get_estimate(key=unscaled_coordinates)
-            
-            # Normalize
-            self.tools.standardizer.update(estimated_reading)                
-            standardized_reading = self.tools.standardizer.standardize(estimated_reading)  # Put reading on same scale as other observations sampled thus far
-            normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())  # Normalize that value to match other heatmaps
-            assert normalized_reading <= 1.0 and normalized_reading >= 0.0
-            
-            if normalized_reading > 0:
-                self.readings_map[readings_x][readings_y] = normalized_reading 
-            else:
-                assert normalized_reading >= 0
-
-        ### Process observation for visit_counts_map
-        for agent_id in observation:
-            visits_scaled_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))            
-            visits_x = int(visits_scaled_coordinates[0])
-            visits_y = int(visits_scaled_coordinates[1])
-
-            # Increment shadow table
-            # If visited before, fetch counter from shadow table, else create shadow table entry
-            if visits_scaled_coordinates in self.visit_counts_shadow.keys():
-                current = self.visit_counts_shadow[visits_scaled_coordinates]
-                self.visit_counts_shadow[visits_scaled_coordinates] += 2
-            else:
-                current = 0
-                self.visit_counts_shadow[visits_scaled_coordinates] = 2
-
-            if SIMPLE_NORMALIZATION:
-                self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize(current_value=current, max=self.base)
-            else: 
-                self.visit_counts_map[visits_x][visits_y] = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
-                if self.visit_counts_map[visits_x][visits_y] == 1.0: raise Warning("Visit count is normalized to 1; either Agents did not move entire episode or there is a normalization error")
-                assert self.visit_counts_map[visits_x][visits_y] != 1.0 # TODO remove after confident working correctly
-            
-        ### Process observation for obstacles_map 
-        for agent_id in observation:
-            scaled_agent_coordinates = (int(observation[agent_id][1] * self.resolution_accuracy), int(observation[agent_id][2] * self.resolution_accuracy))   
-            if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
-                indices = np.flatnonzero(observation[agent_id][self.obstacle_state_offset::]).astype(int)
-                for index in indices:
-                    real_index = int(index + self.obstacle_state_offset)
-                    obstruct_x = int(scaled_agent_coordinates[0])
-                    obstruct_y = int(scaled_agent_coordinates[1])  
-                                        
-                    # Inflate to actual distance, then convert and round with resolution_accuracy
-                    #inflated_distance = (-(observation[agent_id][real_index] * DIST_TH - DIST_TH))
                     
-                    # Semi-arbritrary, but should make the number higher as the agent gets closer to the object, making heatmap look more correct
-                    self.obstacles_map[obstruct_x][obstruct_y] = observation[agent_id][real_index]
+        for agent_id in observation:
+            # Fetch scaled coordinates
+            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[id])
+            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[id]) if self.tools.last_coords else None  
+            
+            # Update Locations maps
+            if id == agent_id:                
+                self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+            else:            
+                self._update_other_agent_locations_map(id=agent_id, current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                     
+            # Readings and Visits counts maps
+            self._update_readings_map(coordinates=inflated_agent_coordinates, key=Point((observation[id][1], observation[id][2])))
+            self._update_visits_count_map(coordinates=inflated_agent_coordinates)
+            
+            # Detected Obstacles map
+            if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
+                self._update_obstacle_map(coordinates=inflated_agent_coordinates, single_observation=observation[id])
         
-        return self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map
+        return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
 
+    def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
+        ''' 
+            Method to take a single observation state, extracts the coordinates, then inflates them. Also works with tuple of deflated coordinates
+            
+            :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of deflated coordinates
+            :return: (Tuple[int, int]) Inflated coordinates
+        '''
+        # TODO it would be more convinient for processing to have element 0 and 1 be the x,y coordinates and radiation reading by element 2
+        # Calculate current agent inflated location        
+        result: Tuple[int, int]
+        if isinstance(single_observation, np.ndarray):
+            result = (int(single_observation[1] * self.resolution_accuracy), int(single_observation[2] * self.resolution_accuracy))
+        elif type(single_observation) == tuple:
+            result = (int(single_observation[0] * self.resolution_accuracy), int(single_observation[1] * self.resolution_accuracy))
+        else:
+            raise ValueError("Unsupported type for observation parameter")
+        return result        
+        
+    def _deflate_coordinates(self, single_observation: Union[np.ndarray, Tuple[int, int]])-> Point:
+        ''' 
+            Method to take a single observation state, extracts the coordinates, then deflates them. Also works with tuple of inflated coordinates
+            
+            :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
+            :return: (Tuple[int, int]) deflated coordinates
+        '''
+        # TODO it would be more convinient for processing to have element 0 and 1 be the x,y coordinates and radiation reading by element 2
+        # Calculate current agent inflated location        
+        result: Point
+        if isinstance(single_observation, np.ndarray):
+            result = Point((float(single_observation[1] / self.resolution_accuracy), float(single_observation[2] / self.resolution_accuracy)))
+        elif type(single_observation) == tuple:
+            result = Point((float(single_observation[0] / self.resolution_accuracy), float(single_observation[1] / self.resolution_accuracy)))
+        else:
+            raise ValueError("Unsupported type for observation parameter")
+        return result         
+        
     def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
         ''' 
             Method to update the current agents location observation map. If prior location exists, this is reset to zero.
             
-            :param current_coordinates: (Point) Inflated current location of agent
-            :param last_coordindates: (Point) Inflated previous location of agent. Note: These must be ints.
+            :param current_coordinates: (Tuple[int, int]) Inflated current location of agent
+            :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent. Note: These must be ints.
             :return: None
         '''
         if last_coordinates:
@@ -573,10 +535,74 @@ class MapsBuffer:
             Method to update the other-agent locations observation map. If prior location exists, this is reset to zero.
             
             :param id: (int) ID of current agent being processed
-            :param current_coordinates: (Point) Inflated current location of agent to be processed
-            :param last_coordindates: (Point) Inflated previous location of agent to be processed. Note: These must be ints.
+            :param current_coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
+            :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent to be processed. Note: These must be ints.
             :return: None
         '''
+        if last_coordinates:
+            self.others_locations_map[last_coordinates[0]][last_coordinates[1]] -= 1 
+            # In case agents are at same location, usually the start-point, just ensure was not negative.
+            assert self.others_locations_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
+        self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location                
+
+    def _update_readings_map(self, coordinates: Tuple[int, int], key: Point)-> None:
+        ''' 
+            Method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation.
+            
+            :param id: (int) ID of current agent being processed
+            :param coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
+            :param key: (Point) Deflated current location to be used as a key for the readings hashtable
+            :return: None
+        '''      
+        # Estimate true radiation reading
+        estimate: float = self.tools.readings.get_estimate(key=key)
+        
+        # Standardize radiation reading
+        self.tools.standardizer.update(estimate)                
+        standardized_reading = self.tools.standardizer.standardize(estimate)
+        
+        # Normalize radiation reading and save to map
+        normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())
+        
+        # Save to map
+        self.readings_map[coordinates[0]][coordinates[1]]  = normalized_reading
+
+    def _update_visits_count_map(self, coordinates: Tuple[int, int])-> None:
+        ''' 
+            Method to update the visits count observation map. Increments in a logarithmic fashion.
+            
+            :param id: (int) ID of current agent being processed
+            :param coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
+            :return: None
+        ''' 
+        # If visited before, fetch counter from shadow table, else create shadow table entry
+        if coordinates in self.visit_counts_shadow.keys():
+            current = self.visit_counts_shadow[coordinates]
+            self.visit_counts_shadow[coordinates] += 2
+        else:
+            current = 0
+            self.visit_counts_shadow[coordinates] = 2
+
+        if SIMPLE_NORMALIZATION:
+            self.visit_counts_map[coordinates[0]][coordinates[1]] = self.tools.normalizer.normalize(current_value=current, max=self.base)
+        else: 
+            self.visit_counts_map[coordinates[0]][coordinates[1]] = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
+        
+        # Sanity warning
+        if self.visit_counts_map[coordinates[0]][coordinates[1]] == 1.0: raise Warning("Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error")
+
+    def _update_obstacle_map(self, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
+        ''' 
+            Method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle
+            
+            :param id: (int) ID of current agent being processed
+            :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
+            :return: None
+        ''' 
+        for index in single_observation[self.obstacle_state_offset::]:
+            if index != 0:
+                self.obstacles_map[coordinates[0]][coordinates[1]] = single_observation[index + self.obstacle_state_offset]
+
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
