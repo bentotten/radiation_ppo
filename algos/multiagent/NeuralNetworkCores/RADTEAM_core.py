@@ -487,7 +487,7 @@ class MapsBuffer:
 
     def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
         ''' 
-            Method to take a single observation state, extracts the coordinates, then inflates them. Also works with tuple of deflated coordinates
+            Method to take a single observation state, extracts the coordinates, then inflates them to the resolution accuracy specified during initialization. Also works with tuple of deflated coordinates.
             
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of deflated coordinates
             :return: (Tuple[int, int]) Inflated coordinates
@@ -505,7 +505,8 @@ class MapsBuffer:
         
     def _deflate_coordinates(self, single_observation: Union[np.ndarray, Tuple[int, int]])-> Point:
         ''' 
-            Method to take a single observation state, extracts the coordinates, then deflates them. Also works with tuple of inflated coordinates
+            Method to take a single observation state that has already been adjusted to the resolution accuracy specified during initialization, then extracts the coordinates, then deflates them back to their
+            normalized inital values. Also works with tuple of inflated coordinates.
             
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: (Tuple[int, int]) deflated coordinates
@@ -1202,7 +1203,7 @@ class CCNBase:
         ''' Method to Update radiation standardization for rolling standardization module outside of a step'''
         self.maps.tools.standardizer.update(observation[0])
         
-    def select_action(self, state_observation: Dict[int, list], id: int, save_map=True) -> ActionChoice:
+    def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, save_map=True) -> ActionChoice:
         ''' Method to take a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
             to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
@@ -1213,11 +1214,11 @@ class CCNBase:
         with torch.no_grad():        
             if save_map:     
                 # Add intensity readings to a list if reading has not been seen before at that location. 
-                # TODO DO THIS DIFFERENTLY SO THAT MAPS MATCH
                 for observation in state_observation.values():
                     key: Point = Point((observation[1], observation[2]))
                     intensity: np.floating[Any] = observation[0]
                     self.maps.tools.readings.update(key=key, value=float(intensity))
+                # TODO Maps are not matching between agents, needs check 
                 (
                     location_map,
                     others_locations_map,

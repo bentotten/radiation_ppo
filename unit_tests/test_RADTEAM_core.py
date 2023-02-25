@@ -425,13 +425,34 @@ class Test_MapBuffer:
         # Stored class objects
         assert maps.tools.reset_flag == 2                    
                  
-    def test_inflate_coordinates(self):
-        #, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
-        pass
-    
-    def test_deflate_coordinates(self):
-        #, single_observation: Union[np.ndarray, Tuple[int, int]])-> Point:
-        pass
+    def test_inflate_coordinates(self, init_parameters)-> None:
+        ''' Test coordinate inflation for both observation and point '''
+        single_observation: np.ndarray = np.array([1500,  0.86, 0.45636363636363636, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+        single_point = RADTEAM_core.Point((single_observation[1], single_observation[2]))
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+
+        test = maps._inflate_coordinates(single_observation)
+        test2 = maps._inflate_coordinates(single_point)
+        
+        assert test[0] == 18 and test[1] == 10
+        assert test2[0] == 18 and test2[1] == 10
+        
+        with pytest.raises(ValueError):
+            maps._inflate_coordinates(single_observation[1])
+        
+    def test_deflate_coordinates(self, init_parameters)-> None:
+        single_observation: np.ndarray = np.array([1500,  18, 10, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+        single_point =(single_observation[1], single_observation[2])
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+
+        test = maps._deflate_coordinates(single_observation)
+        test2 = maps._deflate_coordinates(single_point)
+        
+        assert test[0] == 0.86 and test[1] ==  0.45636363636363636
+        assert test2[0] == 0.86 and test2[1] ==  0.45636363636363636
+        
+        with pytest.raises(ValueError):
+            maps._inflate_coordinates(single_observation[1])
 
     def test_update_current_agent_location_map(self):
         #, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
