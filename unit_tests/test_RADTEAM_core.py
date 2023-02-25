@@ -313,7 +313,6 @@ class Test_ConversionTools:
         assert isinstance(tools.readings, RADTEAM_core.IntensityEstimator)
         assert isinstance(tools.standardizer, RADTEAM_core.StatisticStandardization)
 
-
     def test_Reset(self)-> None:
         ''' Reset and clear all members '''
         tools = RADTEAM_core.ConversionTools()
@@ -348,7 +347,7 @@ class Test_MapBuffer:
         return dict(
             observation_dimension=11,
             steps_per_episode=120,
-            number_agents=2
+            number_of_agents=2
         )
     
     def test_Init(self, init_parameters):
@@ -359,18 +358,33 @@ class Test_MapBuffer:
     def test_Reset(self, init_parameters)-> None:
         ''' Reset and clear all members '''
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
-        baseline = RADTEAM_core.ConversionTools()
+        baseline = RADTEAM_core.MapsBuffer(**init_parameters)
         baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
-        
-        baseline_tools = [a for a in dir(baseline.tools) if not a.startswith('__') and not callable(getattr(baseline.readings, a))]
 
-        test_observation = {0:np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
+        test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
+        for observation in test_observation.values():
+            key: RADTEAM_core.Point = RADTEAM_core.Point((observation[1], observation[2]))
+            intensity: np.floating = observation[0]
+            maps.tools.readings.update(key=key, value=float(intensity))        
         
-        result = maps.observation_to_map(id=0, observation=test_observation)
-        tools.readings.update(value=1500, key=RADTEAM_core.Point((1,1)))
-        tools.standardizer.update(1500)
+        _ = maps.observation_to_map(id=0, observation=test_observation)
         
-        tools.reset()
+        assert maps.tools.reset_flag == 1
+        
+        maps.reset()
+        
+        # Immediate members
+        for baseline_att, map_att in zip(baseline_list, [a for a in dir(maps) if not a.startswith('__') and not callable(getattr(maps, a))]):
+            test = type(getattr(maps, map_att))
+            if test is not RADTEAM_core.ConversionTools:
+                if test == np.ndarray:
+                    assert getattr(maps, map_att).max() == getattr(baseline, baseline_att).max()
+                    assert getattr(maps, map_att).min() == getattr(baseline, baseline_att).min()                
+                else:
+                    assert getattr(maps, map_att) == getattr(baseline, baseline_att)
+            
+        # Stored class objects
+        assert maps.tools.reset_flag == 2
                 
     def test_clear_maps(self)-> None:
         pass

@@ -640,7 +640,8 @@ class AgentPPO:
             )
                             
         else:
-            # TODO incorporate maps into PPO buffer and avoid this entire process              
+            # TODO incorporate maps into PPO buffer and avoid this entire process
+            # TODO save and then rerender heatmaps to avoid massive overhead
             # Match observation type to data and seperate map stacks from observation key for processing
             map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
             map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  

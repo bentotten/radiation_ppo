@@ -329,13 +329,17 @@ class ConversionTools:
     #: Statistics class for standardizing intensity readings from samples from the environment
     standardizer: StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
     #: Normalization class for adjusting data to be between 0 and 1
-    normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer()) 
+    normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer())
+    
+    # Reset flag for unit testing
+    reset_flag: int = field(init=False, default=0)
 
     def reset(self)-> None:
         ''' Method to reset and clear all members '''
         self.last_coords = CoordinateStorage(dict())
         self.readings.reset()
         self.standardizer.reset()
+        self.reset_flag += 1
 
 
 @dataclass()
@@ -1209,6 +1213,7 @@ class CCNBase:
         with torch.no_grad():        
             if save_map:     
                 # Add intensity readings to a list if reading has not been seen before at that location. 
+                # TODO DO THIS DIFFERENTLY SO THAT MAPS MATCH
                 for observation in state_observation.values():
                     key: Point = Point((observation[1], observation[2]))
                     intensity: np.floating[Any] = observation[0]
