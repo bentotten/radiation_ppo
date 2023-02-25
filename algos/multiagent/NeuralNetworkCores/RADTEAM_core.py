@@ -95,7 +95,7 @@ class IntensityEstimator():
         Future Work: Incorporate radionuclide identification module in conjunction with this (Carson et al.)
     '''
     #: Hash table containing explored coordinates (keys) and radiation readings detected there (list of values)
-    readings: Dict[Point, List[float]] = field(default_factory=lambda: dict())
+    readings: Dict[Tuple[int, int], List[float]] = field(default_factory=lambda: dict())
     
     # Private
     _min: float = field(default=0.0)  # Minimum radiation reading estimate
@@ -125,7 +125,7 @@ class IntensityEstimator():
         ''' Method to set the minimum radiation reading estimated thus far.'''
         self._min = value
             
-    def get_buffer(self, key: Point)-> List:
+    def get_buffer(self, key: Tuple[int, int])-> List:
         ''' 
             Method to return existing buffer for key. Raises exception if key does not exist.
             :param value: (float) Sampled radiation intensity value
@@ -135,7 +135,7 @@ class IntensityEstimator():
             raise ValueError("Key does not exist")
         return self.readings[key]
         
-    def get_estimate(self, key: Point)-> float:
+    def get_estimate(self, key: Tuple[int, int])-> float:
         ''' 
             Method to returns radiation estimate for current coordinates. Raises exception if key does not exist.
             :param key: (Point) Coordinates for desired radiation intensity estimate
@@ -158,7 +158,7 @@ class IntensityEstimator():
         '''
         return self._min
 
-    def check_key(self, key: Point):
+    def check_key(self, key: Tuple[int, int]):
         ''' Method to check if coordinates (key) exist in hashtable '''
         return True if key in self.readings else False
         
@@ -562,7 +562,7 @@ class MapsBuffer:
             assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."            
         self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location             
 
-    def _update_readings_map(self, coordinates: Tuple[int, int], key: Point)-> None:
+    def _update_readings_map(self, coordinates: Tuple[int, int], key: Tuple[int, int])-> None:
         ''' 
             Method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation.
             

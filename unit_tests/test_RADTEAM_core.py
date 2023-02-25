@@ -23,28 +23,28 @@ class Test_IntensityEstimator:
         
         # Non-existant key
         with pytest.raises(ValueError):
-            estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
+            estimator.get_buffer(key=(1, 2))
 
         # Get buffer
         estimator.update(key=(1, 2), value=1000)
-        test_buffer: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
+        test_buffer: list = estimator.get_buffer(key=(1, 2))
         assert len(test_buffer) == 1        
         assert test_buffer[0] == 1000
         
         # Add another
         estimator.update(key=(1, 2), value=2000)
-        test_buffer2: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
+        test_buffer2: list = estimator.get_buffer(key=(1, 2))
         assert len(test_buffer2) == 2
         assert test_buffer2[0] == 1000
         assert test_buffer2[1] == 2000
         
         # Add different coordinate
         estimator.update(key=(3, 3), value=350)
-        test_buffer2_2: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
+        test_buffer2_2: list = estimator.get_buffer(key=(1, 2))
         assert len(test_buffer2_2) == 2
         assert test_buffer2_2[0] == 1000
         assert test_buffer2_2[1] == 2000
-        test_buffer3: list = estimator.get_buffer(key=RADTEAM_core.Point((3, 3)))
+        test_buffer3: list = estimator.get_buffer(key=(3, 3))
         assert len(test_buffer3) == 1        
         assert test_buffer3[0] == 350
         
@@ -57,17 +57,17 @@ class Test_IntensityEstimator:
 
         # Non-existant key
         with pytest.raises(ValueError):
-            estimator.get_estimate(key=RADTEAM_core.Point((1, 2)))
+            estimator.get_estimate(key=(1, 2))
         
         # Test median
         estimator.update(key=(1, 2), value=1000)
         estimator.update(key=(1, 2), value=2000)
-        median: float = estimator.get_estimate(key=RADTEAM_core.Point((1,2)))
+        median: float = estimator.get_estimate(key=(1,2))
         assert median == 1500
         
         # Add another value
         estimator.update(key=(1, 2), value=500)
-        median2: float = estimator.get_estimate(key=RADTEAM_core.Point((1,2)))
+        median2: float = estimator.get_estimate(key=(1,2))
         assert median2 == 1000
 
     def test_GetMinMax(self)-> None:
@@ -113,10 +113,10 @@ class Test_IntensityEstimator:
             Test check key function. Should return true if key exists and false if key does not
         '''        
         estimator = RADTEAM_core.IntensityEstimator()   
-        assert estimator.check_key(RADTEAM_core.Point((1, 1))) == False
+        assert estimator.check_key((1, 1)) == False
         estimator.update(key=(4, 4), value=3000)
-        assert estimator.check_key(RADTEAM_core.Point((1, 1))) == False
-        assert estimator.check_key(RADTEAM_core.Point((4, 4))) == True
+        assert estimator.check_key((1, 1)) == False
+        assert estimator.check_key((4, 4)) == True
         
     def test_reset(self)-> None:
         ''' 
@@ -530,9 +530,9 @@ class Test_MapBuffer:
         deflated_2 = maps._deflate_coordinates((0, 2))
         
         for obs in {0: [1000, deflated_1[0], deflated_1[1]], 1: [2000, 0, 2]}.values():
-            key: RADTEAM_core.Point = RADTEAM_core.Point((obs[1], obs[2]))
+            key = (obs[1], obs[2])
             intensity: np.floating = obs[0]
-            self.tools.readings.update(key=key, value=float(intensity))              
+            maps.tools.readings.update(key=key, value=float(intensity))              
         
         # Test invalid key
         with pytest.raises(ValueError):
