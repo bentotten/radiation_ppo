@@ -1,7 +1,7 @@
 import pytest
 
 import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADTEAM_core
-
+import numpy as np
    
 class Test_IntensityEstimator:    
     def test_Update(self)-> None:
@@ -338,4 +338,67 @@ class Test_ConversionTools:
             assert getattr(tools.readings, tools_att) == getattr(baseline.readings, baseline_att)
             
         for baseline_att, tools_att in zip(baseline_standardizer, [a for a in dir(tools.standardizer) if not a.startswith('__') and not callable(getattr(tools.standardizer, a))]):
-            assert getattr(tools.standardizer, tools_att) == getattr(baseline.standardizer, baseline_att)            
+            assert getattr(tools.standardizer, tools_att) == getattr(baseline.standardizer, baseline_att)
+            
+
+class Test_MapBuffer:
+    @pytest.fixture
+    def init_parameters(self)-> dict:
+        ''' Set up initialization parameters for mapbuffer '''
+        return dict(
+            observation_dimension=11,
+            steps_per_episode=120,
+            number_agents=2
+        )
+    
+    def test_Init(self, init_parameters):
+        ''' Test the Map Buffer initialization. Should initialize all desired objects'''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        assert isinstance(maps.tools, RADTEAM_core.ConversionTools)
+
+    def test_Reset(self, init_parameters)-> None:
+        ''' Reset and clear all members '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        baseline = RADTEAM_core.ConversionTools()
+        baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
+        
+        baseline_tools = [a for a in dir(baseline.tools) if not a.startswith('__') and not callable(getattr(baseline.readings, a))]
+
+        test_observation = {0:np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
+        
+        result = maps.observation_to_map(id=0, observation=test_observation)
+        tools.readings.update(value=1500, key=RADTEAM_core.Point((1,1)))
+        tools.standardizer.update(1500)
+        
+        tools.reset()
+                
+    def test_clear_maps(self)-> None:
+        pass
+        
+    def test_inflate_coordinates(self):
+        #, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
+        pass
+    
+    def test_deflate_coordinates(self):
+        #, single_observation: Union[np.ndarray, Tuple[int, int]])-> Point:
+        pass
+
+    def test_update_current_agent_location_map(self):
+        #, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+        pass
+    
+    def test_update_other_agent_locations_map(self):
+        #, id: int, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+        pass
+
+    def test_update_readings_map(self):
+        #, coordinates: Tuple[int, int], key: Point)-> None:
+        pass
+
+    def _update_visits_count_map(self):
+        #, coordinates: Tuple[int, int])-> None:
+        pass
+
+    def test_update_obstacle_map(self):
+        #, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
+        pass

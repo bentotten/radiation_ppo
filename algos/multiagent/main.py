@@ -113,6 +113,7 @@ class CliArgs:
     render: bool
     agent_count: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     enforce_boundaries: bool
+    resolution_multiplier: float
     minibatches: int
     env_name: str
     save_freq: int
@@ -159,6 +160,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         render=args.render,
         agent_count=args.agent_count,
         enforce_boundaries=args.enforce_boundaries,
+        resolution_multiplier=args.resolution_multiplier,
         minibatches=args.minibatches,
         env_name=args.env_name,
         save_freq=args.save_freq,
@@ -170,7 +172,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         train_v_iters=args.train_v_iters,
         train_pfgru_iters=args.train_pfgru_iters,
         reduce_pfgru_iters=args.reduce_pfgru_iters,        
-        DEBUG=args.DEBUG
+        DEBUG=args.DEBUG,
     )
 
 
@@ -251,8 +253,11 @@ def create_parser() -> argparse.ArgumentParser:
     )  
     parser.add_argument(
         "--enforce-boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
-    )   
-              
+    )
+    parser.add_argument(
+        "--resolution-multiplier", type=float, default=0.01, help="Indicate degree of accuracy a heatmap should be downsized to. A value of 1 is full accuracy - not recommended for most training environments (see documentation)"
+    )  
+                  
     # Hyperparameters and PPO parameters
     parser.add_argument(
         "--gamma",
@@ -411,7 +416,8 @@ def main() -> None:
             environment_scale=env.scale,
             bounds_offset=env.observation_area,
             enforce_boundaries=args.enforce_boundaries,
-            grid_bounds=env.scaled_grid_max
+            grid_bounds=env.scaled_grid_max,
+            resolution_multiplier=args.resolution_multiplier
         )         
 
     # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here

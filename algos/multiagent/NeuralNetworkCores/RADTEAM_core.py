@@ -432,7 +432,14 @@ class MapsBuffer:
         self.y_limit_scaled: int = self.map_dimensions[1]
         
         # Initialize maps and buffer
-        self.clear()
+        self.reset()
+
+    def reset(self)-> None:
+        ''' Method to reset maps AND reset buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations
+        '''
+        # TODO delete this after moving observation buffer to PPO.
+        del self.observation_buffer[:]
+        self.clear_maps()        
 
     def clear_maps(self)-> None:
         ''' Method to clear and reset maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
@@ -443,13 +450,6 @@ class MapsBuffer:
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
         self.visit_counts_shadow.clear()
         self.tools.reset()                
-        
-    def clear(self)-> None:
-        ''' Method to reset maps AND reset buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations
-        '''
-        # TODO delete this after moving observation buffer to PPO.
-        del self.observation_buffer[:]
-        self.clear_maps()        
         
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
@@ -599,9 +599,9 @@ class MapsBuffer:
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: None
         ''' 
-        for index in single_observation[self.obstacle_state_offset::]:
-            if index != 0:
-                self.obstacles_map[coordinates[0]][coordinates[1]] = single_observation[index + self.obstacle_state_offset]
+        for detection in single_observation[self.obstacle_state_offset::]:
+            if detection != 0:
+                self.obstacles_map[coordinates[0]][coordinates[1]] = detection
 
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
@@ -1117,6 +1117,10 @@ class CCNBase:
         
     :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. This represents the max x and the max y for the scaled coordinates 
         in the rad-search environment (usually (1, 1)). This is used for scaling in the map buffer by the resolution variable.
+    
+    :resolution_multiplier: Multiplier used to indicate how accurate scaling should be for heatmaps. A value of 1 will represent the original accuracy presented by the environment.
+        By default, this is downsized to 0.01 in order to reduce the number of trainable parameters in the heatmaps, leading to faster convergence. Only for very small search spaces
+        is it recommended to use full accuracy - heatmaps indicate "area of interest trends", the values themselves are less important.
         
     :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
         coordinates can be encompased in a matrix element.
@@ -1137,10 +1141,12 @@ class CCNBase:
     bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function  
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
     grid_bounds: Tuple[int, int] = field(default_factory= lambda: (1, 1))
+    resolution_multiplier: float = field(default=0.01)
+            
+    #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
+    critic: Union[Critic] = field(default=None)  # type: ignore            
             
     # Initialized elsewhere
-    #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
-    critic: Union[Critic] = field(default=None)  # type: ignore
     #: Policy/Actor network
     pi: Actor = field(init=False)
     #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
@@ -1160,8 +1166,7 @@ class CCNBase:
         # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
         #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
         #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
-        multiplier = 0.01
-        self.resolution_accuracy = multiplier * 1/self.environment_scale
+        self.resolution_accuracy = self.resolution_multiplier * 1/self.environment_scale
         if self.enforce_boundaries:
             self.scaled_offset = self.environment_scale * max(self.bounds_offset)                    
         else:
@@ -1306,7 +1311,7 @@ class CCNBase:
 
     def reset(self):
         ''' Reset entire CNN '''
-        self.maps.clear()
+        self.maps.reset()
         
     def clear_maps(self):
         ''' Just clear maps and buffer for new episode'''

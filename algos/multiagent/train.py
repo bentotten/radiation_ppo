@@ -333,12 +333,6 @@ class train_PPO:
                     save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
                     time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
                     if (asked_to_save and save_first_epoch and time_to_save):
-                        # Render gif
-                        self.env.render(
-                            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-                            epoch_count=epoch,
-                        )
-                           
                         # Render Agent heatmaps
                         if self.actor_critic_architecture == 'cnn':
                             for id, ac in self.agents.items():
@@ -347,20 +341,25 @@ class train_PPO:
                                     epoch_count=epoch,
                                     add_value_text=True
                                 )
-                    # Always render first episode
-                    if self.render and epoch == 0 and self.render_first_episode:
+                        # Render gif
                         self.env.render(
                             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                             epoch_count=epoch,
-                        
-                        )                              
+                        )                                
+                    # Always render first episode
+                    if self.render and epoch == 0 and self.render_first_episode:
                         for id, ac in self.agents.items():
                             if self.actor_critic_architecture == 'cnn':
                                 ac.render(
                                     savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
                                     epoch_count=epoch,
                                     add_value_text=True
-                                )     
+                                )                             
+                        self.env.render(
+                            path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
+                            epoch_count=epoch,
+                        
+                        )                              
                         self.render_first_episode = False             
 
                     # Always render last epoch's episode
