@@ -532,14 +532,26 @@ class Test_MapBuffer:
         coords_1 = (0, 1)
         coords_2 = (0, 2)
         
-        for obs in {0: [1000.0, coords_1[0], coords_2[1]], 1: [2000, 0, 2]}.values():
+        observation =  {0: [1000.0, coords_1[0], coords_1[1]], 1: [200, coords_2[0], coords_2[1]], 2: [1200.0, coords_1[0], coords_1[1]]}
+        
+        for obs in observation.values():
             key = (obs[1], obs[2]) # type: ignore
             intensity: np.floating = obs[0] # type: ignore
             maps.tools.readings.update(key=key, value=float(intensity))              
         
         # Test initial updates
         maps._update_readings_map(coordinates=coords_1)
-        assert maps.others_locations_map[0][1] == 1.0        
+        assert maps.readings_map[coords_1[0]][coords_1[1]] == 0.0 # First reading is always 0
+        maps._update_readings_map(coordinates=coords_2)
+        assert maps.readings_map[coords_2[0]][coords_2[1]] == 0.0 # New minimum is always 0 after offset       
+        maps._update_readings_map(coordinates=coords_2)
+        assert maps.readings_map[coords_2[0]][coords_2[1]] == pytest.approx(0.18350341907227394)
+        maps._update_readings_map(coordinates=coords_1)
+        assert maps.readings_map[coords_1[0]][coords_1[1]] == 1.0          
+        
+        # Test with valid key 
+        maps._update_readings_map(coordinates=coords_2, key=coords_2)
+        assert maps.readings_map[coords_2[0]][coords_2[1]] == 0.0 # New minimum is always 0 after offset       
         
         # Test invalid key
         with pytest.raises(ValueError):
