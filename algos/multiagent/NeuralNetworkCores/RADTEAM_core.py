@@ -482,7 +482,7 @@ class MapsBuffer:
                 self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
                      
             # Readings and Visits counts maps
-            self._update_readings_map(coordinates=inflated_agent_coordinates, key=Point((observation[id][1], observation[id][2])))
+            self._update_readings_map(coordinates=inflated_agent_coordinates)
             self._update_visits_count_map(coordinates=inflated_agent_coordinates)
             
             # Detected Obstacles map
@@ -562,9 +562,9 @@ class MapsBuffer:
             assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."            
         self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location             
 
-    def _update_readings_map(self, coordinates: Tuple[int, int], key: Tuple[int, int])-> None:
+    def _update_readings_map(self, coordinates: Tuple[int, int], key: Union[Tuple[int, int], None] = None)-> None:
         ''' 
-            Method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation.
+            Method to update the radiation intensity observation map with single observation. If prior location exists, this is overwritten with the latest estimation.
             
             :param id: (int) ID of current agent being processed
             :param coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
@@ -572,7 +572,11 @@ class MapsBuffer:
             :return: None
         '''      
         # Estimate true radiation reading
-        estimate: float = self.tools.readings.get_estimate(key=key)
+        estimate: float        
+        if key:
+            estimate = self.tools.readings.get_estimate(key=key)
+        else:
+            estimate = self.tools.readings.get_estimate(key=coordinates)
         
         # Standardize radiation reading
         self.tools.standardizer.update(estimate)                

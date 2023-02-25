@@ -526,39 +526,20 @@ class Test_MapBuffer:
         ''' test method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation. '''
 
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
-        deflated_1 = maps._deflate_coordinates((0, 1))
-        deflated_2 = maps._deflate_coordinates((0, 2))
+        coords_1 = (0, 1)
+        coords_2 = (0, 2)
         
-        for obs in {0: [1000, deflated_1[0], deflated_1[1]], 1: [2000, 0, 2]}.values():
-            key = (obs[1], obs[2])
-            intensity: np.floating = obs[0]
+        for obs in {0: [1000.0, coords_1[0], coords_2[1]], 1: [2000, 0, 2]}.values():
+            key = (obs[1], obs[2]) # type: ignore
+            intensity: np.floating = obs[0] # type: ignore
             maps.tools.readings.update(key=key, value=float(intensity))              
+        
+        # Test initial updates
+        maps._update_readings_map(coordinates=coords_1)
         
         # Test invalid key
         with pytest.raises(ValueError):
-                maps._update_readings_map(coordinates=(0, 1), key=(0, 0))
-
-    #def _update_readings_map(self, coordinates: Tuple[int, int], key: Point)-> None:
-        ''' 
-            Method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation.
-            
-            :param id: (int) ID of current agent being processed
-            :param coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
-            :param key: (Point) Deflated current location to be used as a key for the readings hashtable
-            :return: None
-        '''      
-        # Estimate true radiation reading
-        estimate: float = self.tools.readings.get_estimate(key=key)
-        
-        # Standardize radiation reading
-        self.tools.standardizer.update(estimate)                
-        standardized_reading = self.tools.standardizer.standardize(estimate)
-        
-        # Normalize radiation reading and save to map
-        normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())
-        
-        # Save to map
-        self.readings_map[coordinates[0]][coordinates[1]]  = normalized_reading
+            maps._update_readings_map(coordinates=(0, 1), key=(0, 0))
 
     def _update_visits_count_map(self):
         #, coordinates: Tuple[int, int])-> None:
