@@ -625,7 +625,7 @@ class MapsBuffer:
             if detection != 0:
                 if detection < min: 
                     min = detection
-                self.obstacles_map[coordinates[0]][coordinates[1]] = min
+                self.obstacles_map[coordinates[0]][coordinates[1]] = 1.0 - min
 
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
