@@ -533,7 +533,11 @@ class MapsBuffer:
         if last_coordinates:
             self.location_map[last_coordinates[0]][last_coordinates[1]] -= 1 
             assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
-        self.location_map[current_coordinates[0]][current_coordinates[1]] = 1 
+        else:
+            assert self.location_map.max() == 0.0, "Location exists on map however no last coordinates buffer passed for processing."
+        self.location_map[current_coordinates[0]][current_coordinates[1]] = 1
+        
+        assert self.location_map.max() == 1, "Location was updated twice for single agent"
 
     def _update_other_agent_locations_map(self, id: int, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
         ''' 

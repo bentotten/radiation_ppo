@@ -441,6 +441,7 @@ class Test_MapBuffer:
             maps._inflate_coordinates(single_observation[1])
         
     def test_deflate_coordinates(self, init_parameters)-> None:
+        ''' Test coordinate deflation for both observation and point '''        
         single_observation: np.ndarray = np.array([1500,  18, 10, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
         single_point =(single_observation[1], single_observation[2])
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
@@ -454,9 +455,33 @@ class Test_MapBuffer:
         with pytest.raises(ValueError):
             maps._inflate_coordinates(single_observation[1])
 
-    def test_update_current_agent_location_map(self):
-        #, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
-        pass
+    def test_update_current_agent_location_map(self, init_parameters):
+        ''' Test current agent location map update '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        
+        # Test normal first update
+        maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=[])
+        assert maps.location_map[0][1] == 1.0
+        flat = np.delete(maps.location_map.ravel(), 1)
+        assert flat.max() == 0.0
+        
+        # Test normal second update
+        maps._update_current_agent_location_map(current_coordinates=(0, 0), last_coordinates=(0,1))
+        assert maps.location_map[0][1] == 0.0
+        assert maps.location_map[0][0] == 1.0
+        flat = np.delete(maps.location_map.ravel(), 0)
+        assert flat.max() == 0.0
+        
+        # Test invalid updates
+        with pytest.raises(AssertionError):
+            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=[])  # No last coordinate passed
+            
+        with pytest.raises(AssertionError):
+            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=(0,2))  # Last coordinate passed to wrong location         
+            
+        with pytest.raises(AssertionError):
+            maps.location_map[2][2] = 2
+            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=(0,0))  # Maximum value exceeded      
     
     def test_update_other_agent_locations_map(self):
         #, id: int, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
