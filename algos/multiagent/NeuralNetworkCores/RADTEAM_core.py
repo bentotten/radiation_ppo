@@ -332,14 +332,14 @@ class ConversionTools:
     normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer())
     
     # Reset flag for unit testing
-    reset_flag: int = field(init=False, default=0)
+    reset_flag: int = field(init=False, default=0) # TODO switch out for pytest mock
 
     def reset(self)-> None:
         ''' Method to reset and clear all members '''
         self.last_coords = CoordinateStorage(dict())
         self.readings.reset()
         self.standardizer.reset()
-        self.reset_flag += 1
+        self.reset_flag += 1 if self.reset_flag < 100 else 1
 
 
 @dataclass()
@@ -1236,7 +1236,7 @@ class CCNBase:
                 
                 #print(state_observation[self.id])
                 #observation_key = hash(state_observation[self.id].flatten().tolist)
-                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Needs better way of matching observation to map_stack
+                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Move to PPO and save only observation to be reinflated
             else:
                 with torch.no_grad():
                     map_stack = self.maps.observation_buffer[-1][1]

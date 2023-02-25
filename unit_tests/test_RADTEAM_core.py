@@ -386,9 +386,45 @@ class Test_MapBuffer:
         # Stored class objects
         assert maps.tools.reset_flag == 2
                 
-    def test_clear_maps(self)-> None:
-        pass
+    def test_clear_maps(self, init_parameters)-> None:
+        ''' Reset and clear all maps without clearing the observation buffer '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        baseline = RADTEAM_core.MapsBuffer(**init_parameters)
+        baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
+
+        test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
+        for observation in test_observation.values():
+            key: RADTEAM_core.Point = RADTEAM_core.Point((observation[1], observation[2]))
+            intensity: np.floating = observation[0]
+            maps.tools.readings.update(key=key, value=float(intensity))        
         
+        mapstack = maps.observation_to_map(id=0, observation=test_observation)
+        maps.observation_buffer.append([test_observation[0], mapstack]) # TODO Needs better way of matching observation to map_stack
+        
+        assert maps.tools.reset_flag == 1
+        
+        maps.clear_maps()
+        
+        # Immediate members
+        for baseline_att, map_att in zip(baseline_list, [a for a in dir(maps) if not a.startswith('__') and not callable(getattr(maps, a))]):
+            test = type(getattr(maps, map_att))
+            if test is not RADTEAM_core.ConversionTools:
+                if map_att == 'observation_buffer':
+                    obs_buffer = getattr(maps, map_att)
+                    assert np.array_equal(obs_buffer[0][0], test_observation[0])
+                    assert len(obs_buffer[0][1]) == 5                   
+                    for i, map in enumerate(obs_buffer[0][1]):
+                        assert np.array_equal(map, mapstack[i])
+
+                elif test == np.ndarray:
+                    assert getattr(maps, map_att).max() == getattr(baseline, baseline_att).max()
+                    assert getattr(maps, map_att).min() == getattr(baseline, baseline_att).min()                
+                else:
+                    assert getattr(maps, map_att) == getattr(baseline, baseline_att) 
+                    
+        # Stored class objects
+        assert maps.tools.reset_flag == 2                    
+                 
     def test_inflate_coordinates(self):
         #, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
         pass
