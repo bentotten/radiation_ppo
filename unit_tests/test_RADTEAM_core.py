@@ -557,10 +557,37 @@ class Test_MapBuffer:
         with pytest.raises(ValueError):
             maps._update_readings_map(coordinates=(0, 1), key=(0, 0))
 
-    def _update_visits_count_map(self):
-        #, coordinates: Tuple[int, int])-> None:
-        pass
-
+    def test_update_visits_count_map(self, init_parameters):
+        ''' Test method to update the visits count observation map. Increments in a logarithmic fashion. '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        
+        # Test normal update
+        maps._update_visits_count_map(coordinates=(0, 1))
+        assert maps.visit_counts_map[0][1] == pytest.approx(0.11227263)
+        assert maps.visit_counts_shadow[(0,1)] == 2
+        
+        maps._update_visits_count_map(coordinates=(0, 2))
+        assert maps.visit_counts_map[0][1] == pytest.approx(0.11227263)
+        assert maps.visit_counts_shadow[(0,1)] == 2        
+        assert maps.visit_counts_map[0][2] == pytest.approx(0.11227263)
+        assert maps.visit_counts_shadow[(0,2)] == 2
+        
+        maps._update_visits_count_map(coordinates=(0, 2))
+        assert maps.visit_counts_map[0][1] == pytest.approx(0.11227263)
+        assert maps.visit_counts_shadow[(0,1)] == 2        
+        assert maps.visit_counts_map[0][2] == pytest.approx(0.22454526)
+        assert maps.visit_counts_shadow[(0,2)] == 4
+                
+        # Test will never go above one for max steps in same location
+        for _ in range(init_parameters['number_of_agents'] * init_parameters['steps_per_episode']-1):
+            maps._update_visits_count_map(coordinates=(0, 3))
+            
+        with pytest.raises(Warning):
+            maps._update_visits_count_map(coordinates=(0, 3))
+        assert maps.visit_counts_map[0][3] == 1
+        assert maps.visit_counts_shadow[(0,3)] == (2 * init_parameters['number_of_agents'] * init_parameters['steps_per_episode'])
+        
+        
     def test_update_obstacle_map(self):
         #, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
         pass
