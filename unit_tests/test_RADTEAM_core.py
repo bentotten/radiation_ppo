@@ -330,7 +330,10 @@ class Test_ConversionTools:
 
         # Immediate members
         for baseline_att, tools_att in zip(baseline_list, [a for a in dir(tools) if not a.startswith('__') and not callable(getattr(tools, a))]):
-            assert getattr(tools, tools_att) == getattr(baseline, baseline_att)
+            if tools_att != 'reset_flag':
+                assert getattr(tools, tools_att) == getattr(baseline, baseline_att)
+            else:
+                assert getattr(tools, tools_att) == 1
             
         # Stored class objects
         for baseline_att, tools_att in zip(baseline_readings, [a for a in dir(tools.readings) if not a.startswith('__') and not callable(getattr(tools.readings, a))]):
@@ -536,6 +539,7 @@ class Test_MapBuffer:
         
         # Test initial updates
         maps._update_readings_map(coordinates=coords_1)
+        assert maps.others_locations_map[0][1] == 1.0        
         
         # Test invalid key
         with pytest.raises(ValueError):
