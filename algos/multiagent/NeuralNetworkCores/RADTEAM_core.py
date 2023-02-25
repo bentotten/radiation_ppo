@@ -101,12 +101,12 @@ class IntensityEstimator():
     _min: float = field(default=0.0)  # Minimum radiation reading estimate
     _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     
-    def update(self, key: Point, value: float)-> None:
+    def update(self, key: tuple[int, int], value: float)-> None:
         ''' 
             Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
             Note that the max/min is the ESTIMATE of the true value, not the observed value.
             :param value: (float) Sampled radiation intensity value
-            :param key: (Point) Coordinates where radiation intensity (value) was sampled
+            :param key: (Tuple[int, int]) Inflated coordinates where radiation intensity (value) was sampled
         '''
         if self.check_key(key=key):
             self.readings[key].append(value)
@@ -457,16 +457,16 @@ class MapsBuffer:
         
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
-        Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation.
+        Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
         
         :param observation: (dict) Dictionary of agent IDs and their individual observations from the environment.
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
         :return: Returns a tuple of five 2d map arrays.
         '''
         
-        # Add intensity readings to a list if reading has not been seen before at that location. 
+        # Add intensity readings to readings buffer for estimates
         for obs in observation.values():
-            key: Point = Point((obs[1], obs[2]))
+            key: Tuple[int, int] = self._inflate_coordinates(obs)
             intensity: np.floating[Any] = obs[0]
             self.tools.readings.update(key=key, value=float(intensity))        
                     

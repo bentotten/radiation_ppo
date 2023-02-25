@@ -10,7 +10,7 @@ class Test_IntensityEstimator:
             Should add values to buffer according to the coordinate key
         '''        
         estimator = RADTEAM_core.IntensityEstimator()
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)  
+        estimator.update(key=(1, 2), value=1000)  
         assert (1, 2) in estimator.readings.keys()
         assert [1000] in estimator.readings.values()
     
@@ -26,20 +26,20 @@ class Test_IntensityEstimator:
             estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
 
         # Get buffer
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)
+        estimator.update(key=(1, 2), value=1000)
         test_buffer: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
         assert len(test_buffer) == 1        
         assert test_buffer[0] == 1000
         
         # Add another
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=2000)
+        estimator.update(key=(1, 2), value=2000)
         test_buffer2: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
         assert len(test_buffer2) == 2
         assert test_buffer2[0] == 1000
         assert test_buffer2[1] == 2000
         
         # Add different coordinate
-        estimator.update(key=RADTEAM_core.Point((3, 3)), value=350)
+        estimator.update(key=(3, 3), value=350)
         test_buffer2_2: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
         assert len(test_buffer2_2) == 2
         assert test_buffer2_2[0] == 1000
@@ -60,13 +60,13 @@ class Test_IntensityEstimator:
             estimator.get_estimate(key=RADTEAM_core.Point((1, 2)))
         
         # Test median
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=2000)
+        estimator.update(key=(1, 2), value=1000)
+        estimator.update(key=(1, 2), value=2000)
         median: float = estimator.get_estimate(key=RADTEAM_core.Point((1,2)))
         assert median == 1500
         
         # Add another value
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=500)
+        estimator.update(key=(1, 2), value=500)
         median2: float = estimator.get_estimate(key=RADTEAM_core.Point((1,2)))
         assert median2 == 1000
 
@@ -83,28 +83,28 @@ class Test_IntensityEstimator:
         assert estimator.get_min() == 0.0
         
         # Test first update
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)
+        estimator.update(key=(1, 2), value=1000)
         assert estimator.get_max() == 1000
         assert estimator.get_min() == 1000
                 
         # Test new max update for same location
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=2000)
+        estimator.update(key=(1, 2), value=2000)
         assert estimator.get_max() == 1500
         assert estimator.get_min() == 1000
         
         # Test new min update for same location
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=300)
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=300)        
+        estimator.update(key=(1, 2), value=300)
+        estimator.update(key=(1, 2), value=300)        
         assert estimator.get_max() == 1500
         assert estimator.get_min() == 650        
         
         # Test min update for new location
-        estimator.update(key=RADTEAM_core.Point((3, 3)), value=50)
+        estimator.update(key=(3, 3), value=50)
         assert estimator.get_max() == 1500
         assert estimator.get_min() == 50
         
         # Test max update for new location
-        estimator.update(key=RADTEAM_core.Point((4, 4)), value=3000)
+        estimator.update(key=(4, 4), value=3000)
         assert estimator.get_max() == 3000
         assert estimator.get_min() == 50        
 
@@ -114,7 +114,7 @@ class Test_IntensityEstimator:
         '''        
         estimator = RADTEAM_core.IntensityEstimator()   
         assert estimator.check_key(RADTEAM_core.Point((1, 1))) == False
-        estimator.update(key=RADTEAM_core.Point((4, 4)), value=3000)
+        estimator.update(key=(4, 4), value=3000)
         assert estimator.check_key(RADTEAM_core.Point((1, 1))) == False
         assert estimator.check_key(RADTEAM_core.Point((4, 4))) == True
         
@@ -129,7 +129,7 @@ class Test_IntensityEstimator:
         baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
 
         # Add values        
-        estimator.update(key=RADTEAM_core.Point((1, 2)), value=300)        
+        estimator.update(key=(1, 2), value=300)        
         estimator.reset()
         
         for baseline_att, estimator_att in zip(baseline_list, [a for a in dir(estimator) if not a.startswith('__') and not callable(getattr(estimator, a))]):
@@ -323,7 +323,7 @@ class Test_ConversionTools:
         baseline_standardizer = [a for a in dir(baseline.standardizer) if not a.startswith('__') and not callable(getattr(baseline.standardizer, a))]
 
         tools.last_coords[(1, 1)] = [30, 20, 10] # type: ignore
-        tools.readings.update(value=1500, key=RADTEAM_core.Point((1,1)))
+        tools.readings.update(value=1500, key=(1,1))
         tools.standardizer.update(1500)
         
         tools.reset()
@@ -363,7 +363,7 @@ class Test_MapBuffer:
 
         test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
         for observation in test_observation.values():
-            key: RADTEAM_core.Point = RADTEAM_core.Point((observation[1], observation[2]))
+            key = (observation[1], observation[2])
             intensity: np.floating = observation[0]
             maps.tools.readings.update(key=key, value=float(intensity))        
         
@@ -394,7 +394,7 @@ class Test_MapBuffer:
 
         test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
         for observation in test_observation.values():
-            key: RADTEAM_core.Point = RADTEAM_core.Point((observation[1], observation[2]))
+            key: = (observation[1], observation[2])
             intensity: np.floating = observation[0]
             maps.tools.readings.update(key=key, value=float(intensity))        
         
@@ -522,9 +522,43 @@ class Test_MapBuffer:
         with pytest.raises(AssertionError):
             maps._update_other_agent_locations_map(current_coordinates=(0, 1), last_coordinates=(0,7))  # Last coordinate passed to wrong location         
 
-    def test_update_readings_map(self):
-        #, coordinates: Tuple[int, int], key: Point)-> None:
-        pass
+    def test_update_readings_map(self, init_parameters)-> None:
+        ''' test method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation. '''
+
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        deflated_1 = maps._deflate_coordinates((0, 1))
+        deflated_2 = maps._deflate_coordinates((0, 2))
+        
+        for obs in {0: [1000, deflated_1[0], deflated_1[1]], 1: [2000, 0, 2]}.values():
+            key: RADTEAM_core.Point = RADTEAM_core.Point((obs[1], obs[2]))
+            intensity: np.floating = obs[0]
+            self.tools.readings.update(key=key, value=float(intensity))              
+        
+        # Test invalid key
+        with pytest.raises(ValueError):
+                maps._update_readings_map(coordinates=(0, 1), key=(0, 0))
+
+    #def _update_readings_map(self, coordinates: Tuple[int, int], key: Point)-> None:
+        ''' 
+            Method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation.
+            
+            :param id: (int) ID of current agent being processed
+            :param coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
+            :param key: (Point) Deflated current location to be used as a key for the readings hashtable
+            :return: None
+        '''      
+        # Estimate true radiation reading
+        estimate: float = self.tools.readings.get_estimate(key=key)
+        
+        # Standardize radiation reading
+        self.tools.standardizer.update(estimate)                
+        standardized_reading = self.tools.standardizer.standardize(estimate)
+        
+        # Normalize radiation reading and save to map
+        normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())
+        
+        # Save to map
+        self.readings_map[coordinates[0]][coordinates[1]]  = normalized_reading
 
     def _update_visits_count_map(self):
         #, coordinates: Tuple[int, int])-> None:
