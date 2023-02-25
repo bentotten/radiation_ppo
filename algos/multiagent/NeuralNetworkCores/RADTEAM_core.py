@@ -101,7 +101,7 @@ class IntensityEstimator():
     _min: float = field(default=0.0)  # Minimum radiation reading estimate
     _max: float = field(default=0.0)  # Maximum radiation reading estimate. This is used for normalization in simple normalization mode.
     
-    def update(self, key: tuple[int, int], value: float)-> None:
+    def update(self, key: Tuple[int, int], value: float)-> None:
         ''' 
             Method to add value to radiation hashtable. If key does not exist, creates key and new buffer with value. Also updates running max/min estimate, if applicable.
             Note that the max/min is the ESTIMATE of the true value, not the observed value.

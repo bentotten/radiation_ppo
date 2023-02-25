@@ -10,7 +10,7 @@ class Test_IntensityEstimator:
             Should add values to buffer according to the coordinate key
         '''        
         estimator = RADTEAM_core.IntensityEstimator()
-        estimator.update(key=(1, 2), value=1000)  
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)  
         assert (1, 2) in estimator.readings.keys()
         assert [1000] in estimator.readings.values()
     
@@ -26,20 +26,20 @@ class Test_IntensityEstimator:
             estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
 
         # Get buffer
-        estimator.update(key=(1, 2), value=1000)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)
         test_buffer: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
         assert len(test_buffer) == 1        
         assert test_buffer[0] == 1000
         
         # Add another
-        estimator.update(key=(1, 2), value=2000)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=2000)
         test_buffer2: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
         assert len(test_buffer2) == 2
         assert test_buffer2[0] == 1000
         assert test_buffer2[1] == 2000
         
         # Add different coordinate
-        estimator.update(key=(3, 3), value=350)
+        estimator.update(key=RADTEAM_core.Point((3, 3)), value=350)
         test_buffer2_2: list = estimator.get_buffer(key=RADTEAM_core.Point((1, 2)))
         assert len(test_buffer2_2) == 2
         assert test_buffer2_2[0] == 1000
@@ -60,13 +60,13 @@ class Test_IntensityEstimator:
             estimator.get_estimate(key=RADTEAM_core.Point((1, 2)))
         
         # Test median
-        estimator.update(key=(1, 2), value=1000)
-        estimator.update(key=(1, 2), value=2000)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=2000)
         median: float = estimator.get_estimate(key=RADTEAM_core.Point((1,2)))
         assert median == 1500
         
         # Add another value
-        estimator.update(key=(1, 2), value=500)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=500)
         median2: float = estimator.get_estimate(key=RADTEAM_core.Point((1,2)))
         assert median2 == 1000
 
@@ -83,28 +83,28 @@ class Test_IntensityEstimator:
         assert estimator.get_min() == 0.0
         
         # Test first update
-        estimator.update(key=(1, 2), value=1000)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=1000)
         assert estimator.get_max() == 1000
         assert estimator.get_min() == 1000
                 
         # Test new max update for same location
-        estimator.update(key=(1, 2), value=2000)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=2000)
         assert estimator.get_max() == 1500
         assert estimator.get_min() == 1000
         
         # Test new min update for same location
-        estimator.update(key=(1, 2), value=300)
-        estimator.update(key=(1, 2), value=300)        
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=300)
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=300)        
         assert estimator.get_max() == 1500
         assert estimator.get_min() == 650        
         
         # Test min update for new location
-        estimator.update(key=(3, 3), value=50)
+        estimator.update(key=RADTEAM_core.Point((3, 3)), value=50)
         assert estimator.get_max() == 1500
         assert estimator.get_min() == 50
         
         # Test max update for new location
-        estimator.update(key=(4, 4), value=3000)
+        estimator.update(key=RADTEAM_core.Point((4, 4)), value=3000)
         assert estimator.get_max() == 3000
         assert estimator.get_min() == 50        
 
@@ -114,7 +114,7 @@ class Test_IntensityEstimator:
         '''        
         estimator = RADTEAM_core.IntensityEstimator()   
         assert estimator.check_key(RADTEAM_core.Point((1, 1))) == False
-        estimator.update(key=(4, 4), value=3000)
+        estimator.update(key=RADTEAM_core.Point((4, 4)), value=3000)
         assert estimator.check_key(RADTEAM_core.Point((1, 1))) == False
         assert estimator.check_key(RADTEAM_core.Point((4, 4))) == True
         
@@ -129,7 +129,7 @@ class Test_IntensityEstimator:
         baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
 
         # Add values        
-        estimator.update(key=(1, 2), value=300)        
+        estimator.update(key=RADTEAM_core.Point((1, 2)), value=300)        
         estimator.reset()
         
         for baseline_att, estimator_att in zip(baseline_list, [a for a in dir(estimator) if not a.startswith('__') and not callable(getattr(estimator, a))]):
@@ -323,7 +323,7 @@ class Test_ConversionTools:
         baseline_standardizer = [a for a in dir(baseline.standardizer) if not a.startswith('__') and not callable(getattr(baseline.standardizer, a))]
 
         tools.last_coords[(1, 1)] = [30, 20, 10] # type: ignore
-        tools.readings.update(value=1500, key=(1,1))
+        tools.readings.update(value=1500, key=RADTEAM_core.Point((1,1)))
         tools.standardizer.update(1500)
         
         tools.reset()
@@ -363,7 +363,7 @@ class Test_MapBuffer:
 
         test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
         for observation in test_observation.values():
-            key = (observation[1], observation[2])
+            key: RADTEAM_core.Point = RADTEAM_core.Point((observation[1], observation[2]))
             intensity: np.floating = observation[0]
             maps.tools.readings.update(key=key, value=float(intensity))        
         
@@ -394,7 +394,7 @@ class Test_MapBuffer:
 
         test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
         for observation in test_observation.values():
-            key: = (observation[1], observation[2])
+            key: RADTEAM_core.Point = RADTEAM_core.Point((observation[1], observation[2]))
             intensity: np.floating = observation[0]
             maps.tools.readings.update(key=key, value=float(intensity))        
         
@@ -442,15 +442,15 @@ class Test_MapBuffer:
         
     def test_deflate_coordinates(self, init_parameters)-> None:
         ''' Test coordinate deflation for both observation and point '''        
-        single_observation: np.ndarray = np.array([1500,  18, 10, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
+        single_observation: np.ndarray = np.array([1500, 18.92, 10.04, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1])
         single_point =(single_observation[1], single_observation[2])
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
 
         test = maps._deflate_coordinates(single_observation)
         test2 = maps._deflate_coordinates(single_point)
         
-        assert test[0] == 0.86 and test[1] ==  0.45636363636363636
-        assert test2[0] == 0.86 and test2[1] ==  0.45636363636363636
+        assert test[0] == pytest.approx(0.86) and test[1] == pytest.approx(0.45636363636363636)
+        assert test2[0] == pytest.approx(0.86) and test2[1] == pytest.approx(0.45636363636363636)
         
         with pytest.raises(ValueError):
             maps._inflate_coordinates(single_observation[1])
