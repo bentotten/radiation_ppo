@@ -463,6 +463,12 @@ class MapsBuffer:
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
         :return: Returns a tuple of five 2d map arrays.
         '''
+        
+        # Add intensity readings to a list if reading has not been seen before at that location. 
+        for obs in observation.values():
+            key: Point = Point((obs[1], obs[2]))
+            intensity: np.floating[Any] = obs[0]
+            self.tools.readings.update(key=key, value=float(intensity))        
                     
         for agent_id in observation:
             # Fetch scaled coordinates
@@ -1219,11 +1225,6 @@ class CCNBase:
         # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
         with torch.no_grad():        
             if save_map:     
-                # Add intensity readings to a list if reading has not been seen before at that location. 
-                for observation in state_observation.values():
-                    key: Point = Point((observation[1], observation[2]))
-                    intensity: np.floating[Any] = observation[0]
-                    self.maps.tools.readings.update(key=key, value=float(intensity))
                 # TODO Maps are not matching between agents, needs check 
                 (
                     location_map,
