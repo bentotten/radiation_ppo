@@ -614,15 +614,18 @@ class MapsBuffer:
 
     def _update_obstacle_map(self, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
         ''' 
-            Method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle
+            Method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle. Using two parameters removes unnecessary reinflation step.
             
             :param id: (int) ID of current agent being processed
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: None
-        ''' 
+        '''
+        min = 1
         for detection in single_observation[self.obstacle_state_offset::]:
             if detection != 0:
-                self.obstacles_map[coordinates[0]][coordinates[1]] = detection
+                if detection < min: 
+                    min = detection
+                self.obstacles_map[coordinates[0]][coordinates[1]] = min
 
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO

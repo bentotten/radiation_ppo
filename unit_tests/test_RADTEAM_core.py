@@ -588,6 +588,17 @@ class Test_MapBuffer:
         assert maps.visit_counts_shadow[(0,3)] == (2 * init_parameters['number_of_agents'] * init_parameters['steps_per_episode'])
         
         
-    def test_update_obstacle_map(self):
-        #, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
-        pass
+    def test_update_obstacle_map(self, init_parameters)-> None:
+        ''' Test method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        
+        single_observation: np.ndarray = np.array([1500,  0.86, 0.45636363636363636, 0.1, 0.1, 0.1, 0.1, 0.05, 0.1, 0.1, 0.1])        
+        coordinates = (0,1)
+        coordinates_2 = (0, 0)
+        
+        maps._update_obstacle_map(single_observation=single_observation, coordinates=coordinates)
+        assert maps.obstacles_map[0][1] == pytest.approx(0.05)
+        
+        maps._update_obstacle_map(single_observation=single_observation, coordinates=coordinates_2)
+        assert maps.obstacles_map[0][1] == pytest.approx(0.05)
+        assert maps.obstacles_map[0][0] == pytest.approx(0.05)
