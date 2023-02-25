@@ -473,7 +473,7 @@ class MapsBuffer:
             if id == agent_id:                
                 self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
             else:            
-                self._update_other_agent_locations_map(id=agent_id, current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
                      
             # Readings and Visits counts maps
             self._update_readings_map(coordinates=inflated_agent_coordinates, key=Point((observation[id][1], observation[id][2])))
@@ -539,9 +539,9 @@ class MapsBuffer:
         
         assert self.location_map.max() == 1, "Location was updated twice for single agent"
 
-    def _update_other_agent_locations_map(self, id: int, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+    def _update_other_agent_locations_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
         ''' 
-            Method to update the other-agent locations observation map. If prior location exists, this is reset to zero.
+            Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
             
             :param id: (int) ID of current agent being processed
             :param current_coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
@@ -552,7 +552,9 @@ class MapsBuffer:
             self.others_locations_map[last_coordinates[0]][last_coordinates[1]] -= 1 
             # In case agents are at same location, usually the start-point, just ensure was not negative.
             assert self.others_locations_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
-        self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location                
+        else:
+            assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."            
+        self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location             
 
     def _update_readings_map(self, coordinates: Tuple[int, int], key: Point)-> None:
         ''' 

@@ -483,9 +483,44 @@ class Test_MapBuffer:
             maps.location_map[2][2] = 2
             maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=(0,0))  # Maximum value exceeded      
     
-    def test_update_other_agent_locations_map(self):
-        #, id: int, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
-        pass
+    def test_update_other_agent_locations_map(self, init_parameters):
+        ''' Test other agent locations map update '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        
+        # Test normal first update
+        maps._update_other_agent_locations_map(current_coordinates=(0, 1), last_coordinates=[])
+        assert maps.others_locations_map[0][1] == 1.0
+        flat = np.delete(maps.others_locations_map.ravel(), 1)
+        assert flat.max() == 0.0
+        
+        maps._update_other_agent_locations_map(current_coordinates=(0, 2), last_coordinates=[])
+        assert maps.others_locations_map[0][2] == 1.0
+        flat = maps.others_locations_map.ravel()
+        flat_t1 = np.delete(flat, 2)
+        flat_t2 = np.delete(flat_t1, 1)
+        assert flat_t2.max() == 0.0
+        
+        # Test normal second update
+        maps._update_other_agent_locations_map(current_coordinates=(0, 0), last_coordinates=(0,1))
+        assert maps.others_locations_map[0][1] == 0.0
+        assert maps.others_locations_map[0][0] == 1.0
+        assert maps.others_locations_map[0][2] == 1.0
+        flat = maps.others_locations_map.ravel()
+        flat_t1 = np.delete(flat, 2)
+        flat_t2 = np.delete(flat_t1, 0)
+        assert flat_t2.max() == 0.0
+        
+        maps._update_other_agent_locations_map(current_coordinates=(0, 3), last_coordinates=(0,2))
+        assert maps.others_locations_map[0][2] == 0.0
+        assert maps.others_locations_map[0][3] == 1.0
+        assert maps.others_locations_map[0][0] == 1.0
+        flat = maps.others_locations_map.ravel()
+        flat_t1 = np.delete(flat, 3)
+        flat_t2 = np.delete(flat_t1, 0)
+        assert flat_t2.max() == 0.0        
+            
+        with pytest.raises(AssertionError):
+            maps._update_other_agent_locations_map(current_coordinates=(0, 1), last_coordinates=(0,7))  # Last coordinate passed to wrong location         
 
     def test_update_readings_map(self):
         #, coordinates: Tuple[int, int], key: Point)-> None:
