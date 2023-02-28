@@ -332,9 +332,7 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def ping()-> str:
-    ''' Check Function call '''
-    return 'Pong!'
+def setup_training():
 
 
 def main() -> None:

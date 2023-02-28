@@ -630,12 +630,20 @@ class MapsBuffer:
 
 #TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
-    def __init__(self, map_dim, observation_space, batches: int=1, map_count: int=5, action_dim: int=5):
+    ''' 
+        In deep reinforcement learning, an Actor is a neural network architecture that represents an agent's control policy. Each agent is outfit with their own Actor. 
+        Learning aims to optimize a policy gradient. For RAD-TEAM, the Actor consists of a convolutional neural Network Architecture that includes two convolution layers,
+        a maxpool layer, and three fully connected layers to distill the previous layers into an action probability distribution.
+    '''
+    def __init__(self, map_dim: Tuple[int, int], observation_space, batches: int=1, map_count: int=5, action_dim: int=5):
         super(Actor, self).__init__()
         ''' 
-            When an observation is fed to this base class, it is transformed into a series of stackable observation maps (numerican matrices/tensors). As these maps are fed 
-            through the network, Convolutional and pooling layers train a series of filters that operate on the data and extract features from it. 
-            These features are then distilled through linear layers to produce an array that contains probabilities, where each element cooresponds to an action.
+            The Actor takes a stack of observation maps (numerican matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling layers 
+            train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce an array that 
+            contains probabilities, where each element cooresponds to an action.
+            
+            :param map_dim: (Tuple[int, int]) Map dimensions (discrete)
+            :param observation_space: (int) 
             
             Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
                 1. batch size: 1 mapstack

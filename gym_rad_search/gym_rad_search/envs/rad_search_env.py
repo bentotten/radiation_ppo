@@ -563,7 +563,7 @@ class RadSearch(gym.Env):
                 ) = agent_step(agent=self.agents[agent_id], action=a, proposed_coordinates=proposed_coordinates)   
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
-        elif not action or type(action) is Union[int, Action]:
+        elif not action or type(action) is int:
             # Provides backwards compatability for single actions instead of action lists for single agents.
             if type(action) == int and len(self.agents) > 1:
                 print("WARNING: Passing single action to mutliple agents during step! Collision avoidance has been disabled!", file=sys.stderr)
