@@ -634,30 +634,28 @@ class Actor(nn.Module):
         In deep reinforcement learning, an Actor is a neural network architecture that represents an agent's control policy. Each agent is outfit with their own Actor. 
         Learning aims to optimize a policy gradient. For RAD-TEAM, the Actor consists of a convolutional neural Network Architecture that includes two convolution layers,
         a maxpool layer, and three fully connected layers to distill the previous layers into an action probability distribution.
+
+        The Actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling layers 
+        train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce an array that 
+        contains probabilities, where each element cooresponds to an action.
+        
+        This Actor expects the input tensor shape: (batch size, number of channels, height of grid, width of grid) where
+        *. batch size: How many mapstacks (default 1)
+        *. number of channels: Number of input maps in each stack (default 5)
+        *. Height: Map height (from map_dim)
+        *. Width: Map width (from map_dim)
+        
+        The network for RAD-TEAM expects mapstacks in tensor form, where the shape is [b, n, x, y]. Here b is the number of batches, n is the number of maps, x is the map 
+        width and y is the map height.
+        
+        :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be. NOTE: dimensions must be equal to each other,
+            discrete, and real.
+        :param batches: (int) Number of observation mapstacks to be processed - each step in the environment yields one mapstack. Defaults to 1.
+        :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5. 
+        :param action_dim: (int) Number of actions to choose from. Defaults to 8.         
     '''
-    def __init__(self, map_dim: Tuple[int, int], observation_space, batches: int=1, map_count: int=5, action_dim: int=5):
+    def __init__(self, map_dim: Tuple[int, int], batches: int=1, map_count: int=5, action_dim: int=8, observation_space: Union[int, None] = None):
         super(Actor, self).__init__()
-        ''' 
-            The Actor takes a stack of observation maps (numerican matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling layers 
-            train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce an array that 
-            contains probabilities, where each element cooresponds to an action.
-            
-            :param map_dim: (Tuple[int, int]) Map dimensions (discrete)
-            :param observation_space: (int) 
-            
-            Actor Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 1 mapstack
-                2. (map_count) number of channels: 5 input maps
-                3. Height: grid height
-                4. Width: grid width
-            
-                5 maps: 
-                    1. Location Map: a 2D matrix showing the agents location.
-                    2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
-                    3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
-                    4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
-                    5. Obstacle Map: a 2D matrix of obstacles detected by agents
-        '''
 
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
@@ -665,35 +663,34 @@ class Actor(nn.Module):
         pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
 
         # Actor network
-        self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (batchs, 8, Height, Width)
+        self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  
         self.relu = nn.ReLU()
-        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  # output height and width is floor(((Width - Size)/ Stride) +1)
+        self.step2 = nn.MaxPool2d(kernel_size=2, stride=2)  
         self.step3 = nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1) 
-        #nn.ReLU()
-        self.step4 = nn.Flatten(start_dim=0, end_dim= -1) # output tensor with shape (1, x)
+        self.step4 = nn.Flatten(start_dim=0, end_dim= -1) 
         self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32) 
-        #nn.ReLU()
         self.step6 = nn.Linear(in_features=32, out_features=16) 
-        #nn.ReLU()
-        self.step7 = nn.Linear(in_features=16, out_features=5) # TODO eventually make '5' action_dim instead
+        self.step7 = nn.Linear(in_features=16, out_features=action_dim) 
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1] 
 
         self.actor = nn.Sequential(
-                        nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (4, 8, Height, Width)
-                        nn.ReLU(),
-                        nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2)
-                        nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
-                        nn.ReLU(),
-                        nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, x)
-                        nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32), # output tensor with shape (32)
-                        nn.ReLU(),
-                        nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
-                        nn.ReLU(),
-                        nn.Linear(in_features=16, out_features=action_dim), # output tensor with shape (5)
-                        nn.Softmax(dim=0)  # Put in range [0,1]
-                    )
-
-    def test(self, state_map_stack): 
+            nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (5, 8, Height, Width)
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
+            nn.ReLU(),
+            nn.Flatten(start_dim=0, end_dim= -1),  # output tensor with shape (1, x)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=32), # output tensor with shape (32)
+            nn.ReLU(),
+            nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
+            nn.ReLU(),
+            nn.Linear(in_features=16, out_features=action_dim), # output tensor with shape (5)
+            nn.Softmax(dim=0)  # Put in range [0,1]
+        )
+        
+    def _test(self, state_map_stack):
+        ''' Deconstructed Actor layers to assist with debugging '''
+        
         print("Starting shape, ", state_map_stack.size())
         torch.set_printoptions(threshold=sys.maxsize)
         
@@ -758,29 +755,47 @@ class Actor(nn.Module):
         print(x)
         pass
    
-    def act(self, state_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:  # Tesnor Shape [batch_size, map_size, scaled_grid_x_bound, scaled_grid_y_bound] ([1, 5, 22, 22])
-        ''' Select action from action probabilities returned by actor.'''
-        action_probs: torch.Tensor = self.actor(state_map_stack)
+    def act(self, observation_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        '''
+            Method that selects action from action probabilities returned by actor network.
+            :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
+            :return: (Tensor, Tensor) Returns the action selected (tensor(1)) and the log-probability for that action.
+        '''
+        #: Raw action probabilities for each available action for this particular observation
+        action_probs: torch.Tensor = self.actor(observation_map_stack)
+        #: Convert raw action probabilities into a probability distribution that sums to 1.
         dist = Categorical(action_probs)
+        #: Sample an action from the action probability distribution
         action: torch.Tensor = dist.sample()
-        action_logprob: torch.Tensor = dist.log_prob(action) # log of the policy distribution. Taking the gradient of the log probability is more stable than using the actual density
+        #: Take the log probability of the action. This can be used to compute the policy gradient used during updates; 
+        #:  Taking the gradient of the log probability is more stable than using the actual density
+        action_logprob: torch.Tensor = dist.log_prob(action)
         
         return action, action_logprob
 
-    def forward(self, observation = None, act = None):
-        raise NotImplementedError
+    def forward(self, observation_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        ''' Method that takes the observation and returns all action probabilities. '''
+        return self.act(observation_map_stack)
     
-    def evaluate(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_action_information(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         ''' Put actor into "train" mode and get action logprobabilities for an observation mapstack. Then calculate a particular actions entropy.'''
         self.actor.train()
-        
+
+        #: Raw action probabilities for each available action for this particular observation        
         action_probs: torch.Tensor = self.actor(state_map_stack)
+        #: Convert raw action probabilities into a probability distribution that sums to 1.        
         dist = Categorical(action_probs)
         action_logprobs: torch.Tensor  = dist.log_prob(action)
         dist_entropy: torch.Tensor  = dist.entropy()
             
         return action_logprobs, dist_entropy        
 
+    def put_in_training_mode(self)-> None:
+        self.actor.train()
+        
+    def put_in_evaluation_mode(self)-> None:
+        self.actor.eval()  
+        
     def _reset_state(self):
         raise NotImplementedError("Not implemented")   
 
@@ -883,7 +898,12 @@ class Critic(nn.Module):
     
     def forward(self, observation = None, act = None):
         raise NotImplementedError    
-
+    
+    def put_in_training_mode(self)-> None:
+        self.critic.train()
+        
+    def put_in_evaluation_mode(self)-> None:
+        self.critic.eval()        
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
@@ -1216,7 +1236,7 @@ class CCNBase:
                 number_of_agents = self.number_of_agents
             )
         
-        self.pi = Actor(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device)
+        self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)#.to(self.maps.buffer.device)
         
         if not self.critic:
             self.critic = Critic(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device) # TODO these are really slow
@@ -1229,6 +1249,16 @@ class CCNBase:
     def set_reading(self, observation: npt.NDArray):
         ''' Method to Update radiation standardization for rolling standardization module outside of a step'''
         self.maps.tools.standardizer.update(observation[0])
+        
+    def set_mode(self, mode: str) -> None:
+        ''' Set mode for network. Options include 'train' or 'eval' '''
+        if mode == 'train':
+            self.pi.put_in_training_mode
+            self.critic.put_in_training_mode
+        elif mode == 'eval':
+            self.pi.put_in_evaluation_mode
+            self.critic.put_in_evaluation_mode            
+
         
     def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, save_map=True) -> ActionChoice:
         ''' Method to take a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location

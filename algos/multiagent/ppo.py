@@ -585,7 +585,7 @@ class AgentPPO:
         # Get data from buffers
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
         
-        # NOTE: Not using observation tensor for CNN, using internal map buffer          
+        # NOTE: Not using observation tensor for CNN, using internal map buffer     
 
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
         # TODO get this working for CNN
@@ -640,6 +640,9 @@ class AgentPPO:
             )
                             
         else:
+            # Put agents in train mode
+            self.agent.set_mode(mode='train')
+            
             # TODO incorporate maps into PPO buffer and avoid this entire process
             # TODO save and then rerender heatmaps to avoid massive overhead
             # Match observation type to data and seperate map stacks from observation key for processing
@@ -698,7 +701,10 @@ class AgentPPO:
                 raise ValueError("Maps did not reset")   
         
             # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
-            self.agent.reset()                
+            self.agent.reset() 
+            
+            # Take agents out of train mode
+            self.agent.set_mode(mode='eval')                           
             
             # Log changes from update
             return UpdateResult(
@@ -711,7 +717,7 @@ class AgentPPO:
                 ClipFrac=actor_loss_results["clip_fraction"],
                 LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
                 VarExplain=0
-            )
+            )        
     
     def compute_batched_losses_pi(self, sample, data, map_buffer_maps, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
@@ -774,7 +780,10 @@ class AgentPPO:
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
 
         # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
-        action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
+        else:
+            action_logprobs, dist_entropy = self.agent.pi.get_action_information(map_stack, act[index])              
         action_logprobs = action_logprobs.cpu() # TODO do we need this on the CPU here?
         
         # Get how much change is about to be made, then clip it if it exceeds our threshold (PPO-CLIP)

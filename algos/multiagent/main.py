@@ -333,6 +333,7 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def setup_training():
+    pass
 
 
 def main() -> None:
