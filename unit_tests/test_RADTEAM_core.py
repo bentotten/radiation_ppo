@@ -723,44 +723,7 @@ class Test_Actor:
         mapstack = create_mapstack
         action, logprob = pi.act(mapstack) #TODO test logprob
         assert action >= 0 and action < 8
-        
-    def test_forward(self, init_parameters, create_mapstack):
-        pass
-    # def forward(self, observation_map_stack: torch.Tensor) -> Tuple[Categorical, torch.Tensor]:
-    #     ''' 
-    #         Method that takes the observation and returns all action probabilities. 
-    #         :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
-    #         :return: (Tensor, Tensor) Returns probability distribution for all actions and the entropy for the action distribution.        
-    #     '''
-    #     #: Raw action probabilities for each available action for this particular observation        
-    #     action_probs: torch.Tensor = self.actor(observation_map_stack)
-    #     #: Convert raw action probabilities into a probability distribution that sums to 1.        
-    #     dist = Categorical(action_probs)
-    #     #: Degree of randomness in distribution        
-    #     dist_entropy: torch.Tensor  = dist.entropy()
-    #     return dist, dist_entropy
-    
-    def test_get_action_information(self, init_parameters, create_mapstack):
-        pass
-    # def get_action_information(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    #     ''' Method that gets the action logprobabilities for an observation mapstack and calculates a particular actions entropy.
-        
-    #         :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
-    #         :param action: (Tensor) The the action taken (tensor(1))
-    #         :return: (Tensor, Tensor) Returns the log-probability for the passed-in action and the entropy for the action distribution.
-    #     '''
-    #     #: Raw action probabilities for each available action for this particular observation        
-    #     action_probs: torch.Tensor = self.actor(state_map_stack)
-    #     #: Convert raw action probabilities into a probability distribution that sums to 1.        
-    #     dist = Categorical(action_probs)
-    #     #: Take the log probability of the action. This is used to compute loss for the policy gradient update; 
-    #     #:  Taking the gradient of the log probability is more stable than using the actual density        
-    #     action_logprobs: torch.Tensor  = dist.log_prob(action)
-    #     #: Degree of randomness in distribution
-    #     dist_entropy: torch.Tensor  = dist.entropy()
-            
-    #     return action_logprobs, dist_entropy        
-    
+
     def test_modes(self, init_parameters):
         pi = RADTEAM_core.Actor(**init_parameters)
         pi.put_in_training_mode()
@@ -768,21 +731,3 @@ class Test_Actor:
         pi.put_in_evaluation_mode()
         assert pi.actor.training == False
 
-    def test_reset_outputlayers(self, init_parameters):
-        pass
-        
-    # def reset_output_layers(self):
-    #     ''' Method to only reset weights and biases in output layers. This removes the learning needed to pick a correct action for a prior episode. '''
-    #     for layer in self.actor:
-    #         if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
-    #             layer.reset_parameters()                
-    def test_full_reset(self, init_parameters):
-        pass
-                
-    # def reset_all_hidden(self):
-    #     ''' Method to completely reset all weights and biases in all hidden layers ''' 
-    #     for layer in self.actor:
-    #         if isinstance(layer, nn.Linear):
-    #             layer.reset_parameters()
-                
-    

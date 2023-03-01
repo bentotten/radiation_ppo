@@ -844,7 +844,7 @@ class AgentPPO:
         true_return = data['ret'][index]
         
         # Compare predicted return with true return and use MSE to indicate loss
-        predicted_value = self.agent.critic.evaluate(map_stack)
+        predicted_value = self.agent.critic.forward(map_stack)
         critic_loss = self.agent.mseLoss(torch.squeeze(predicted_value), true_return)
         return critic_loss
 

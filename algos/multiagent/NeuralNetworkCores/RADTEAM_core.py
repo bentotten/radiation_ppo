@@ -628,12 +628,12 @@ class MapsBuffer:
                 self.obstacles_map[coordinates[0]][coordinates[1]] = 1.0 - min # Heatmap indicates higher number for closer to obstacle
 
 
-#TODO make a reset function, similar to self.ac.reset_hidden() in RADPPO
 class Actor(nn.Module):
     ''' 
         In deep reinforcement learning, an Actor is a neural network architecture that represents an agent's control policy. Each agent is outfit with their own Actor. 
         Learning aims to optimize a policy gradient. For RAD-TEAM, the Actor consists of a convolutional neural Network Architecture that includes two convolution layers,
-        a maxpool layer, and three fully connected layers to distill the previous layers into an action probability distribution.
+        a maxpool layer, and three fully connected layers to distill the previous layers into an action probability distribution. Following Alagha et al.'s multi-agent CNN 
+        architecture, each of the nodes are activated with ReLU (to dodge vanishing gradient problem) and the probability distribution is calculated using the softmax function.
 
         The Actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling layers 
         train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce an array that 
@@ -654,13 +654,15 @@ class Actor(nn.Module):
         :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5. 
         :param action_dim: (int) Number of actions to choose from. Defaults to 8.         
     '''
-    def __init__(self, map_dim: Tuple[int, int], batches: int=1, map_count: int=5, action_dim: int=8):
+    def __init__(self, map_dim: Tuple[int, int], batches: int=1, map_count: int=5, action_dim: int=8)-> None:
         super(Actor, self).__init__()
 
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
-        channels = map_count
-        pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
+        channels: int = map_count
+        pool_output: int = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
+        
+        # TODO switch to leaky relu
 
         # Actor network
         self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  
@@ -688,7 +690,7 @@ class Actor(nn.Module):
             nn.Softmax(dim=0)  # Put in range [0,1]
         )
         
-    def _test(self, state_map_stack):
+    def _test(self, state_map_stack)-> None:
         ''' Deconstructed Actor layers to assist with debugging '''
         
         print("Starting shape, ", state_map_stack.size())
@@ -760,7 +762,7 @@ class Actor(nn.Module):
             Method that selects action from action probabilities returned by actor network.
             
             :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
-            :return: (Tensor, Tensor) Returns the action selected (tensor(1)) and the log-probability for that action.
+            :return: (Tensor, Tensor) Returns the action selected (tensor(1)) and the log-probability for that action (tensor(1)).
         '''
         #: Raw action probabilities for each available action for this particular observation
         action_probs: torch.Tensor = self.actor(observation_map_stack)
@@ -778,7 +780,7 @@ class Actor(nn.Module):
         ''' 
             Method that takes the observation and returns all action probabilities. 
             :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
-            :return: (Tensor, Tensor) Returns probability distribution for all actions and the entropy for the action distribution.        
+            :return: (Tensor, Tensor) Returns probability distribution for all actions (tensor(action_space)) and the entropy for the action distribution (tensor(1)).
         '''
         #: Raw action probabilities for each available action for this particular observation        
         action_probs: torch.Tensor = self.actor(observation_map_stack)
@@ -793,7 +795,7 @@ class Actor(nn.Module):
         
             :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
             :param action: (Tensor) The the action taken (tensor(1))
-            :return: (Tensor, Tensor) Returns the log-probability for the passed-in action and the entropy for the action distribution.
+            :return: (Tensor, Tensor) Returns the log-probability for the passed-in action (tensor(1)) and the entropy for the action distribution (tensor(1)).
         '''
         #: Raw action probabilities for each available action for this particular observation        
         action_probs: torch.Tensor = self.actor(state_map_stack)
@@ -815,41 +817,52 @@ class Actor(nn.Module):
         ''' Method to put actor in eval mode. This disables dropout, batch normalization, and gradients.'''    
         self.actor.eval()  
 
-    def reset_output_layers(self):
+    def reset_output_layers(self)-> None:
         ''' Method to only reset weights and biases in output layers. This removes the learning needed to pick a correct action for a prior episode. '''
         for layer in self.actor:
-            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
+            if isinstance(layer, nn.Linear):            
                 layer.reset_parameters()                
         
-    def reset_all_hidden(self):
+    def reset_all_hidden(self)-> None:
         ''' Method to completely reset all weights and biases in all hidden layers ''' 
         for layer in self.actor:
-            if isinstance(layer, nn.Linear):
+            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):            
                 layer.reset_parameters()
                 
 
 class Critic(nn.Module):
-    def __init__(self, map_dim, observation_space, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
-        super(Critic, self).__init__()
-        '''
-            Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
-                1. batch size: 1 mapstack
-                2. (map_count) number of channels: 5 input maps, same as Actor
-                3. Height: grid height
-                4. Width: grid width                
-            
-            5 maps: 
-                1. Location Map: a 2D matrix showing the agents location.
-                2. Map of Other Locations: a 2D matrix showing the number of agents located in each grid element (excluding current agent).
-                3. Readings map: a 2D matrix showing the last reading collected in each grid element. Grid elements that have not been visited are given a reading of 0.
-                4. Visit Counts Map: a 2D matrix showing the number of visits each grid element has received from all agents combined.
-                5. Obstacle Map: a 2D matrix of obstacles detected by agents
-        '''
+    ''' 
+        In deep reinforcement learning, a Critic is a neural network architecture that approximates the state-value V^pi(s) for the policy pi. This indicates how "good it is" to be
+        in any state. For RAD-TEAM, we use the Generalized Advantage Estimator (GAE) that does not require the Q-value, only the state-value. RAD-Team is set up to work with both a 
+        per-agent critic and a global critic. A global critic can still work, in spite of the independent agent policies, due to the team-based reward. Learning aims to minimize
+        The mean-squared error. For RAD-TEAM, the Critic consists of a convolutional neural Network Architecture that includes two convolution layers, a maxpool layer, and three 
+        fully connected layers to distill the previous layers into a single state-value. Following Alagha et al.'s multi-agent CNN architecture, each of the nodes are activated with
+        ReLU (to dodge vanishing gradient problems).
 
+        The Critic, like the actor takes a stack of observation maps (numerical matrices/tensors) and processes them with the neural network architecture. Convolutional and pooling 
+        layers train a series of filters that operate on the data and extract features from it. These features are then distilled through linear layers to produce a single state-value.
+        Note: Critic is estimating State-Value here, not Q-Value.
+        
+        This Critic expects the input tensor shape: (batch size, number of channels, height of grid, width of grid) where
+        *. batch size: How many mapstacks (default 1)
+        *. number of channels: Number of input maps in each stack (default 5)
+        *. Height: Map height (from map_dim)
+        *. Width: Map width (from map_dim)
+        
+        The network for RAD-TEAM expects mapstacks in tensor form, where the shape is [b, n, x, y]. Here b is the number of batches, n is the number of maps, x is the map 
+        width and y is the map height.
+        
+        :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be. NOTE: dimensions must be equal to each other,
+            discrete, and real.
+        :param batches: (int) Number of observation mapstacks to be processed - each step in the environment yields one mapstack. Defaults to 1.
+        :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5.
+    '''    
+    def __init__(self, map_dim, batches: int=1, map_count: int=5):
+        # TODO better to send one location map for all agents through or two separate maps?
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
-        channels = map_count
-        pool_output = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
+        channels: int = map_count
+        pool_output: int = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
 
         # Critic network
         self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  # output tensor with shape (batchs, 8, Height, Width)
@@ -864,9 +877,9 @@ class Critic(nn.Module):
         #nn.ReLU()
         self.step7 = nn.Linear(in_features=16, out_features=1) # output tensor with shape (1)
         #nn.ReLU()
-        self.tanh = nn.Tanh()
         
         self.critic = nn.Sequential(
+                    # TODO switch to leaky relu
                     # Starting shape (batch_size, 4, Height, Width)
                     nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
                     nn.ReLU(),
@@ -880,10 +893,11 @@ class Critic(nn.Module):
                     nn.ReLU(),
                     nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
                     #nn.ReLU(),
-                    nn.Tanh(),
+                    #nn.Tanh(), #TODO should output layer go through an activation?
                 )
 
-    def test(self, state_map_stack): 
+    def _test(self, state_map_stack)-> None: 
+        ''' Method to test individual critic layers and examine their sizes '''
         print("Starting shape, ", state_map_stack.size())
         x = self.step1(state_map_stack) # conv1
         x = self.relu(x)
@@ -902,33 +916,44 @@ class Critic(nn.Module):
         x = self.relu(x)
         print("shape, ", x.size()) 
         x = self.step7(x) # Output layer
-        print("shape, ", x.size()) 
-        x = self.tanh(x)
-        
+        print("shape, ", x.size())         
         print(x)
         pass
-   
-    def act(self, state_map_stack: torch.Tensor) -> torch.Tensor: 
-        # Get state-value from critic
-        #self.test(state_map_stack)
-        state_value = self.critic(state_map_stack)
-        return state_value
     
-    def evaluate(self, state_map_stack):       
-        state_values = self.critic(state_map_stack)
-        return state_values    
+    def forward(self, observation_map_stack)-> torch.Tensor:
+        ''' 
+            Get the state-value for a given state-observation from the environment 
+            :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
+            :return: (Tensor) Returns state-value for the given observation (tensor(1)).        
+        '''
+        return self.critic(observation_map_stack)
 
-    def _reset_state(self):
-        raise NotImplementedError("Not implemented")
-    
-    def forward(self, observation = None, act = None):
-        raise NotImplementedError    
-    
+    def act(self, observation_map_stack: torch.Tensor) -> torch.Tensor: 
+        ''' 
+            Alias for "Forward()". Get the state-value for a given state-observation from the environment 
+            :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
+            :return: (Tensor) Returns state-value for the given observation (tensor(1)).                    
+        '''
+        return self.forward(observation_map_stack=observation_map_stack) 
+
     def put_in_training_mode(self)-> None:
         self.critic.train()
         
     def put_in_evaluation_mode(self)-> None:
         self.critic.eval()        
+
+    def reset_output_layers(self)-> None:
+        ''' Method to only reset weights and biases in output layers. This removes the learning needed to pick a correct action for a prior episode. '''
+        for layer in self.critic:
+            if isinstance(layer, nn.Linear):            
+                layer.reset_parameters()                
+        
+    def reset_all_hidden(self)-> None:
+        ''' Method to completely reset all weights and biases in all hidden layers ''' 
+        for layer in self.critic:
+            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):            
+                layer.reset_parameters()
+
 
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
@@ -1264,7 +1289,7 @@ class CCNBase:
         self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)#.to(self.maps.buffer.device)
         
         if not self.critic:
-            self.critic = Critic(map_dim=self.maps.map_dimensions, observation_space=self.observation_space, action_dim=self.action_space)#.to(self.maps.buffer.device) # TODO these are really slow
+            self.critic = Critic(map_dim=self.maps.map_dimensions)#.to(self.maps.buffer.device) # TODO these are really slow
             
         self.mseLoss = nn.MSELoss()
         
@@ -1324,7 +1349,7 @@ class CCNBase:
             
             # Get actions and values                          
             action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
-            state_value: torch.Tensor = self.critic.act(batched_map_stack)  # size(1)
+            state_value: torch.Tensor = self.critic.forward(batched_map_stack)  # size(1)
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
     
