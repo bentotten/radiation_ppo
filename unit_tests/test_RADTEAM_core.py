@@ -768,13 +768,17 @@ class Test_Actor:
         pi.put_in_evaluation_mode()
         assert pi.actor.training == False
 
-
+    def test_reset_outputlayers(self, init_parameters):
+        pass
+        
     # def reset_output_layers(self):
     #     ''' Method to only reset weights and biases in output layers. This removes the learning needed to pick a correct action for a prior episode. '''
     #     for layer in self.actor:
     #         if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
     #             layer.reset_parameters()                
-        
+    def test_full_reset(self, init_parameters):
+        pass
+                
     # def reset_all_hidden(self):
     #     ''' Method to completely reset all weights and biases in all hidden layers ''' 
     #     for layer in self.actor:
