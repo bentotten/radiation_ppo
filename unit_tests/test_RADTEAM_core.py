@@ -723,8 +723,9 @@ class Test_Actor:
         mapstack = create_mapstack
         action, logprob = pi.act(mapstack) #TODO test logprob
         assert action >= 0 and action < 8
-
-
+        
+    def test_forward(self, init_parameters, create_mapstack):
+        pass
     # def forward(self, observation_map_stack: torch.Tensor) -> Tuple[Categorical, torch.Tensor]:
     #     ''' 
     #         Method that takes the observation and returns all action probabilities. 
@@ -739,6 +740,8 @@ class Test_Actor:
     #     dist_entropy: torch.Tensor  = dist.entropy()
     #     return dist, dist_entropy
     
+    def test_get_action_information(self, init_parameters, create_mapstack):
+        pass
     # def get_action_information(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     #     ''' Method that gets the action logprobabilities for an observation mapstack and calculates a particular actions entropy.
         
@@ -757,14 +760,14 @@ class Test_Actor:
     #     dist_entropy: torch.Tensor  = dist.entropy()
             
     #     return action_logprobs, dist_entropy        
+    
+    def test_modes(self, init_parameters):
+        pi = RADTEAM_core.Actor(**init_parameters)
+        pi.put_in_training_mode()
+        assert pi.actor.training == True
+        pi.put_in_evaluation_mode()
+        assert pi.actor.training == False
 
-    # def put_in_training_mode(self)-> None:
-    #     ''' Method to put actor in train mode. This adds dropout, batch normalization, and gradients.'''
-    #     self.actor.train()
-        
-    # def put_in_evaluation_mode(self)-> None:
-    #     ''' Method to put actor in eval mode. This disables dropout, batch normalization, and gradients.'''    
-    #     self.actor.eval()  
 
     # def reset_output_layers(self):
     #     ''' Method to only reset weights and biases in output layers. This removes the learning needed to pick a correct action for a prior episode. '''
