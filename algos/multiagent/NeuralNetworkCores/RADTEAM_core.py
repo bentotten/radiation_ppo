@@ -758,6 +758,7 @@ class Actor(nn.Module):
     def act(self, observation_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
             Method that selects action from action probabilities returned by actor network.
+            
             :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
             :return: (Tensor, Tensor) Returns the action selected (tensor(1)) and the log-probability for that action.
         '''
@@ -773,32 +774,59 @@ class Actor(nn.Module):
         
         return action, action_logprob
 
-    def forward(self, observation_map_stack: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        ''' Method that takes the observation and returns all action probabilities. '''
-        return self.act(observation_map_stack)
+    def forward(self, observation_map_stack: torch.Tensor) -> Tuple[Categorical, torch.Tensor]:
+        ''' 
+            Method that takes the observation and returns all action probabilities. 
+            :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
+            :return: (Tensor, Tensor) Returns probability distribution for all actions and the entropy for the action distribution.        
+        '''
+        #: Raw action probabilities for each available action for this particular observation        
+        action_probs: torch.Tensor = self.actor(observation_map_stack)
+        #: Convert raw action probabilities into a probability distribution that sums to 1.        
+        dist = Categorical(action_probs)
+        #: Degree of randomness in distribution        
+        dist_entropy: torch.Tensor  = dist.entropy()
+        return dist, dist_entropy
     
     def get_action_information(self, state_map_stack: torch.Tensor, action: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        ''' Put actor into "train" mode and get action logprobabilities for an observation mapstack. Then calculate a particular actions entropy.'''
-        self.actor.train()
-
+        ''' Method that gets the action logprobabilities for an observation mapstack and calculates a particular actions entropy.
+        
+            :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
+            :param action: (Tensor) The the action taken (tensor(1))
+            :return: (Tensor, Tensor) Returns the log-probability for the passed-in action and the entropy for the action distribution.
+        '''
         #: Raw action probabilities for each available action for this particular observation        
         action_probs: torch.Tensor = self.actor(state_map_stack)
         #: Convert raw action probabilities into a probability distribution that sums to 1.        
         dist = Categorical(action_probs)
+        #: Take the log probability of the action. This is used to compute loss for the policy gradient update; 
+        #:  Taking the gradient of the log probability is more stable than using the actual density        
         action_logprobs: torch.Tensor  = dist.log_prob(action)
+        #: Degree of randomness in distribution
         dist_entropy: torch.Tensor  = dist.entropy()
             
         return action_logprobs, dist_entropy        
 
     def put_in_training_mode(self)-> None:
+        ''' Method to put actor in train mode. This adds dropout, batch normalization, and gradients.'''
         self.actor.train()
         
     def put_in_evaluation_mode(self)-> None:
+        ''' Method to put actor in eval mode. This disables dropout, batch normalization, and gradients.'''    
         self.actor.eval()  
-        
-    def _reset_state(self):
-        raise NotImplementedError("Not implemented")   
 
+    def reset_output_layers(self):
+        ''' Method to only reset weights and biases in output layers. This removes the learning needed to pick a correct action for a prior episode. '''
+        for layer in self.actor:
+            if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):
+                layer.reset_parameters()                
+        
+    def reset_all_hidden(self):
+        ''' Method to completely reset all weights and biases in all hidden layers ''' 
+        for layer in self.actor:
+            if isinstance(layer, nn.Linear):
+                layer.reset_parameters()
+                
 
 class Critic(nn.Module):
     def __init__(self, map_dim, observation_space, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
@@ -1366,11 +1394,11 @@ class CCNBase:
         
         self.render_counter += 1
         plt.close(fig)  # TODO figs arent closing, causes memory issues during large training
-
-    def reset(self):
-        ''' Reset entire CNN '''
-        self.maps.reset()
         
     def clear_maps(self):
-        ''' Just clear maps and buffer for new episode'''
-        self.maps.clear_maps()        
+        ''' Just clear maps for new episode'''
+        self.maps.clear_maps()
+            
+    def reset(self, full: bool = False):
+        ''' Reset entire maps buffer '''
+        self.maps.reset()  

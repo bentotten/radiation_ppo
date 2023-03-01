@@ -205,10 +205,6 @@ class train_PPO:
                     ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?
             else:
                 for ac in self.agents.values():
-                    # Put actor and critic into eval mode TODO move this somewhere else
-                    #ac.model.eval()  # TODO add PFGRU
-                    ac.agent.pi.eval()
-                    ac.agent.critic.eval() # TODO will need to be changed for global critic 
                     if ac.agent.maps.location_map.max() !=0.0 or ac.agent.maps.readings_map.max() !=0.0 or ac.agent.maps.visit_counts_map.max() !=0.0:
                         raise ValueError("Maps did not reset")                       
             
