@@ -654,7 +654,7 @@ class Actor(nn.Module):
         :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5. 
         :param action_dim: (int) Number of actions to choose from. Defaults to 8.         
     '''
-    def __init__(self, map_dim: Tuple[int, int], batches: int=1, map_count: int=5, action_dim: int=8, observation_space: Union[int, None] = None):
+    def __init__(self, map_dim: Tuple[int, int], batches: int=1, map_count: int=5, action_dim: int=8):
         super(Actor, self).__init__()
 
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
@@ -831,7 +831,6 @@ class Actor(nn.Module):
 class Critic(nn.Module):
     def __init__(self, map_dim, observation_space, batches: int=1, map_count: int=5, action_dim: int=5, global_critic: bool=False):
         super(Critic, self).__init__()
-        
         '''
             Critic Input tensor shape: (batch size, number of channels, height of grid, width of grid)
                 1. batch size: 1 mapstack
@@ -916,9 +915,7 @@ class Critic(nn.Module):
         return state_value
     
     def evaluate(self, state_map_stack):       
-        self.critic.train()
         state_values = self.critic(state_map_stack)
-            
         return state_values    
 
     def _reset_state(self):
