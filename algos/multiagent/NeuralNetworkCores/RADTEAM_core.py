@@ -858,6 +858,8 @@ class Critic(nn.Module):
         :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5.
     '''    
     def __init__(self, map_dim, batches: int=1, map_count: int=5):
+        super(Critic, self).__init__()    
+            
         # TODO better to send one location map for all agents through or two separate maps?
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         

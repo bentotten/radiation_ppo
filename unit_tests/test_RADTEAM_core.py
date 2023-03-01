@@ -731,3 +731,112 @@ class Test_Actor:
         pi.put_in_evaluation_mode()
         assert pi.actor.training == False
 
+class Test_Critic:
+    @pytest.fixture
+    def init_parameters(self)-> dict:
+        ''' Set up initialization parameters for Critic '''
+        torch.manual_seed(0)
+        np.random.seed(0)
+        
+        return dict(
+            map_dim=(2,2),
+            batches=1,
+            map_count=5,
+        )
+        
+    @pytest.fixture
+    def create_mapstack(self)-> torch.Tensor:
+        ''' Set up a mock mapstack '''
+        agent_loc = np.zeros((2, 2), dtype=np.float32)
+        agent_loc[0][0] = 1.0
+        other_loc = np.zeros((2, 2), dtype=np.float32)
+        other_loc[0][1] = 1.0
+        radiation = np.zeros((2, 2), dtype=np.float32)
+        radiation[1][1] = 0.5
+        radiation[0][1] = 0.7
+        visits = np.zeros((2, 2), dtype=np.float32)
+        visits[0][0] = 0.23
+        visits[0][1] = 0.23
+        obstacles = np.zeros((2, 2), dtype=np.float32)
+        obstacles[1][0] = 0.9
+        
+        map_stack: torch.Tensor = torch.stack(
+            [torch.tensor(agent_loc), torch.tensor(other_loc), torch.tensor(radiation), torch.tensor(visits),  torch.tensor(obstacles)]
+            )
+        
+        batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
+        return batched_map_stack
+        
+    def test_Init(self, init_parameters, create_mapstack):
+        _ = RADTEAM_core.Critic(**init_parameters)
+
+    def test_Layers(self, init_parameters, create_mapstack):
+        ''' Test layers are the shapes they should be'''
+        critic = RADTEAM_core.Critic(**init_parameters)
+        critic.eval()
+        mapstack = create_mapstack
+        
+        for i, layer in enumerate(critic.critic.children()):
+            if i == 0:
+                # First convolution
+                output = layer(mapstack)
+                assert output.size() == (1, 8, 2, 2)
+            elif i == 1:
+                # Relu
+                output = layer(output)                
+                assert output.size() == (1, 8, 2, 2)                
+            elif i == 2:
+                # Maxpool
+                output = layer(output)
+                assert output.size() == (1, 8, 1, 1)
+            elif i == 3:
+                # Second Convolution
+                output = layer(output)
+                assert output.size() == (1, 16, 1, 1)
+            elif i == 4:
+                # Relu
+                output = layer(output)
+                assert output.size() == (1, 16, 1, 1)
+            elif i == 5:
+                # Flatten layer
+                output = layer(output)
+                assert output.numel() == 16
+            elif i == 6:
+                # First linear
+                output = layer(output)
+                assert output.numel() == 32
+            elif i == 7:
+                # relu
+                output = layer(output)
+                assert output.numel() == 32
+            elif i == 8:
+                # Second Linear
+                output = layer(output)
+                assert output.numel() == 16
+            elif i == 9:
+                # relu
+                output = layer(output)
+                assert output.numel() == 16
+            elif i == 10:
+                # output linear
+                output = layer(output)
+                assert output.numel() == 1
+            else:            
+                raise Exception("Too many layers seen")
+
+    def test_forward(self, init_parameters, create_mapstack):
+        ''' Test layers are the shapes they should be'''
+        critic = RADTEAM_core.Critic(**init_parameters)
+        critic.eval()
+        mapstack = create_mapstack
+        state_value = critic.forward(mapstack)
+        assert state_value.numel == 1
+        # TODO add better check
+
+    def test_modes(self, init_parameters):
+        critic = RADTEAM_core.Critic(**init_parameters)
+        critic.put_in_training_mode()
+        assert critic.critic.training == True
+        critic.put_in_evaluation_mode()
+        assert critic.critic.training == False
+
