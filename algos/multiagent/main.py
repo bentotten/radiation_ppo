@@ -426,7 +426,6 @@ def main() -> None:
             enforce_boundaries=args.enforce_boundaries,
             grid_bounds=env.scaled_grid_max,
             resolution_multiplier=args.resolution_multiplier,
-            global_critic_flag = args.global_critic,
             GlobalCritic=None
         )         
 

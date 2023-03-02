@@ -1237,7 +1237,6 @@ class CCNBase:
         is it recommended to use full accuracy - heatmaps indicate "area of interest trends", the values themselves are less important.
     :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
         coordinates can be encompased in a matrix element.
-    :param global_critic_flag: (bool) Indicate if a global critic will be set after initialization
     :param GlobalCritc: (Critic) Actual global critic object
     
     **Important variables that are initialized elsewhere:**
@@ -1255,7 +1254,6 @@ class CCNBase:
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
     grid_bounds: Tuple[int, int] = field(default_factory= lambda: (1, 1))
     resolution_multiplier: float = field(default=0.01)
-    global_critic_flag: bool = field(default=False)  
     GlobalCritic: Union[Critic, None] = field(default=None)
    
     # Initialized elsewhere
@@ -1304,23 +1302,16 @@ class CCNBase:
         
         # Set up actor and critic
         self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)
-        if not self.global_critic_flag:
-            self.critic = Critic(map_dim=self.maps.map_dimensions)
+        if self.GlobalCritic:
+            self.critic = self.GlobalCritic            
         else:
-            if self.GlobalCritic:
-                self.critic = self.GlobalCritic
-            else:
-                raise Exception("Global Critic was not initialized")
-        assert self.critic, "Critic was not initialized"
+            self.critic = Critic(map_dim=self.maps.map_dimensions)
+
         self.mseLoss = nn.MSELoss()
         
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         # TODO Finish integrating this 
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
-        
-    def set_global_critic(self, new_critic: Critic):
-        assert self.global_critic_flag == False, "Global critic called but local critic already exists. Was global_critic_flag == True passed in to CNNBase creation?"
-        self.critic = new_critic
         
     def set_mode(self, mode: str) -> None:
         ''' 

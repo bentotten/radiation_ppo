@@ -119,8 +119,6 @@ class train_PPO:
     DEBUG: bool = field(default=False)
 
     # Initialized elsewhere
-    #: Global Critic for Centralized Training scenarios
-    GlobalCritic: RADCNN_core.Critic = field(default=True)
     #: Time experiment was started
     start_time: float = field(default_factory= lambda: time.time())
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
@@ -129,6 +127,8 @@ class train_PPO:
     agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
     #: Object that holds agent loggers
     loggers: Dict[int, EpochLogger] = field(default_factory=lambda:dict())
+    #: Global Critic for Centralized Training scenarios
+    GlobalCritic: RADCNN_core.Critic = field(default=None)    
     
     def __post_init__(self)-> None:  
         # Set Pytorch random seed
@@ -152,23 +152,25 @@ class train_PPO:
             self.loggers[id] = EpochLogger(**(logger_kwargs_set))
         self.loggers[0].save_config(config_json) 
         
+        # Initialize Global Critic
+        if self.global_critic:
+            prototype = RADCNN_core.CCNBase(id=0, **self.ppo_kwargs['actor_critic_args'])
+            self.GlobalCritic = RADCNN_core.Critic(map_dim=prototype.get_map_dimensions(), batches=prototype.get_batch_size(), map_count=prototype.get_map_count())
+            self.ppo_kwargs['actor_critic_args']['GlobalCritic'] = self.GlobalCritic        
+                        
         # Initialize agents        
         for i in range(self.number_of_agents):
             # If RAD-A2C, set up statistics buffers         
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 self.stat_buffers[i] = StatisticStandardization()          
             
-            
-            #self.ppo_kwargs['ac'] = global_critic_object
-            
             self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
-            if self.global_critic:
-                map_dimensions = self.agents[0].get_map_dimensions()
-                map_count = self.agents[0].get_map_count()
-                batches = self.agents[0].get_batch_size()
-                self.GlobalCritic = RADCNN_core.Critic(map_dim=map_dimensions, batches=batches, map_count=map_count)
+            self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy
             
-            self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy        
+            # Sanity check
+            if self.global_critic:
+                assert self.agents[i].agent.critic is self.GlobalCritic
+                
                       
     def train(self)-> None:
         ''' Function that executes training simulation. 
