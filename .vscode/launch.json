@@ -43,7 +43,7 @@
       "justMyCode": false,
       "args": [
         "--agent-count",
-        "1",
+        "2",
         "--steps-per-epoch",
         "12",
         "--steps-per-episode",

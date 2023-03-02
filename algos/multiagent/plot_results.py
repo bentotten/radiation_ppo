@@ -76,8 +76,8 @@ def trim_axs(axs, N):
 def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
-    #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']  # 'AverageEpRet' Missing from dataset
-    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']
+    #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']  # 'AverageEpRet' Missing from dataset
+    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']
     exclude = ['Condition1', 'Condition2', 'AgentID', 'Time', 'Epoch']
     print(len(lst))
     for lab in lst:
@@ -120,7 +120,7 @@ def plot(data,type_=None, smooth = True):
     elif type_ is 'entropy':
         y_ax = 'Entropy'
     elif type_ is 'kl':
-        y_ax = 'KL'
+        y_ax = 'kl_divergence'
     elif type_ is 'len':
         y_ax = 'Episode Length'
     elif type_ is 'loss_v':

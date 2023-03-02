@@ -424,6 +424,7 @@ def main() -> None:
         observation_space=env.observation_space.shape[0],
         bp_args=bp_args,
         steps_per_epoch=args.steps_per_epoch,
+        number_of_agents=args.agent_count,
         env_height=env.search_area[2][1],
         seed=args.seed,        
         actor_critic_args=ac_kwargs,

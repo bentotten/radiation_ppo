@@ -28,51 +28,61 @@ except:
     raise Exception
 
 
-Shape: TypeAlias = Union[int, Tuple[int, Any]]
+Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
+    '''
+        Method to combine length and existing shape dimension into a new tuple. Length is in x position. If shape is a tuple, flatten it and add it to remaining tuple positions.
+        
+        :param length: (int) X position of tuple.
+        :param shape: (int | Tuple[int, Any]) remaining positions in tuple.
+    '''
     if shape is None:
-        return (length,) # type: ignore
+        return (length,)
     elif np.isscalar(shape):
         shape = cast(int, shape)
         return (length, shape)
     else:
-        # TODO check this is working
-        shape = cast(tuple[int, ...], shape) # type: ignore
-        return (length, *shape) # type: ignore
+        shape = cast(Tuple[int, Any], shape) 
+        return (length, *shape) 
 
 
-def discount_cumsum(
-    x: npt.NDArray[np.float64], discount: float
-) -> npt.NDArray[np.float64]:
+def discount_cumsum(x: npt.NDArray[np.float64], discount: float) -> npt.NDArray[np.float64]:
     """
-    magic from rllab for computing discounted cumulative sums of vectors.
-    input:
-        vector x,
-        [x0,
-         x1,
-         x2]
+        Function from rllab for computing discounted cumulative sums of vectors.
+        See: https://docs.scipy.org/doc/scipy/tutorial/signal.html#difference-equation-filtering
+        
+        Input: vector x,
+            [x0,
+            x1,
+            x2]
 
-    output:
-        [x0 + discount * x1 + discount^2 * x2,
-         x1 + discount * x2,
-         x2]
+        Output:
+            [x0 + discount * x1 + discount^2 * x2,
+            x1 + discount * x2,
+            x2]        
+        
+        :param x: Vector to apply discounts to.
+        :param discount: Discounts to be applied to calculations
+        
+        :return: 
+        
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
 class UpdateResult(NamedTuple):
     ''' Object that contains the return values from the neural network updates '''
-    StopIter: int
-    LossPi: float
-    LossV: float
-    LossModel: float
-    KL: npt.NDArray[np.float32]
+    stop_iteration: int
+    loss_policy: float
+    loss_critic: float
+    loss_predictor: float
+    kl_divergence: npt.NDArray[np.float32]
     Entropy: npt.NDArray[np.float32]
     ClipFrac: npt.NDArray[np.float32]
     LocLoss: torch.Tensor
-    VarExplain: int
+    VarExplain: int #TODO what is this and can it be removed?
 
 
 class BpArgs(NamedTuple):
@@ -86,6 +96,24 @@ class BpArgs(NamedTuple):
 
 @dataclass
 class OptimizationStorage:
+    '''     
+        Class that stores information related to updating neural network models for each agent. It includes the clip ratio for 
+        ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy, and the target kl divergence 
+        for early stopping.
+            
+        :param train_pi_iters: (int) Maximum number of gradient descent steps to take on actor policy loss per epoch. (Early stopping may cause 
+            optimizer to take fewer than this.)
+        :param train_v_iters: (int) Number of gradient descent steps to take on critic state-value function per epoch.
+        :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit)
+        :param {*}_optimizer: (torch.optim) Pytorch Optimizer with learning rate decay [Torch]
+        :param clip_ratio: (float) Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy 
+            while still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't
+            help on the objective anymore. This is usually small, often 0.1 to 0.3, and is typically denoted by :math:`\epsilon`. Basically if the 
+            policy wants to perform too large an update, it goes with a clipped value instead.
+        :param alpha: (float) Entropy reward term scaling used during calculating loss. 
+        :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used 
+            for early stopping. It's usually small, 0.01 or 0.05.
+    '''    
     train_pi_iters: int
     train_v_iters: int
     train_pfgru_iters: int    
@@ -100,33 +128,7 @@ class OptimizationStorage:
     critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # Schedules gradient steps for value function (critic)
     pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)   # Schedules gradient steps for PFGRU location predictor module
     loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean"))) # Loss calculator utility NOTE: Actor/PFGRU have other complex loss functions
-        
-    '''     
-    This stores information related to updating neural network models for each agent. It includes the clip ratio for 
-    ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy,
-    and the target KL for early stopping.
-        
-    train_pi_iters (int): Maximum number of gradient descent steps to take on actor policy loss per epoch. 
-            (Early stopping may cause optimizer to take fewer than this.)
 
-    train_v_iters (int): Number of gradient descent steps to take on critic state-value function per epoch.
-            
-    train_pfgru_iters (int): Number of gradient descent steps to take for source localization neural network
-        (the PFGRU unit)
-    
-    {*}_optimizer (torch.optim): Pytorch Optimizer with learning rate decay [Torch]
-    
-    clip_ratio (float): Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy 
-        go from the old policy while still profiting (improving the objective function)? The new policy
-        can still go farther than the clip_ratio says, but it doesn't help on the objective anymore. 
-        (Usually small, 0.1 to 0.3.) Typically denoted by :math:`\epsilon`. Basically if the policy wants to 
-        perform too large an update, it goes with a clipped value instead.
-        
-    alpha (float): Entropy reward term scaling used during calculating loss. 
-    
-    target_kl (float): Roughly what KL divergence we think is appropriate between new and old policies after an update.
-        This will get used for early stopping (Usually small, 0.01 or 0.05.) 
-    '''        
         
     def __post_init__(self):        
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
@@ -147,6 +149,7 @@ class PPOBuffer:
     #: are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized. 
     obs_dim: int  # Observation space dimensions
     max_size: int  # Max steps per epoch
+    number_agents: int # Number of agents 
 
     episode_lengths: List[int] = field(default_factory= lambda: list())  # Episode length storage
 
@@ -182,6 +185,10 @@ class PPOBuffer:
     def __post_init__(self):
         self.ptr = 0
         self.path_start_idx = 0     
+
+        self.full_observation_buffer= np.zeros(
+            combined_shape(self.max_size, (self.number_agents, self.obs_dim)), dtype=np.float32
+        )
            
         self.obs_buf= np.zeros(
             combined_shape(self.max_size, self.obs_dim), dtype=np.float32
@@ -461,6 +468,7 @@ class AgentPPO:
     observation_space: int
     bp_args: BpArgs     # No default due to need for environment height parameter.
     steps_per_epoch: int  # No default value - Critical that it match environment
+    number_of_agents: int # Number of agents
     env_height: float
     seed: int = field(default= 0)
     actor_critic_args: Dict[str, Any] = field(default_factory= lambda: dict())
@@ -527,7 +535,7 @@ class AgentPPO:
             raise ValueError('Unsupported Neural Network type requested')
             
         # Inititalize buffer
-        self.ppo_buffer = PPOBuffer(obs_dim=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam)
+        self.ppo_buffer = PPOBuffer(obs_dim=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
         
     def reduce_pfgru_training(self):
         '''Reduce localization module training iterations after some number of epochs to speed up training'''
@@ -611,7 +619,7 @@ class AgentPPO:
             self.agent_optimizer.critic_optimizer.zero_grad()                
             # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             while not term and kk < self.train_pi_iters:
-                # Early stop training if KL-div above certain threshold
+                # Early stop training if KL divergence above certain threshold
                 #pi_l, pi_info, term, loc_loss = self.update_a2c(agent, data, min_iters, kk)  # pi_l = policy loss
                 update_results: Dict[str, Union[torch.Tensor, npt.NDArray[Any], List[Any], bool]] = {}
                 (
@@ -629,15 +637,15 @@ class AgentPPO:
 
             # Log changes from update
             return UpdateResult(
-                StopIter=kk,
-                LossPi=update_results['pi_l'].item(), # type: ignore
-                LossV=update_results['pi_info']["val_loss"].item(), # type: ignore
-                LossModel=model_losses.item(),  # TODO if using the regression GRU
-                KL=update_results['pi_info']["kl"], # type: ignore
+                stop_iteration=kk,
+                loss_policy=update_results['pi_l'].item(), # type: ignore
+                loss_critic=update_results['pi_info']["val_loss"].item(), # type: ignore
+                loss_predictor=model_losses.item(),  # TODO if using the regression GRU
+                kl_divergence=update_results['pi_info']["kl"], # type: ignore
                 Entropy=update_results['pi_info']["ent"], # type: ignore
                 ClipFrac=update_results['pi_info']["cf"], # type: ignore
                 LocLoss=update_results['loc_loss'], # type: ignore
-                VarExplain=0
+                VarExplain=0 # TODO what is this?
             )
                             
         else:
@@ -709,15 +717,15 @@ class AgentPPO:
             
             # Log changes from update
             return UpdateResult(
-                StopIter=k_epoch,  
-                LossPi=actor_loss_results['pi_loss'].item(),
-                LossV=critic_loss_results['critic_loss'].item(),
-                LossModel=model_losses.item(),  # TODO implement when PFGRU is working for CNN
-                KL=actor_loss_results["kl"],
+                stop_iteration=k_epoch,  
+                loss_policy=actor_loss_results['pi_loss'].item(),
+                loss_critic=critic_loss_results['critic_loss'].item(),
+                loss_predictor=model_losses.item(),  # TODO implement when PFGRU is working for CNN
+                kl_divergence=actor_loss_results["kl"],
                 Entropy=actor_loss_results["entropy"],
                 ClipFrac=actor_loss_results["clip_fraction"],
                 LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-                VarExplain=0
+                VarExplain=0 # TODO what is this?
             )        
     
     def compute_batched_losses_pi(self, sample, data, map_buffer_maps, minibatch = None):

@@ -722,7 +722,7 @@ class PPO:
             Entropy=ent,
             ClipFrac=cf,
             LocLoss=loc_loss,
-            VarExplain=0,
+            VarExplain=0, #TODO what is this?
         )
 
     #  def update_loc_rnn(self, data, env: RadSearch, loss):

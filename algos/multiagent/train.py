@@ -55,7 +55,7 @@ except:
 ################################### Training ###################################
 @dataclass
 class train_PPO:
-    ''' Proximal Policy Optimization (by clipping) with early stopping based on approximate KL. Base code from OpenAI: https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
+    ''' Proximal Policy Optimization (by clipping) with early stopping based on approximate KL Divergence. Base code from OpenAI: https://github.com/openai/spinningup/blob/master/spinup/algos/pytorch/ppo/ppo.py
     This class focuses on the coordination part of training an actor-critic model, including coordinating agent objects, interacting with simulation environment for a certain number of epochs, and 
     calling an agents update function according to a seperate neural network module.
     
@@ -245,6 +245,7 @@ class train_PPO:
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
                 #   record state values with logger 
+                # TODO Change away from numpy array
                 for id, ac in self.agents.items():
                     ac.ppo_buffer.store(
                         obs = observations[id],
@@ -422,15 +423,15 @@ class train_PPO:
                 # Store results
                 # TODO some of these are getting updated within the update_agent function
                 self.loggers[id].store(
-                    StopIter=update_results.StopIter,
-                    LossPi=update_results.LossPi,
-                    LossV=update_results.LossV,
-                    LossModel=update_results.LossModel,
-                    KL=update_results.KL,
+                    stop_iteration=update_results.stop_iteration,
+                    loss_policy=update_results.loss_policy,
+                    loss_critic=update_results.loss_critic,
+                    loss_predictor=update_results.loss_predictor,
+                    kl_divergence=update_results.kl_divergence,
                     Entropy=update_results.Entropy,
                     ClipFrac=update_results.ClipFrac,
                     LocLoss=update_results.LocLoss,
-                    VarExplain=update_results.VarExplain,
+                    VarExplain=update_results.VarExplain, # TODO what is this?
                 )            
             
             if not terminal:
@@ -444,15 +445,15 @@ class train_PPO:
                 self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
                 self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
-                self.loggers[id].log_tabular("LossPi", average_only=True)
-                self.loggers[id].log_tabular("LossV", average_only=True)
-                self.loggers[id].log_tabular("LossModel", average_only=True)  # Specific to the regressive GRU
+                self.loggers[id].log_tabular("loss_policy", average_only=True)
+                self.loggers[id].log_tabular("loss_critic", average_only=True)
+                self.loggers[id].log_tabular("loss_predictor", average_only=True)  # Specific to the regressive GRU
                 self.loggers[id].log_tabular("LocLoss", average_only=True)
                 self.loggers[id].log_tabular("Entropy", average_only=True)
-                self.loggers[id].log_tabular("KL", average_only=True)
+                self.loggers[id].log_tabular("kl_divergence", average_only=True)
                 self.loggers[id].log_tabular("ClipFrac", average_only=True)
                 self.loggers[id].log_tabular("DoneCount", sum_only=True)
                 self.loggers[id].log_tabular("OutOfBound", average_only=True)
-                self.loggers[id].log_tabular("StopIter", average_only=True)
+                self.loggers[id].log_tabular("stop_iteration", average_only=True)
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
