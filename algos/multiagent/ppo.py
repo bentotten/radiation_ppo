@@ -128,7 +128,7 @@ class OptimizationStorage:
     #: Schedules gradient steps for actor
     pi_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
     #: Schedules gradient steps for value function (critic)
-    critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
+    critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # TODO 
     #: Schedules gradient steps for PFGRU location predictor module    
     pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)   
     #: Loss calculator utility for Critic   
@@ -139,7 +139,7 @@ class OptimizationStorage:
             self.pi_optimizer, step_size=100, gamma=0.99
         )
         self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.pi_optimizer, step_size=100, gamma=0.99
+            self.critic_optimizer, step_size=100, gamma=0.99
         )        
         self.pfgru_scheduler = torch.optim.lr_scheduler.StepLR(
             self.model_optimizer, step_size=100, gamma=0.99
@@ -508,13 +508,17 @@ class AgentPPO:
 
     def __post_init__(self):
         ''' Initialize Agent's neural network architecture'''
+
+            
+        if not CriticOptimizer:
+            CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
                   
         # Simple Feed Forward Network
         if self.actor_critic_architecture == 'ff':
             self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
         # Convolutional Network for RAD-TEAM
         elif self.actor_critic_architecture == 'cnn':
-            self.agent = RADCNN_core.CCNBase(id=self.id, **self.actor_critic_args)
+            self.agent = RADCNN_core.CCNBase(id=self.id, **self.actor_critic_args)             
             
             # Initialize learning opitmizers                           
             self.agent_optimizer = OptimizationStorage(
@@ -522,7 +526,7 @@ class AgentPPO:
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
+                critic_optimizer = self.CriticOptimizer,  # Allows for global optimizer
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
@@ -540,7 +544,7 @@ class AgentPPO:
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = Adam(self.agent.pi.parameters(), lr=self.critic_learning_rate),
+                critic_optimizer = self.CriticOptimizer,  # Allows for global optimizer
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
@@ -680,8 +684,10 @@ class AgentPPO:
                 assert torch.equal(data_obs, map_obs)            
             
             # Reset gradients 
+            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            # TODO ENSURE GLOBAL CRITIC IS ONLY UPDATED ONCE            
             self.agent_optimizer.pi_optimizer.zero_grad()
-            self.agent_optimizer.critic_optimizer.zero_grad()     
+            self.agent_optimizer.critic_optimizer.zero_grad()
                 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             for k_epoch in range(self.train_pi_iters):
@@ -1105,6 +1111,10 @@ class AgentPPO:
     def save(self, path: str)-> None:
         ''' Wrapper for network '''
         self.agent.save(checkpoint_path=path)
+
+    def load(self, path: str)-> None:
+        ''' Wrapper for network '''
+        self.agent.load(checkpoint_path=path)
         
     def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")

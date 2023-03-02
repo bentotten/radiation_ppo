@@ -159,6 +159,8 @@ class train_PPO:
         if self.global_critic_flag:
             prototype = RADCNN_core.CCNBase(id=0, **self.ppo_kwargs['actor_critic_args'])
             self.GlobalCritic = RADCNN_core.Critic(map_dim=prototype.get_map_dimensions(), batches=prototype.get_batch_size(), map_count=prototype.get_map_count())
+            #CriticOptimizer = Adam(self.GlobalCritic.parameters(), lr=self.critic_learning_rate)
+            
             self.ppo_kwargs['actor_critic_args']['GlobalCritic'] = self.GlobalCritic
                         
         # Initialize agents        
@@ -459,7 +461,10 @@ class train_PPO:
 
             # Perform PPO update!
             for id, ac in self.agents.items():
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                # TODO ENSURE GLOBAL CRITIC IS ONLY UPDATED ONCE
                 update_results = ac.update_agent(self.loggers[id])
+                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 
                 # Store results
                 # TODO some of these are getting updated within the update_agent function
