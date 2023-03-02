@@ -1389,6 +1389,9 @@ class CCNBase:
             
             :param checkpoint_path: (str) Path to save neural network models to.
         '''
+        # TODO implement a full save instead of just model parameters
+        # https://pytorch.org/tutorials/beginner/saving_loading_models.html#saving-loading-a-general-checkpoint-for-inference-and-or-resuming-training
+        
         # Save original modes
         pi_train_mode: bool = self.pi.training
         critic_train_mode: bool = self.critic.training
@@ -1402,10 +1405,8 @@ class CCNBase:
         # Restore original modes
         if pi_train_mode: self.pi.train() 
         else: self.pi.eval()
-
         if critic_train_mode: self.critic.train() 
         else: self.critic.eval()
-
         if predictor_train_mode: self.model.train() 
         else: self.model.eval()           
    

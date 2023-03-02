@@ -453,7 +453,7 @@ class AgentPPO:
         
         :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training.
         
-        :param CriticOptimizer: (torch.optim.Optimizer) Optimizer for global critic. Defaults to none.
+        :param GlobalCriticOptimizer: (torch.optim.Optimizer) Optimizer for global critic. Defaults to none.
         
         :param actor_learning_rate: (float) For actor/policy. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
             reduced as the agent's learning progresses.
