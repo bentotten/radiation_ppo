@@ -156,6 +156,7 @@ class PPOBuffer:
             detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements are a reading of how close an agent is to an obstacle. 
             Obstacle sensor readings and x,y coordinates are normalized. 
         :param max_size: Max steps per epoch.
+        :param max_episode_length: (int) Maximum steps per episode
         :param number_agents: Number of agents.
         :param episode_lengths: 
         
@@ -166,9 +167,11 @@ class PPOBuffer:
         
     observation_dimension: int
     max_size: int
+    max_episode_length: int
     number_agents: int
 
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
+    episode_ptr: int = field(init=False) # For keeping track of episode index in buffer during an update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: npt.NDArray[np.float32] = field(init=False)  # Stores episode lengths
@@ -192,10 +195,15 @@ class PPOBuffer:
     def __post_init__(self):
         self.ptr = 0
         self.path_start_idx = 0     
+        self.episode_ptr = 0
 
+        self.episode_lengths_buffer = np.zeros(
+            combined_shape(self.max_size), dtype=np.float32
+        )
+        
         self.full_observation_buffer= np.zeros(
             combined_shape(self.max_size, (self.number_agents, self.observation_dimension)), dtype=np.float32
-        )
+        )        
            
         self.obs_buf= np.zeros(
             combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
@@ -270,7 +278,7 @@ class PPOBuffer:
         """
         Save episode length at the end of an epoch for later calculations
         """
-        self.episode_lengths_buffer[self.ptr]
+        self.episode_lengths_buffer[self.episode_ptr] = episode_length
             
     def finish_path(self, last_val: int = 0) -> None:
         """
@@ -475,6 +483,7 @@ class AgentPPO:
     observation_space: int
     bp_args: BpArgs     # No default due to need for environment height parameter.
     steps_per_epoch: int  # No default value - Critical that it match environment
+    steps_per_episode: int 
     number_of_agents: int # Number of agents
     env_height: float
     seed: int = field(default= 0)
@@ -542,7 +551,7 @@ class AgentPPO:
             raise ValueError('Unsupported Neural Network type requested')
             
         # Inititalize buffer
-        self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
+        self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, max_episode_length=self.steps_per_episode, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
         
     def reduce_pfgru_training(self):
         '''Reduce localization module training iterations after some number of epochs to speed up training'''
@@ -697,7 +706,7 @@ class AgentPPO:
                 # TODO Pull out for global critic
                 self.agent_optimizer.critic_optimizer.zero_grad()
                 critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps)
-                critic_loss_results['critic_lolossss'].backward()
+                critic_loss_results['critic_loss'].backward()
                 self.agent_optimizer.critic_optimizer.step()
                       
             # # Value function learning
