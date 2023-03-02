@@ -830,7 +830,8 @@ class Test_Critic:
         critic.eval()
         mapstack = create_mapstack
         state_value = critic.forward(mapstack)
-        assert state_value.numel == 1
+        test = state_value.numel()
+        assert state_value.numel() == 1
         # TODO add better check
 
     def test_modes(self, init_parameters):
