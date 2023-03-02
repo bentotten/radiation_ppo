@@ -68,6 +68,17 @@ def _log_and_normalize_test(max: int = 120):
     plt.show()
 
 
+def calculate_map_dimensions(grid_bounds: Tuple, resolution_accuracy: float, offset: float):
+    return (
+            int(grid_bounds[0] * resolution_accuracy) + int(offset  * resolution_accuracy),
+            int(grid_bounds[1] * resolution_accuracy) + int(offset  * resolution_accuracy)
+        )
+
+
+def calculate_resolution_accuracy(resolution_multiplier: float, scale: float):
+    return resolution_multiplier * 1/scale
+
+
 class ActionChoice(NamedTuple):
     ''' Named Tuple - Standardized response/return template from Actor-Critic for action selection '''
     #: An Agent's unique identifier that serves as a hash key. 
@@ -403,6 +414,8 @@ class MapsBuffer:
     base: int = field(init=False) 
         
     # Maps
+    #: Number of maps
+    map_count: int = field(init=False, default=5)
     #: Location Map: a 2D matrix showing the individual agent's location.
     location_map: Map = field(init=False) 
     #: Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).    
@@ -428,10 +441,8 @@ class MapsBuffer:
         self.base = self.steps_per_episode * self.number_of_agents
         
         # Calculate map x and y bounds for observation maps
-        self.map_dimensions = (
-            int(self.grid_bounds[0] * self.resolution_accuracy) + int(self.offset  * self.resolution_accuracy),
-            int(self.grid_bounds[1] * self.resolution_accuracy) + int(self.offset  * self.resolution_accuracy)
-        )
+        
+        self.map_dimensions = calculate_map_dimensions(grid_bounds=self.grid_bounds, resolution_accuracy=self.resolution_accuracy, offset= self.offset)
         self.x_limit_scaled: int = self.map_dimensions[0]
         self.y_limit_scaled: int = self.map_dimensions[1]
         
@@ -662,6 +673,9 @@ class Actor(nn.Module):
         super(Actor, self).__init__()
 
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
+        
+        # Set for later fetching for global critic
+        self.batches = batches
         
         channels: int = map_count
         pool_output: int = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
@@ -1202,39 +1216,29 @@ class CCNBase:
     An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Note: Higher accuracy increases training time.
     
     :param id: (int) Unique identifier key that is used to identify own observations from observation object during map conversions.
-    
     :param action_space: (int) Also called action-dimensions. From the environment, get the total number of actions an agent can take. This is used to configure the last 
         linear layer for action-selection in the Actor class.
-        
     :param observation_space: (int) Also called state-space or state-dimensions. The dimensions of the observation returned from the environment.For rad-search this will 
         be 11, for the 11 elements of the observation array. This is used for the PFGRU. Future work: make observation-to-map function accomodate differently sized state-spaces.
-        
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment. Used
         for resolution accuracy calculation and during normalization of visits-counts map and a multiplier for the log base.  
-        
     :param number_of_agents: (int) Number of agents. Used during normalization of visits-counts map and a multiplier for the log base.
-    
     :param detector_step_size: (int) Distance an agent can travel in one step (centimeters). Used for inflating scaled coordinates.
-    
     :param environment_scale: (int) Value that is being used to normalize grid coodinates for agent. This is later used to reinflate coordinates for increased accuracy, though
         increased computation time, for convolutional networks.
-        
     :param bounds_offset: (tuple[float, float]) The difference between the search area and the observation area in the environemnt. This is used to ensure agents can search the 
         entire grid when boundaries are being enforced, not just the obstruction/spawning area. For the CNN, this expands the size of the network to accomodate these extra grid 
         coordinates. This is optional, but for this implementation, to remove this would require adjusting environment to not let agents through to that area when grid boundaries
         are being enforced. Removing this also makes renders look very odd, as agent will not be able to travel to bottom coordinates.
-        
     :param grid_bounds: (tuple[float, float]) The grid bounds for the state returned by the environment. This represents the max x and the max y for the scaled coordinates 
         in the rad-search environment (usually (1, 1)). This is used for scaling in the map buffer by the resolution variable.
-    
     :resolution_multiplier: Multiplier used to indicate how accurate scaling should be for heatmaps. A value of 1 will represent the original accuracy presented by the environment.
         By default, this is downsized to 0.01 in order to reduce the number of trainable parameters in the heatmaps, leading to faster convergence. Only for very small search spaces
         is it recommended to use full accuracy - heatmaps indicate "area of interest trends", the values themselves are less important.
-        
     :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
         coordinates can be encompased in a matrix element.
-        
-    :param Critic: [Optional] For future work, this allows for the inclusion of a pointer to a global critic
+    :param global_critic_flag: (bool) Indicate if a global critic will be set after initialization
+    :param GlobalCritc: (Critic) Actual global critic object
     
     **Important variables that are initialized elsewhere:**
     
@@ -1251,13 +1255,14 @@ class CCNBase:
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
     grid_bounds: Tuple[int, int] = field(default_factory= lambda: (1, 1))
     resolution_multiplier: float = field(default=0.01)
-            
-    #: Critic/Value network. Allows for critic to be accepted as an argument for global-critic situations
-    critic: Union[Critic] = field(default=None)  # type: ignore            
-            
+    global_critic_flag: bool = field(default=False)  
+    GlobalCritic: Union[Critic, None] = field(default=None)
+   
     # Initialized elsewhere
     #: Policy/Actor network
     pi: Actor = field(init=False)
+    #: Critic/Value network
+    critic: Critic = field(default=None)  # type: ignore             
     #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
     model: PFGRUCell = field(init=False)
     #: Buffer that holds map-stacks and converts observations to maps
@@ -1276,8 +1281,8 @@ class CCNBase:
 
     def __post_init__(self)-> None:
         # Set resolution accuracy
-        self.resolution_accuracy = self.resolution_multiplier * 1/self.environment_scale
-        
+        self.resolution_accuracy = calculate_resolution_accuracy(resolution_multiplier=self.resolution_multiplier, scale=self.environment_scale)
+            
         # Set map dimension offset for boundaries
         if self.enforce_boundaries:
             self.scaled_offset = self.environment_scale * max(self.bounds_offset)                    
@@ -1299,13 +1304,23 @@ class CCNBase:
         
         # Set up actor and critic
         self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)
-        if not self.critic:
+        if not self.global_critic_flag:
             self.critic = Critic(map_dim=self.maps.map_dimensions)
+        else:
+            if self.GlobalCritic:
+                self.critic = self.GlobalCritic
+            else:
+                raise Exception("Global Critic was not initialized")
+        assert self.critic, "Critic was not initialized"
         self.mseLoss = nn.MSELoss()
         
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         # TODO Finish integrating this 
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
+        
+    def set_global_critic(self, new_critic: Critic):
+        assert self.global_critic_flag == False, "Global critic called but local critic already exists. Was global_critic_flag == True passed in to CNNBase creation?"
+        self.critic = new_critic
         
     def set_mode(self, mode: str) -> None:
         ''' 
@@ -1364,6 +1379,15 @@ class CCNBase:
 
         # TODO remove numpy 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
+
+    def get_map_dimensions(self)-> Tuple[int, int]:
+        return self.maps.map_dimensions
+    
+    def get_map_count(self)-> int:
+        return self.maps.map_count
+    
+    def get_batch_size(self)-> int:
+        return self.pi.batches
 
     def save(self, checkpoint_path: str)-> None:
         '''

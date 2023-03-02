@@ -75,6 +75,10 @@ class CliArgs:
     Parameters for Neural Networks:
         --net-type, type=str, default="rnn",
             help="Choose between convolutional neural network, recurrent neural network, MLP Actor-Critic (A2C , feed forward, or uniform option: cnn, rnn, mlp, ff, uniform",
+            
+    Parameters for RAD-TEAM
+        "--resolution-multiplier", type=float, default=0.01, help="Indicate degree of accuracy a heatmap should be downsized to. A value of 1 is full accuracy - not recommended for most training environments (see documentation)"
+        "--global-critic", type=bool, default=True, help="Indicate if each agent should have their own critic or a global."
     
     Parameters for RAD-A2C:
         --hid-pol, type=int, default=32, 
@@ -114,6 +118,7 @@ class CliArgs:
     agent_count: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     enforce_boundaries: bool
     resolution_multiplier: float
+    global_critic: bool
     minibatches: int
     env_name: str
     save_freq: int
@@ -161,6 +166,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         agent_count=args.agent_count,
         enforce_boundaries=args.enforce_boundaries,
         resolution_multiplier=args.resolution_multiplier,
+        global_critic=args.global_critic,
         minibatches=args.minibatches,
         env_name=args.env_name,
         save_freq=args.save_freq,
@@ -257,6 +263,9 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--resolution-multiplier", type=float, default=0.01, help="Indicate degree of accuracy a heatmap should be downsized to. A value of 1 is full accuracy - not recommended for most training environments (see documentation)"
     )  
+    parser.add_argument(
+        "--global-critic", type=bool, default=True, help="Indicate if each agent should have their own critic or a global."
+    )      
                   
     # Hyperparameters and PPO parameters
     parser.add_argument(
@@ -416,7 +425,9 @@ def main() -> None:
             bounds_offset=env.observation_area,
             enforce_boundaries=args.enforce_boundaries,
             grid_bounds=env.scaled_grid_max,
-            resolution_multiplier=args.resolution_multiplier
+            resolution_multiplier=args.resolution_multiplier,
+            global_critic_flag = args.global_critic,
+            GlobalCritic=None
         )         
 
     # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
@@ -452,7 +463,8 @@ def main() -> None:
         ppo_kwargs=ppo_kwargs,
         seed=robust_seed,
         number_of_agents=args.agent_count,
-        actor_critic_architecture=args.net_type,            
+        actor_critic_architecture=args.net_type,   
+        global_critic = args.global_critic,                    
         steps_per_epoch=args.steps_per_epoch,
         steps_per_episode=args.steps_per_episode,
         total_epochs=args.epochs,

@@ -31,9 +31,13 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 try:
     from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
     from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
+    from NeuralNetworkCores.RADTEAM_core import calculate_map_dimensions
+    
 except ModuleNotFoundError:
     from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
     from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
+    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import calculate_map_dimensions    
+    
 except: 
     raise Exception
 
@@ -72,6 +76,7 @@ class train_PPO:
     :param seed: (int) Seed for random number generators.
     :param number_of_agents: (int) Number of agents
     :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
+    :param global_critic: [bool] Indicate if a global critic will be set after agent intialization
     :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment.        
     :param total_epochs: (int) Number of total epochs of interaction (equivalent to number of policy updates) to perform.
@@ -96,6 +101,7 @@ class train_PPO:
     # Agent information
     number_of_agents: int = field(default= 1)
     actor_critic_architecture: str = field(default="cnn")
+    global_critic: bool = field(default=True)
     
     # Simulation parameters
     steps_per_epoch: int = field(default= 480)
@@ -113,6 +119,8 @@ class train_PPO:
     DEBUG: bool = field(default=False)
 
     # Initialized elsewhere
+    #: Global Critic for Centralized Training scenarios
+    GlobalCritic: RADCNN_core.Critic = field(default=True)
     #: Time experiment was started
     start_time: float = field(default_factory= lambda: time.time())
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
@@ -149,8 +157,16 @@ class train_PPO:
             # If RAD-A2C, set up statistics buffers         
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 self.stat_buffers[i] = StatisticStandardization()          
-                
+            
+            
+            #self.ppo_kwargs['ac'] = global_critic_object
+            
             self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
+            if self.global_critic:
+                map_dimensions = self.agents[0].get_map_dimensions()
+                map_count = self.agents[0].get_map_count()
+                batches = self.agents[0].get_batch_size()
+                self.GlobalCritic = RADCNN_core.Critic(map_dim=map_dimensions, batches=batches, map_count=map_count)
             
             self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy        
                       

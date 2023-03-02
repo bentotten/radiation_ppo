@@ -16,7 +16,7 @@ import scipy.signal # type: ignore
 
 try:
     import NeuralNetworkCores.FF_core as RADFF_core # type: ignore 
-    import NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
+    import NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore  
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from epoch_logger import EpochLogger # type: ignore
 except ModuleNotFoundError:
@@ -30,6 +30,7 @@ except:
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
+COMPETATIVE_MODE = False  # TODO move to args
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     '''
@@ -436,7 +437,7 @@ class AgentPPO:
         :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
         
         :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent.
-        
+                
         :param minibatch: (int) How many observations to sample out of a batch. Used to reduce the impact of fully online learning.
         
         :param pi_learning_rate: (float) Learning rate for Actor/policy optimizer.
@@ -1092,6 +1093,15 @@ class AgentPPO:
             term,
             (self.env_height * loc - (src_tar)).square().mean().sqrt(),
         )  # type: ignore
+
+    def get_map_dimensions(self):
+        return self.agent.get_map_dimensions()
+    
+    def get_map_count(self):
+        return self.agent.get_map_count()
+    
+    def get_batch_size(self):
+        return self.agent.get_batch_size()
         
     def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")
