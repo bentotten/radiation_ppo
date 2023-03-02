@@ -55,9 +55,6 @@ except ModuleNotFoundError:
 except: 
     raise Exception
 
-# TODO add to a argument
-COMPETATIVE_MODE = False  # Dictates whether individual rewards or team rewards
-
 ################################### Training ###################################
 @dataclass
 class train_PPO:
@@ -76,7 +73,7 @@ class train_PPO:
     :param seed: (int) Seed for random number generators.
     :param number_of_agents: (int) Number of agents
     :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
-    :param global_critic: [bool] Indicate if a global critic will be set after agent intialization
+    :param global_critic_flag: [bool] Indicate if a global critic will be set after agent intialization
     :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment.        
     :param total_epochs: (int) Number of total epochs of interaction (equivalent to number of policy updates) to perform.
@@ -101,7 +98,7 @@ class train_PPO:
     # Agent information
     number_of_agents: int = field(default= 1)
     actor_critic_architecture: str = field(default="cnn")
-    global_critic: bool = field(default=True)
+    global_critic_flag: bool = field(default=True)
     
     # Simulation parameters
     steps_per_epoch: int = field(default= 480)
@@ -128,7 +125,7 @@ class train_PPO:
     #: Object that holds agent loggers
     loggers: Dict[int, EpochLogger] = field(default_factory=lambda:dict())
     #: Global Critic for Centralized Training scenarios
-    GlobalCritic: RADCNN_core.Critic = field(default=None)    
+    GlobalCritic: RADCNN_core.Critic = field(default=None)
     
     def __post_init__(self)-> None:  
         # Set Pytorch random seed
@@ -153,10 +150,10 @@ class train_PPO:
         self.loggers[0].save_config(config_json) 
         
         # Initialize Global Critic
-        if self.global_critic:
+        if self.global_critic_flag:
             prototype = RADCNN_core.CCNBase(id=0, **self.ppo_kwargs['actor_critic_args'])
             self.GlobalCritic = RADCNN_core.Critic(map_dim=prototype.get_map_dimensions(), batches=prototype.get_batch_size(), map_count=prototype.get_map_count())
-            self.ppo_kwargs['actor_critic_args']['GlobalCritic'] = self.GlobalCritic        
+            self.ppo_kwargs['actor_critic_args']['GlobalCritic'] = self.GlobalCritic
                         
         # Initialize agents        
         for i in range(self.number_of_agents):
@@ -168,7 +165,7 @@ class train_PPO:
             self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy
             
             # Sanity check
-            if self.global_critic:
+            if self.global_critic_flag:
                 assert self.agents[i].agent.critic is self.GlobalCritic
             else:
                 assert self.agents[i].agent.critic is not self.GlobalCritic
@@ -263,7 +260,7 @@ class train_PPO:
                 next_observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions) 
                 
                 # Incremement Counters and save new (individual) cumulative returns
-                if COMPETATIVE_MODE:
+                if not self.global_critic_flag:
                     for id in rewards['individual_reward']:
                         episode_return[id] += np.array(rewards['individual_reward'][id], dtype="float32").item()
                 else:
@@ -276,7 +273,7 @@ class train_PPO:
                 #   record state values with logger 
                 # TODO Change away from numpy array
                 for id, ac in self.agents.items():
-                    if COMPETATIVE_MODE:
+                    if not self.global_critic_flag:
                         reward = rewards['individual_reward'][id]
                     else:
                         reward = rewards['team_reward']
