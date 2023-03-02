@@ -1349,13 +1349,11 @@ class CCNBase:
                     [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
                 )
                 
-                # Add to mapstack buffer to eventually be converted into tensor with minibatches
-
-                #print(state_observation[self.id])
-                #observation_key = hash(state_observation[self.id].flatten().tolist)
-                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Move to PPO and save only observation to be reinflated
+                # TODO Move to PPO buffer
+                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) 
             else:
                 with torch.no_grad():
+                    # TODO Move to PPO buffer                    
                     map_stack = self.maps.observation_buffer[-1][1]
                 
             # Add single batch tensor dimension for action selection
@@ -1365,23 +1363,53 @@ class CCNBase:
             action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
             state_value: torch.Tensor = self.critic.forward(batched_map_stack)  # size(1)
 
+        # TODO remove numpy 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
 
-    def save(self, checkpoint_path):
-        torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
+    def save(self, checkpoint_path: str)-> None:
+        '''
+            Save the actor, critic, and predictor neural network models.
+            
+            :param checkpoint_path: (str) Path to save neural network models to.
+        '''
+        torch.save(self.pi.state_dict(), f"{checkpoint_path}_actor")
+        torch.save(self.critic.state_dict(), f"{checkpoint_path}_critic")
+        torch.save(self.model.state_dict(), f"{checkpoint_path}_predictor")        
    
-    def load(self, checkpoint_path):
-        self.policy.load_state_dict(torch.load(checkpoint_path, map_location=lambda storage, loc: storage)) # Actor-critic
+    def load(self, checkpoint_path)-> None:
+        '''
+            Load a saved actor, critic, and predictor neural network model.
+            
+            :param checkpoint_path: (str) Path to read neural network models from.
+        '''        
+        self.pi.load_state_dict(torch.load(f"{checkpoint_path}_actor", map_location=lambda storage, loc: storage)) 
+        self.critic.load_state_dict(torch.load(f"{checkpoint_path}_critic", map_location=lambda storage, loc: storage))
+        self.model.load_state_dict(torch.load(f"{checkpoint_path}_predictor", map_location=lambda storage, loc: storage)) # Actor-critic         
         
-    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
-        ''' Renders heatmaps from maps buffer '''
+    def clear_maps(self)-> None:
+        ''' Clear all maps for new episode'''
+        self.maps.clear_maps()
+            
+    def reset(self)-> None:
+        ''' Reset entire maps buffer '''
+        self.maps.reset()  
+
+    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0)-> None:
+        ''' 
+            Renders heatmaps from maps buffer
+            
+            :param savepath: (str) Path to save heatmaps to.
+            :param save_map: (bool) Whether to save or immediately render heatmaps.
+            :param add_value_text: (bool) Whether to add font with values to heatmap.
+            :param interpolation_method: (str) Interpolation method for "heat". Defaults to "nearest".
+        '''
         if save_map:
             if not path.isdir(str(savepath) + "/heatmaps/"):
                 mkdir(str(savepath) + "/heatmaps/")
         else:
-            plt.show()                
+            plt.show()
      
-        loc_transposed: npt.NDArray = self.maps.location_map.T # TODO this seems expensive
+        loc_transposed: npt.NDArray = self.maps.location_map.T
         other_transposed: npt.NDArray  = self.maps.others_locations_map.T 
         readings_transposed: npt.NDArray  = self.maps.readings_map.T
         visits_transposed: npt.NDArray  = self.maps.visit_counts_map.T
@@ -1426,15 +1454,6 @@ class CCNBase:
         
         fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png', format='png')
         fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.eps', format='eps')
-
         
         self.render_counter += 1
-        plt.close(fig)  # TODO figs arent closing, causes memory issues during large training
-        
-    def clear_maps(self):
-        ''' Just clear maps for new episode'''
-        self.maps.clear_maps()
-            
-    def reset(self, full: bool = False):
-        ''' Reset entire maps buffer '''
-        self.maps.reset()  
+        plt.close(fig)

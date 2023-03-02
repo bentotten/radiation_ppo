@@ -242,6 +242,7 @@ class PPOBuffer:
         logp: log probability from actor
         src: source coordinates
         """
+        #TODO does each value need to be a numpy array?
         assert self.ptr < self.max_size
         self.obs_buf[self.ptr, :] = obs
         self.act_buf[self.ptr] = act
