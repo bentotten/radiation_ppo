@@ -35,7 +35,6 @@ Metadata = TypedDict(
     "Metadata", {"render.modes": List[str], "video.frames_per_second": int}
 )
 
-# BT
 # These actions correspond to:
 # -1: stay idle
 # 0: left
@@ -242,7 +241,7 @@ class Agent():
     marker_color: Color = field(init=False)
     det_sto: List[Point] = field(init=False)  # Coordinate history for episdoe
     meas_sto: List[float] = field(init=False) # Measurement history for episode
-    reward_sto: List[float] = field(init=False) # Reward history for epsisode
+    team_reward_sto: List[float] = field(init=False) # Team Reward history for epsisode
     cum_reward_sto: List = field(init=False)  # Cumulative rewards tracker for episode
     action_sto: List = field(init=False)  # Stores actions for render
     terminal_sto: List = field(init=False)
@@ -257,7 +256,7 @@ class Agent():
         self.out_of_bounds_count = 0
         self.det_sto: List[Point] = []  # Coordinate history for episdoe
         self.meas_sto: List[float] = [] # Measurement history for episode
-        self.reward_sto: List[float] = [] # Reward history for epsisode
+        self.team_reward_sto: List[float] = [] # Team Reward history for epsisode
         self.cum_reward_sto: List = []  # Cumulative rewards tracker for episode
         self.action_sto: List = []
         self.terminal_sto: List = []
@@ -518,7 +517,6 @@ class RadSearch(gym.Env):
             
             agent.det_sto.append(agent.det_coords)
             agent.meas_sto.append(measurement)
-            agent.reward_sto.append(reward)
             agent.cum_reward_sto.append(reward + agent.cum_reward_sto[-1] if len(agent.cum_reward_sto) > 0 else reward)
             agent.action_sto.append(action)
             info = {
@@ -542,7 +540,8 @@ class RadSearch(gym.Env):
         aggregate_reward_result: Dict = {_: None for _ in self.agents}
         aggregate_success_result: Dict = {_: None for _ in self.agents}
         aggregate_info_result: Dict = {_: None for _ in self.agents}
-        
+        max_reward: Union[float, None] = None
+
         if action_list:
             # if self.DEBUG:  
             #     test_step = get_step(action_list[0])
@@ -560,13 +559,23 @@ class RadSearch(gym.Env):
                     aggregate_reward_result[agent_id], 
                     aggregate_success_result[agent_id],
                     aggregate_info_result[agent_id],
-                ) = agent_step(agent=self.agents[agent_id], action=a, proposed_coordinates=proposed_coordinates)   
+                ) = agent_step(agent=self.agents[agent_id], action=a, proposed_coordinates=proposed_coordinates)
+                
+                # Calculate team reward
+                if not max_reward:
+                    max_reward = aggregate_reward_result[agent_id]
+                elif max_reward < aggregate_reward_result[agent_id]:
+                    max_reward = aggregate_reward_result[agent_id]
+            # Save team reward
+            for agent in self.agents.values():
+                if max_reward:
+                    agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward)            
             self.iter_count += 1
             #return {k: asdict(v) for k, v in aggregate_step_result.items()}       
         elif not action or type(action) is int:
             # Provides backwards compatability for single actions instead of action lists for single agents.
             if type(action) == int and len(self.agents) > 1:
-                print("WARNING: Passing single action to mutliple agents during step! Collision avoidance has been disabled!", file=sys.stderr)
+                print("WARNING: Passing single action to mutliple agents during step!", file=sys.stderr)
             # Used during reset to get initial state or during single-agent move
             for agent_id, agent in self.agents.items():                
                 (
@@ -575,6 +584,15 @@ class RadSearch(gym.Env):
                     aggregate_success_result[agent_id],
                     aggregate_info_result[agent_id],
                 ) = agent_step(action=action, agent=agent) # type: ignore
+                # Calculate team reward
+                if not max_reward:
+                    max_reward = aggregate_reward_result[agent_id]
+                elif max_reward < aggregate_reward_result[agent_id]:
+                    max_reward = aggregate_reward_result[agent_id]                
+           # Save team reward
+            for agent in self.agents.values():
+                if max_reward:
+                    agent.team_reward_sto.append(max_reward + agent.team_reward_sto[-1] if len(agent.team_reward_sto) > 0 else max_reward)                         
             self.iter_count += 1
 
         else:
@@ -593,7 +611,7 @@ class RadSearch(gym.Env):
         #         print('out of bounds')
         #     print()
         
-        return aggregate_observation_result, aggregate_reward_result, aggregate_success_result, aggregate_info_result
+        return aggregate_observation_result, {'team_reward': max_reward, 'individual_reward': aggregate_reward_result}, aggregate_success_result, aggregate_info_result
 
     def reset(self) -> Tuple[Dict[Any, Any], Dict[Any, Any], Dict[Any, Any], Dict[Any, Any]]:
         """
@@ -1308,7 +1326,7 @@ class RadSearch(gym.Env):
                     markerline.set_markeredgecolor(current_color)
                     
                     # Plot rewards graph - line graph, previous reading connects to current reading   
-                    #ax3.scatter(current_index, agent.reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current state reward              
+                    ax3.scatter(current_index, agent.team_reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current team reward              
                     ax3.plot([current_index-1, current_index], agent.cum_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"Detector {agent_id}")  # Cumulative line graph
                         
                 

@@ -51,6 +51,8 @@ except ModuleNotFoundError:
 except: 
     raise Exception
 
+# TODO add to a argument
+COMPETATIVE_MODE = False  # Dictates whether individual rewards or team rewards
 
 ################################### Training ###################################
 @dataclass
@@ -239,17 +241,26 @@ class train_PPO:
                 next_observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions) 
                 
                 # Incremement Counters and save new (individual) cumulative returns
-                for id in rewards:
-                    episode_return[id] += np.array(rewards[id], dtype="float32").item()
+                if COMPETATIVE_MODE:
+                    for id in rewards['individual_reward']:
+                        episode_return[id] += np.array(rewards['individual_reward'][id], dtype="float32").item()
+                else:
+                    for id in self.agents:
+                        episode_return[id] += np.array(rewards['team_reward'], dtype="float32").item() # TODO if saving team reward, no need to keep duplicates for each agent
+                    
                 steps_in_episode += 1    
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
                 #   record state values with logger 
                 # TODO Change away from numpy array
                 for id, ac in self.agents.items():
+                    if COMPETATIVE_MODE:
+                        reward = rewards['individual_reward'][id]
+                    else:
+                        reward = rewards['team_reward']
                     ac.ppo_buffer.store(
                         obs = observations[id],
-                        rew = rewards[id],
+                        rew = reward,
                         act = agent_action_decisions[id],
                         val = agent_thoughts[id].state_value,
                         logp = agent_thoughts[id].action_logprob,
