@@ -65,7 +65,9 @@
         "--net-type",
         "cnn",
         "--DEBUG",
-        "True"
+        "True",
+        "--global-critic", // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE
+        "False"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

@@ -170,6 +170,10 @@ class train_PPO:
             # Sanity check
             if self.global_critic:
                 assert self.agents[i].agent.critic is self.GlobalCritic
+            else:
+                assert self.agents[i].agent.critic is not self.GlobalCritic
+                if i > 0:
+                    assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
                 
                       
     def train(self)-> None:
