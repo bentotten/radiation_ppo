@@ -1415,9 +1415,9 @@ class CCNBase:
             
             :param checkpoint_path: (str) Path to read neural network models from.
         '''        
-        self.pi.load_state_dict(torch.load(f"{checkpoint_path}_actor", map_location=lambda storage, loc: storage)) 
-        self.critic.load_state_dict(torch.load(f"{checkpoint_path}_critic", map_location=lambda storage, loc: storage))
-        self.model.load_state_dict(torch.load(f"{checkpoint_path}_predictor", map_location=lambda storage, loc: storage)) # Actor-critic         
+        self.pi.load_state_dict(torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage)) 
+        self.critic.load_state_dict(torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage))
+        self.model.load_state_dict(torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage)) # Actor-critic         
         
     def clear_maps(self)-> None:
         ''' Clear all maps for new episode'''

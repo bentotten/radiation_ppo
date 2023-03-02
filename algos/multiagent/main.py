@@ -459,7 +459,8 @@ def main() -> None:
         alpha=args.alpha,                      
         clip_ratio=args.clip_ratio,
         target_kl=args.target_kl,
-        lam=args.lam
+        lam=args.lam,
+        GlobalCriticOptimizer=None
     )
 
     # Set up training

@@ -123,7 +123,9 @@ class train_PPO:
     #: Object that holds agent loggers
     loggers: Dict[int, EpochLogger] = field(default_factory=lambda:dict())
     #: Global Critic for Centralized Training scenarios
-    GlobalCritic: RADCNN_core.Critic = field(default=None)
+    GlobalCritic: Union[RADCNN_core.Critic, None] = field(default=None)
+    #: Global Optimizer for Critic for Centralized training scenarios
+    GlobalCriticOptimizer: Union[torch.optim.Optimizer, None] = field(default=None)
     
     def __post_init__(self)-> None:  
         # Set Pytorch random seed
@@ -159,9 +161,10 @@ class train_PPO:
         if self.global_critic_flag:
             prototype = RADCNN_core.CCNBase(id=0, **self.ppo_kwargs['actor_critic_args'])
             self.GlobalCritic = RADCNN_core.Critic(map_dim=prototype.get_map_dimensions(), batches=prototype.get_batch_size(), map_count=prototype.get_map_count())
-            #CriticOptimizer = Adam(self.GlobalCritic.parameters(), lr=self.critic_learning_rate)
+            self.GlobalCriticOptimizer = Adam(self.GlobalCritic.parameters(), lr=self.ppo_kwargs['critic_learning_rate'])
             
             self.ppo_kwargs['actor_critic_args']['GlobalCritic'] = self.GlobalCritic
+            self.ppo_kwargs['GlobalCriticOptimizer'] = self.GlobalCriticOptimizer
                         
         # Initialize agents        
         for i in range(self.number_of_agents):
@@ -175,10 +178,12 @@ class train_PPO:
             # Sanity check
             if self.global_critic_flag:
                 assert self.agents[i].agent.critic is self.GlobalCritic
+                assert self.agents[i].GlobalCriticOptimizer is self.GlobalCriticOptimizer
             else:
                 assert self.agents[i].agent.critic is not self.GlobalCritic
                 if i > 0:
                     assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
+                    assert self.agents[i].GlobalCriticOptimizer is not self.GlobalCriticOptimizer                
                 
                       
     def train(self)-> None:
@@ -452,7 +457,7 @@ class train_PPO:
                     else:
                         test = self.loggers[id].output_dir       
                         agent.save(path=test) # TODO move to own arg
-                        agent.load()
+                        agent.load(path=test)
 
             # Reduce localization module training iterations after 100 epochs to speed up training
             if epoch > 99:

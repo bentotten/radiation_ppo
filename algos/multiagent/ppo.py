@@ -453,6 +453,8 @@ class AgentPPO:
         
         :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training.
         
+        :param CriticOptimizer: (torch.optim.Optimizer) Optimizer for global critic. Defaults to none.
+        
         :param actor_learning_rate: (float) For actor/policy. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
             reduced as the agent's learning progresses.
             
@@ -493,7 +495,8 @@ class AgentPPO:
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
     train_pfgru_iters: int = field(default= 15)
-    reduce_pfgru_iters: bool = field(default=True) 
+    reduce_pfgru_iters: bool = field(default=True)
+    GlobalCriticOptimizer: Union[torch.optim.Optimizer, None] = field(default=None)
     actor_learning_rate: float = field(default= 3e-4)
     critic_learning_rate: float = field(default= 1e-3)
     pfgru_learning_rate: float = field(default= 5e-3)
@@ -510,8 +513,10 @@ class AgentPPO:
         ''' Initialize Agent's neural network architecture'''
 
             
-        if not CriticOptimizer:
+        if not self.GlobalCriticOptimizer:
             CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
+        else:
+            CriticOptimizer = self.GlobalCriticOptimizer
                   
         # Simple Feed Forward Network
         if self.actor_critic_architecture == 'ff':
@@ -526,7 +531,7 @@ class AgentPPO:
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = self.CriticOptimizer,  # Allows for global optimizer
+                critic_optimizer = CriticOptimizer,  # Allows for global optimizer
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
