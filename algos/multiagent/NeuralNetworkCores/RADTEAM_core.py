@@ -397,7 +397,7 @@ class MapsBuffer:
     y_limit_scaled: int = field(init=False)
     #: Actual dimensions of each map. These need to match the convolutional setup in order to not cause errors when being processed by the linear layer during action selection (and state-value estimating).
     #:  this defaults to (27, 27).
-    map_dimensions: Tuple = field(init=False)
+    map_dimensions: Tuple[int, int] = field(init=False)
     #: The base for log() for visit count map normalization. This is equivilant to the maximum number of steps possible in one location, T*n where T is the maximum number of steps per episode and n is the 
     #:  number of agents.
     base: int = field(init=False) 
@@ -488,6 +488,11 @@ class MapsBuffer:
             # Detected Obstacles map
             if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
                 self._update_obstacle_map(coordinates=inflated_agent_coordinates, single_observation=observation[id])
+                
+            # Update last coordinates
+            for i, obs in observation.items():
+                self.tools.last_coords[i] = Point((obs[1], obs[2]))
+                        
         
         return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
 
@@ -957,6 +962,7 @@ class Critic(nn.Module):
                 layer.reset_parameters()
 
 
+#TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
     """ Parent class for Particle Filter Recurrent Neural Networks """
@@ -1067,7 +1073,7 @@ class PFRNNBaseCell(nn.Module):
         eps: torch.Tensor = torch.FloatTensor(std.shape).normal_()
         return mean + eps * std
 
-
+#TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFGRUCell(PFRNNBaseCell):
     ''' Particle Filter Gated Recurrent Unit '''
@@ -1259,18 +1265,21 @@ class CCNBase:
     maps: MapsBuffer = field(init=False)
     #: Mean Squared Error for loss for critic network
     mseLoss: nn.MSELoss = field(init=False)
-    #: How much unscaling to do to reinflate agent coordinates to full representation.
+    #: How much unscaling to do to reinflate agent coordinates to full representation. If the boundary is being enforced, this will be set to the grid boundaries; if not, it will set
+    #:  it to the maximum possible steps an agent can take outside of a boundary. 
     scaled_offset: float = field(init=False)
-    #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time.
+    #: An adjustable resolution accuracy variable is computed to indicate the level of accuracy desired. Higher accuracy increases training time. Current environment returnes 
+    #:  scaled coordinates for each agent. A resolution_accuracy value of 1 here means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less 
+    #:  memory intensive, reduce the resolution multiplier. To return to full inflation and full accuracy, change the multipier to 1. 
     resolution_accuracy: float = field(init=False)
-    #: Ensures heatmap renders to not overwrite eachother
+    #: Ensures heatmap renders to not overwrite eachother when saving to a file.
     render_counter: int = field(init=False)    
 
-    def __post_init__(self):
-        # How much unscaling to do. Current environment returnes scaled coordinates for each agent. A resolution_accuracy value of 1 here 
-        #  means no unscaling, so all agents will fit within 1x1 grid. To make it less accurate but less memory intensive, reduce the 
-        #  number being multiplied by the 1/env_scale. To return to full inflation, change multipier to 1
+    def __post_init__(self)-> None:
+        # Set resolution accuracy
         self.resolution_accuracy = self.resolution_multiplier * 1/self.environment_scale
+        
+        # Set map dimension offset for boundaries
         if self.enforce_boundaries:
             self.scaled_offset = self.environment_scale * max(self.bounds_offset)                    
         else:
@@ -1278,6 +1287,7 @@ class CCNBase:
         
         # For render
         self.render_counter = 0
+
         # Initialize buffers and neural networks
         self.maps = MapsBuffer(
                 observation_dimension = self.observation_space,
@@ -1288,39 +1298,42 @@ class CCNBase:
                 number_of_agents = self.number_of_agents
             )
         
-        self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)#.to(self.maps.buffer.device)
-        
+        # Set up actor and critic
+        self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)
         if not self.critic:
-            self.critic = Critic(map_dim=self.maps.map_dimensions)#.to(self.maps.buffer.device) # TODO these are really slow
-            
+            self.critic = Critic(map_dim=self.maps.map_dimensions)
         self.mseLoss = nn.MSELoss()
         
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
+        # TODO Finish integrating this 
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
-
-    def set_reading(self, observation: npt.NDArray):
-        ''' Method to Update radiation standardization for rolling standardization module outside of a step'''
-        self.maps.tools.standardizer.update(observation[0])
         
     def set_mode(self, mode: str) -> None:
-        ''' Set mode for network. Options include 'train' or 'eval' '''
+        ''' 
+            Set mode for network. 
+            :param mode: (string) Set agent training mode. Options include 'train' or 'eval'. 
+        '''
         if mode == 'train':
             self.pi.put_in_training_mode
             self.critic.put_in_training_mode
         elif mode == 'eval':
             self.pi.put_in_evaluation_mode
-            self.critic.put_in_evaluation_mode            
-
-        
+            self.critic.put_in_evaluation_mode
+        else:
+            raise Warning('Invalid mode set for Agent. Agent remains in their original training mode')
+                     
     def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, save_map=True) -> ActionChoice:
-        ''' Method to take a multi-agent observation and converts it to maps and store to a buffer. Also logs the reading at this location
-            to resample from in order to estimate a more accurate radiation reading. Then uses the actor network to select an 
+        ''' 
+            Method to take a multi-agent observation and convert it to maps and store to a buffer. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
+            
+            :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
+            :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         '''
         # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
         
         # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
-        with torch.no_grad():        
+        with torch.no_grad():
             if save_map:     
                 # TODO Maps are not matching between agents, needs check 
                 (
@@ -1331,14 +1344,13 @@ class CCNBase:
                     obstacles_map
                 ) = self.maps.observation_to_map(state_observation, id)
                 
-                # Convert to tensor
-                map_stack: torch.Tensor = torch.stack([torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]) # Convert to tensor
+                # Convert map to tensor
+                map_stack: torch.Tensor = torch.stack(
+                    [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
+                )
                 
                 # Add to mapstack buffer to eventually be converted into tensor with minibatches
-                #self.maps.buffer.mapstacks.append(map_stack)  # TODO if we're tracking this, do we need to track the observations?
-                for i, observation in state_observation.items():
-                    self.maps.tools.last_coords[i] = Point((observation[1], observation[2]))
-                
+
                 #print(state_observation[self.id])
                 #observation_key = hash(state_observation[self.id].flatten().tolist)
                 self.maps.observation_buffer.append([state_observation[self.id], map_stack]) # TODO Move to PPO and save only observation to be reinflated
@@ -1354,7 +1366,7 @@ class CCNBase:
             state_value: torch.Tensor = self.critic.forward(batched_map_stack)  # size(1)
 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
-    
+
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path) # Actor-critic
    
