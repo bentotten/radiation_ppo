@@ -16,7 +16,7 @@
       create_parser
       main
       parse_args
-      ping
+      setup_training
    
    
 

@@ -11,6 +11,7 @@
    
       Point
       Map
+      MapStack
       CoordinateStorage
       Shape
       DIST_TH

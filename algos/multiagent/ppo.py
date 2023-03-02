@@ -113,7 +113,7 @@ class OptimizationStorage:
         :param alpha: (float) Entropy reward term scaling used during calculating loss. 
         :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used 
             for early stopping. It's usually small, 0.01 or 0.05.
-    '''    
+    '''
     train_pi_iters: int
     train_v_iters: int
     train_pfgru_iters: int    
@@ -124,12 +124,16 @@ class OptimizationStorage:
     alpha: float
     target_kl: float
     
-    pi_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # Schedules gradient steps for actor
-    critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # Schedules gradient steps for value function (critic)
-    pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)   # Schedules gradient steps for PFGRU location predictor module
-    loss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean"))) # Loss calculator utility NOTE: Actor/PFGRU have other complex loss functions
+    # Initialized elsewhere
+    #: Schedules gradient steps for actor
+    pi_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
+    #: Schedules gradient steps for value function (critic)
+    critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
+    #: Schedules gradient steps for PFGRU location predictor module    
+    pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)   
+    #: Loss calculator utility for Critic   
+    MSELoss: torch.nn.modules.loss.MSELoss = field(default_factory= (lambda: torch.nn.MSELoss(reduction="mean"))) 
 
-        
     def __post_init__(self):        
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
@@ -144,17 +148,31 @@ class OptimizationStorage:
 
 @dataclass
 class PPOBuffer:
-    #: [observation Space] From the environment, get the length that the observation array returned from a step in the environment will be. For RAD-TEAM and RAD-A2C the observation
-    #: will be a one dimensional tuple where the first element is the detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements 
-    #: are a reading of how close an agent is to an obstacle. Obstacle sensor readings and x,y coordinates are normalized. 
-    obs_dim: int  # Observation space dimensions
-    max_size: int  # Max steps per epoch
-    number_agents: int # Number of agents 
-
-    episode_lengths: List[int] = field(default_factory= lambda: list())  # Episode length storage
+    """
+        A buffer for storing histories experienced by a PPO agent interacting with the environment, and using Generalized Advantage Estimation (GAE-Lambda) for calculating the 
+        advantages of state-action pairs. This is left outside of the PPO agent so that A2C architectures can be swapped out as desired.
+        
+        :param observation_dimension: (int) Dimensions of observation. For RAD-TEAM and RAD-A2C the observation will be a one dimensional tuple where the first element is the 
+            detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements are a reading of how close an agent is to an obstacle. 
+            Obstacle sensor readings and x,y coordinates are normalized. 
+        :param max_size: Max steps per epoch.
+        :param number_agents: Number of agents.
+        :param episode_lengths: 
+        
+        gamma (float): Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
+        :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
+        beta (float): Entropy for loss function, encourages exploring different policies
+    """
+        
+    observation_dimension: int
+    max_size: int
+    number_agents: int
 
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
+
+    episode_lengths_buffer: npt.NDArray[np.float32] = field(init=False)  # Stores episode lengths
+    full_observation_buffer: npt.NDArray[np.float32] = field(init=False) # Full Observation buffer with observations from every agent
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer
     act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer
     adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer
@@ -170,28 +188,17 @@ class PPOBuffer:
     gamma: float = 0.99
     lam: float = 0.90  # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
     beta: float = 0.005
-
-    """
-    A buffer for storing histories experienced by a PPO agent interacting
-    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
-    for calculating the advantages of state-action pairs. This is left outside of the
-    PPO agent so that A2C architectures can be swapped out as desired.
-    
-    gamma (float): Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
-    :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
-    beta (float): Entropy for loss function, encourages exploring different policies
-    """
     
     def __post_init__(self):
         self.ptr = 0
         self.path_start_idx = 0     
 
         self.full_observation_buffer= np.zeros(
-            combined_shape(self.max_size, (self.number_agents, self.obs_dim)), dtype=np.float32
+            combined_shape(self.max_size, (self.number_agents, self.observation_dimension)), dtype=np.float32
         )
            
         self.obs_buf= np.zeros(
-            combined_shape(self.max_size, self.obs_dim), dtype=np.float32
+            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
         )
         self.act_buf = np.zeros(
             combined_shape(self.max_size), dtype=np.float32
@@ -216,8 +223,8 @@ class PPOBuffer:
         )
 
         # TODO artifact - delete? Appears to be used in the location prediction, but is never updated        
-        self.obs_win = np.zeros(self.obs_dim, dtype=np.float32)
-        self.obs_win_std = np.zeros(self.obs_dim, dtype=np.float32)
+        self.obs_win = np.zeros(self.observation_dimension, dtype=np.float32)
+        self.obs_win_std = np.zeros(self.observation_dimension, dtype=np.float32)
         
         ################################## set device ##################################
         print("============================================================================================")
@@ -259,11 +266,11 @@ class PPOBuffer:
         self.logp_buf[self.ptr] = logp
         self.ptr += 1
 
-    def store_episode_length(self, episode_length: int ) -> None:
+    def store_episode_length(self, episode_length: npt.NDArray) -> None:
         """
         Save episode length at the end of an epoch for later calculations
         """
-        self.episode_lengths.append(episode_length)
+        self.episode_lengths_buffer[self.ptr]
             
     def finish_path(self, last_val: int = 0) -> None:
         """
@@ -310,7 +317,7 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        episode_lengths: List[int] = self.episode_lengths # TODO this needs to be cleared before can be used
+        episode_lengths: npt.NDArray = self.episode_lengths_buffer # TODO this needs to be cleared before can be used
         epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         
         number_episodes = len(episode_lengths)
@@ -508,7 +515,7 @@ class AgentPPO:
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
                 critic_optimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate),
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
-                loss = torch.nn.MSELoss(reduction="mean"),
+                MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
                 alpha = self.alpha,
                 target_kl = self.target_kl,             
@@ -526,7 +533,7 @@ class AgentPPO:
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
                 critic_optimizer = Adam(self.agent.pi.parameters(), lr=self.critic_learning_rate),
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
-                loss = torch.nn.MSELoss(reduction="mean"),
+                MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
                 alpha = self.alpha,
                 target_kl = self.target_kl,             
@@ -535,7 +542,7 @@ class AgentPPO:
             raise ValueError('Unsupported Neural Network type requested')
             
         # Inititalize buffer
-        self.ppo_buffer = PPOBuffer(obs_dim=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
+        self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
         
     def reduce_pfgru_training(self):
         '''Reduce localization module training iterations after some number of epochs to speed up training'''
@@ -690,7 +697,7 @@ class AgentPPO:
                 # TODO Pull out for global critic
                 self.agent_optimizer.critic_optimizer.zero_grad()
                 critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps)
-                critic_loss_results['critic_loss'].backward()
+                critic_loss_results['critic_lolossss'].backward()
                 self.agent_optimizer.critic_optimizer.step()
                       
             # # Value function learning
@@ -1025,7 +1032,7 @@ class AgentPPO:
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
             
-            val_loss = self.agent_optimizer.loss(val, ret) # MSE critc loss 
+            val_loss = self.agent_optimizer.MSELoss(val, ret) # MSE critc loss 
 
             # TODO: More descriptive name
             new_loss: torch.Tensor = -(

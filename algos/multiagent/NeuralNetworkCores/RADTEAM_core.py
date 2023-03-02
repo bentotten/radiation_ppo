@@ -472,11 +472,11 @@ class MapsBuffer:
                     
         for agent_id in observation:
             # Fetch scaled coordinates
-            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[id])
-            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[id]) if self.tools.last_coords else None  
+            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
+            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None  
             
             # Update Locations maps
-            if id == agent_id:                
+            if id == agent_id:
                 self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
             else:            
                 self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
@@ -487,11 +487,10 @@ class MapsBuffer:
             
             # Detected Obstacles map
             if np.count_nonzero(observation[agent_id][self.obstacle_state_offset:]) > 0:
-                self._update_obstacle_map(coordinates=inflated_agent_coordinates, single_observation=observation[id])
+                self._update_obstacle_map(coordinates=inflated_agent_coordinates, single_observation=observation[agent_id])
                 
             # Update last coordinates
-            for i, obs in observation.items():
-                self.tools.last_coords[i] = Point((obs[1], obs[2]))
+            self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))
                         
         
         return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
