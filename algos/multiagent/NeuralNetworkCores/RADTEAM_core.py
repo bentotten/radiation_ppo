@@ -1319,11 +1319,14 @@ class CCNBase:
             :param mode: (string) Set agent training mode. Options include 'train' or 'eval'. 
         '''
         if mode == 'train':
-            self.pi.put_in_training_mode
-            self.critic.put_in_training_mode
+            self.pi.put_in_training_mode()
+            self.critic.put_in_training_mode()
+            #self.model.put_in_training_mode() # TODO add
         elif mode == 'eval':
             self.pi.put_in_evaluation_mode
             self.critic.put_in_evaluation_mode
+            #self.model.put_in_training_mode() # TODO add
+            
         else:
             raise Warning('Invalid mode set for Agent. Agent remains in their original training mode')
                      
@@ -1386,9 +1389,25 @@ class CCNBase:
             
             :param checkpoint_path: (str) Path to save neural network models to.
         '''
-        torch.save(self.pi.state_dict(), f"{checkpoint_path}_actor")
-        torch.save(self.critic.state_dict(), f"{checkpoint_path}_critic")
-        torch.save(self.model.state_dict(), f"{checkpoint_path}_predictor")        
+        # Save original modes
+        pi_train_mode: bool = self.pi.training
+        critic_train_mode: bool = self.critic.training
+        predictor_train_mode: bool = self.model.training # TODO rename
+        self.set_mode(mode='eval')
+        
+        torch.save(self.pi.state_dict(), f"{checkpoint_path}/actor.pt")
+        torch.save(self.critic.state_dict(), f"{checkpoint_path}/critic.pt")
+        torch.save(self.model.state_dict(), f"{checkpoint_path}/predictor.pt")       
+        
+        # Restore original modes
+        if pi_train_mode: self.pi.train() 
+        else: self.pi.eval()
+
+        if critic_train_mode: self.critic.train() 
+        else: self.critic.eval()
+
+        if predictor_train_mode: self.model.train() 
+        else: self.model.eval()           
    
     def load(self, checkpoint_path)-> None:
         '''

@@ -30,7 +30,6 @@ except:
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
-COMPETATIVE_MODE = False  # TODO move to args
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     '''
@@ -1102,6 +1101,10 @@ class AgentPPO:
     
     def get_batch_size(self):
         return self.agent.get_batch_size()
+    
+    def save(self, path: str)-> None:
+        ''' Wrapper for network '''
+        self.agent.save(checkpoint_path=path)
         
     def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")

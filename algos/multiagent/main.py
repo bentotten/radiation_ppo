@@ -349,7 +349,7 @@ def main() -> None:
     ''' Set up experiment and create simulation environment. '''
     args = parse_args(create_parser())
 
-    save_dir_name: str = args.exp_name  # Stands for bootstrap particle filter, one of the neat resampling methods used
+    save_dir_name: str = args.exp_name  
     exp_name: str = (args.exp_name + "_agents" + str(args.agent_count))
 
     # Generate a large random seed and random generator object for reproducibility
@@ -360,7 +360,14 @@ def main() -> None:
     timestamp = datetime.now().replace(microsecond=0).strftime('%Y-%m-%d-%H:%M:%S')
     exp_name = timestamp + "_" + exp_name
     save_dir_name = save_dir_name + '/' + timestamp
-    logger_kwargs = {'exp_name': exp_name, 'seed': args.seed, 'data_dir': "../../models/train", 'env_name': save_dir_name}   
+    logger_kwargs = {
+        'exp_name': exp_name, 
+        'seed': args.seed, 
+        'data_dir': "../../models/train", 
+        'env_name': save_dir_name
+        }
+    
+    save_path = f"../../models/train/{exp_name}/{save_dir_name}"
 
     # Set up Radiation environment
     dim_length, dim_height = args.dims
@@ -463,11 +470,12 @@ def main() -> None:
         seed=robust_seed,
         number_of_agents=args.agent_count,
         actor_critic_architecture=args.net_type,   
-        global_critic = args.global_critic,                    
+        global_critic_flag = args.global_critic,                    
         steps_per_epoch=args.steps_per_epoch,
         steps_per_episode=args.steps_per_episode,
         total_epochs=args.epochs,
         render=args.render,
+        save_path=save_path,
         save_gif=args.render, # TODO combine into just render
         save_freq=args.save_freq,
         save_gif_freq=args.save_gif_freq,

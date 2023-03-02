@@ -269,7 +269,6 @@ class Logger:
         ), "First have to setup saving with self.setup_pytorch_saver"
         fpath: Path = self.output_dir / "pyt_save" # type: ignore
         fname = f"model{itr if itr is not None else ''}.pt"
-        # TODO verify this works ok
         fname = fpath / fname # type: ignore 
         fpath.mkdir(parents=True, exist_ok=True)
         with warnings.catch_warnings():

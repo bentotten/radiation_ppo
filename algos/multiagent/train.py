@@ -30,14 +30,10 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # PPO and logger
 try:
     from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
-    from NeuralNetworkCores.RADTEAM_core import calculate_map_dimensions
-    
+    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore    
 except ModuleNotFoundError:
     from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
-    from algos.multiagent.NeuralNetworkCores.RADTEAM_core import calculate_map_dimensions    
-    
+    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json    
 except: 
     raise Exception
 
@@ -78,6 +74,7 @@ class train_PPO:
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment.        
     :param total_epochs: (int) Number of total epochs of interaction (equivalent to number of policy updates) to perform.
     :param render: (bool) Indicates whether to render last episode    
+    :param save_path: (str) Parent path to save configuration and models to. NOTE: Logs and progress still being saved with Logger and logger kwargs.
     :param save_freq: (int) How often (in terms of gap between epochs) to save the current policy and value function.
     :param save_gif_freq: (int) How many epochs to save a gif
     :param save_gif: (bool) Indicates whether to save render of last episode
@@ -106,7 +103,8 @@ class train_PPO:
     total_epochs: int = field(default= 3000)
     
     # Rendering information
-    render: bool = field(default= False)    
+    render: bool = field(default= False)  
+    save_path: str = field(default = '.')  
     save_freq: int = field(default= 500)
     save_gif_freq: Union[int, float] = field(default_factory= lambda:  float('inf'))
     save_gif: bool = field(default= False)
@@ -136,8 +134,17 @@ class train_PPO:
         # Save configuration   
         config_json: Dict[str, Any] = convert_json(locals())                       
                                   
-        # Instatiate loggers and save initial parameters in the first agent slot
-        # TODO save configurations in parent directory
+        # Set up parent directory logger and save initial configurations
+        parent_kwargs = setup_logger_kwargs(
+                exp_name=f"general",
+                seed=self.logger_kwargs['seed'],
+                data_dir=self.logger_kwargs['data_dir'],
+                env_name=self.logger_kwargs['env_name']
+            )
+        self.parent_logger = EpochLogger(**(parent_kwargs))
+        self.parent_logger.save_config(config_json) 
+        
+        # Instatiate loggers   
         for id in range(self.number_of_agents):
             logger_kwargs_set: Dict = setup_logger_kwargs(
                 exp_name=f"{self.logger_kwargs['exp_name']}_agent{id}",
@@ -147,7 +154,6 @@ class train_PPO:
             )
         
             self.loggers[id] = EpochLogger(**(logger_kwargs_set))
-        self.loggers[0].save_config(config_json) 
         
         # Initialize Global Critic
         if self.global_critic_flag:
@@ -438,8 +444,13 @@ class train_PPO:
                     
             # Save model
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
-                for id in self.agents:
-                    self.loggers[id].save_state({}, None)
+                for id, agent in self.agents.items():
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                        self.loggers[id].save_state({}, None)
+                    else:
+                        test = self.loggers[id].output_dir       
+                        agent.save(path=test) # TODO move to own arg
+                        agent.load()
 
             # Reduce localization module training iterations after 100 epochs to speed up training
             if epoch > 99:

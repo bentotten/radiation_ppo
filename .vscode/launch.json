@@ -66,8 +66,8 @@
         "cnn",
         "--DEBUG",
         "True",
-        "--global-critic", // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE
-        "False"
+        "--save-freq",
+        "1"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
