@@ -38,37 +38,6 @@ DIST_TH = 110.0
 SIMPLE_NORMALIZATION = False
 
 
-def _log_and_normalize_test(max: int = 120):
-    ''' For modeling expected values as visit count increases. This puts greater emphasis on lower step counts.'''
-    
-    x = [x for x in range(max)]
-    y = []    
-    
-    for i in range(max):
-        y.append((( 
-            np.log(
-                2 + i * (
-                            max** ( np.log(2) / np.log(max) )
-                        )
-                    )
-            ) / np.log(max)) * 1/(np.log(2 *max)/ np.log(max))
-        )
-
-    print(x)
-    print(y)
-
-    # Plot the function
-    plt.plot(x, y)
-
-    # Add labels and title
-    plt.xlabel('x')
-    plt.ylabel('y')
-    plt.title('Plot of log(x)')
-
-    # Show the plot
-    plt.show()
-
-
 def calculate_map_dimensions(grid_bounds: Tuple, resolution_accuracy: float, offset: float):
     return (
             int(grid_bounds[0] * resolution_accuracy) + int(offset  * resolution_accuracy),
