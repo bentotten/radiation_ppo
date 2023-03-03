@@ -32,7 +32,7 @@ try:
     from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
     from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore    
 except ModuleNotFoundError:
-    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, Agmaps: MapsBufferentPPO  # type: ignore
+    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
     from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json    
 except: 
     raise Exception

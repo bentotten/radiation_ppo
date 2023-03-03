@@ -16,6 +16,7 @@ from torch.distributions import Categorical
 
 import matplotlib.pyplot as plt # type: ignore
 
+import warnings
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -316,11 +317,11 @@ class Normalizer():
         if not self._base_check:
             self._base_check = base
         elif self._base_check != base:
-            raise Warning("Base mismatch from first use of this function! Ensure this was intentional")
+            warnings.warn("Base mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional! ")
         if not self._increment_check:
             self._increment_check = increment_value
         if self._increment_check != increment_value:
-            raise Warning("increment mismatch from first use of this function! Ensure this was intentional")
+            warnings.warn("Increment mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional")
             
         result = (log(increment_value + current_value, base)) * 1/log(increment_value * base, base) # Put in range [0, 1]
         assert result >= 0 and result <= 1, "Normalization error"
@@ -625,7 +626,9 @@ class MapsBuffer:
             self.visit_counts_map[coordinates[0]][coordinates[1]] = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
         
         # Sanity warning
-        if self.visit_counts_map[coordinates[0]][coordinates[1]] == 1.0: raise Warning("Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error")
+        if self.visit_counts_map[coordinates[0]][coordinates[1]] == 1.0: warnings.warn("Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error")
+        if self.visit_counts_map[coordinates[0]][coordinates[1]] > 1.0: raise Exception(f"Visit count is normalized greater than 1: {self.visit_counts_map[coordinates[0]][coordinates[1]]}")
+        
 
     def _update_obstacle_map(self, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
         ''' 
