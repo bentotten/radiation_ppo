@@ -1341,7 +1341,6 @@ class CCNBase:
             :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
             :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         '''
-        # TODO also currently storing the map to a buffer for later use in PPO; consider moving this to the PPO buffer and PPO class
         
         # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
         with torch.no_grad():

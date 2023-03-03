@@ -9,6 +9,9 @@ from datetime import datetime
 import numpy as np
 import numpy.random as npr
 from typing import Tuple
+import inspect
+import traceback
+import json
 
 import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
@@ -23,6 +26,17 @@ except ModuleNotFoundError:
 except: 
     raise Exception
 
+def log_state(error: Exception):
+    trace_back = traceback.format_exc()  # Gives error and location    
+    trace = inspect.trace()
+    vars = json.dumps(trace[-1].frame.f_locals, indent = 4)
+
+    vfile = open('RADTEAM_ERROR_STATE.log', 'w')
+    vfile.write(vars)
+    vfile.close()   
+    tfile = open('RADTEAM_ERROR_TRACEBACK.log', 'w')
+    tfile.write(trace_back)
+    tfile.close()                           
 
 @dataclass
 class CliArgs:
@@ -346,7 +360,7 @@ def setup_training():
 
 
 def main() -> None:
-    ''' Set up experiment and create simulation environment. '''
+    ''' Set up experiment and create simulation environment. '''    
     args = parse_args(create_parser())
 
     save_dir_name: str = args.exp_name  
@@ -483,8 +497,11 @@ def main() -> None:
         DEBUG=args.DEBUG
     )
     
-    # Begin simulation
-    simulation.train()
+    try:
+        # Begin simulation
+        simulation.train()
+    except Exception as err:
+        log_state(err)
 
 if __name__ == "__main__":
     main()

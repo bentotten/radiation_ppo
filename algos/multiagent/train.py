@@ -48,8 +48,6 @@ except ModuleNotFoundError:
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
-except: 
-    raise Exception
 
 ################################### Training ###################################
 @dataclass
