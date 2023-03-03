@@ -197,10 +197,12 @@ class PPOBuffer:
         self.path_start_idx = 0     
         self.episode_ptr = 0
 
+        # TODO finish implementing to get logger out of PPO buffer
         self.episode_lengths_buffer = np.zeros(
             combined_shape(self.max_size), dtype=np.float32
         )
         
+        # TODO finish implementing to get mapstack buffer out of CNN
         self.full_observation_buffer= np.zeros(
             combined_shape(self.max_size, (self.number_agents, self.observation_dimension)), dtype=np.float32
         )        
