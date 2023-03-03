@@ -20,9 +20,12 @@ from gym_rad_search.envs import RadSearch  # type: ignore
 try:
     import train  # type: ignore
     from ppo import BpArgs  # type: ignore
+    import evaluate # type: ignore
 except ModuleNotFoundError:
     import algos.multiagent.train as train  # type: ignore
     from algos.multiagent.ppo import BpArgs  # type: ignore
+    import algos.multiagent.evaluate as evaluate  # type: ignore
+    
 except: 
     raise Exception
 
@@ -519,7 +522,8 @@ def main() -> None:
     elif args.mode == 'evaluate':
         
         eval_kwargs=dict(
-            env=env,
+            env_name = args.env_name,
+            env_kwargs=env_kwargs,
             model_path=save_path, # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
@@ -529,26 +533,10 @@ def main() -> None:
             obstruction_count=0, # number of obstacles [0 - 7] (num_obs)
         )
         
-
+        simulation = evaluate.evaluate_PPO(**eval_kwargs)
         
-    #     simulation = evaluate.eval_PPO(
-    #         env=env,
-    #         logger_kwargs=logger_kwargs,
-    #         ppo_kwargs=ppo_kwargs,
-    #         seed=robust_seed,
-    #         number_of_agents=args.agent_count,
-    #         actor_critic_architecture=args.net_type,   
-    #         global_critic_flag = args.global_critic,                    
-    #         steps_per_epoch=args.steps_per_epoch,
-    #         steps_per_episode=args.steps_per_episode,
-    #         total_epochs=args.epochs,
-    #         render=args.render,
-    #         save_path=save_path,
-    #         save_gif=args.render, # TODO combine into just render
-    #         save_freq=args.save_freq,
-    #         save_gif_freq=args.save_gif_freq,
-    #         DEBUG=args.DEBUG
-    #     )
+        #simulation.evaluate()
+
         
     #     try:
     #         # Begin simulation

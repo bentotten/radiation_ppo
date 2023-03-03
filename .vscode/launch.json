@@ -35,7 +35,17 @@
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
-      "name": "MULTI",
+      "name": "Eval MULTI",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/multiagent/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": ["--mode", "evaluate", "--exp-name", "TEAM-RAD"],
+      "cwd": "${workspaceFolder}/algos/multiagent"
+    },
+    {
+      "name": "Train MULTI",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/algos/multiagent/main.py",

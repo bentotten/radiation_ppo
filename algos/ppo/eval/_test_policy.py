@@ -570,6 +570,7 @@ if __name__ == '__main__':
     print('Starting pool')
     p = Pool(processes=args.num_cpu)
     mc_results.append(p.map(func,params)) 
+    
     stats, len_freq = calc_stats(mc_results,mc=args.mc_runs,plot=False,snr=args.snr,control=args.control,obs=args.num_obs)
     
     if args.save_results:
