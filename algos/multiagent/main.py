@@ -45,6 +45,8 @@ class CliArgs:
     General parameters:
         --DEBUG, type=bool, default=False, 
             help="Enable DEBUG mode - contains extra logging and set minimal setups"
+        --mode, type=str, default='train',
+            help="Running mode - train: train a model. evaluate: run 100 monte carlo simulations and save results",            
         --steps-per-episode, type=int, default=120, 
             help="Number of timesteps per episode (before resetting the environment)"
         --steps-per-epoch, type=int, default=480,
@@ -145,6 +147,7 @@ class CliArgs:
     train_pfgru_iters: float
     reduce_pfgru_iters: float
     DEBUG: bool
+    mode: str
 
 
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
@@ -193,6 +196,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         train_pfgru_iters=args.train_pfgru_iters,
         reduce_pfgru_iters=args.reduce_pfgru_iters,        
         DEBUG=args.DEBUG,
+        mode=args.mode
     )
 
 
@@ -209,7 +213,13 @@ def create_parser() -> argparse.ArgumentParser:
         type=bool,
         default=False,
         help="Enable DEBUG mode - contains extra logging and set minimal setups",
-    )        
+    )     
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default='train',
+        help="Running mode - train: train a model. evaluate: run 100 monte carlo simulations and save results",
+    )          
     parser.add_argument(
         "--steps-per-episode",
         type=int,
@@ -478,30 +488,59 @@ def main() -> None:
     )
 
     # Set up training
-    simulation = train.train_PPO(
-        env=env,
-        logger_kwargs=logger_kwargs,
-        ppo_kwargs=ppo_kwargs,
-        seed=robust_seed,
-        number_of_agents=args.agent_count,
-        actor_critic_architecture=args.net_type,   
-        global_critic_flag = args.global_critic,                    
-        steps_per_epoch=args.steps_per_epoch,
-        steps_per_episode=args.steps_per_episode,
-        total_epochs=args.epochs,
-        render=args.render,
-        save_path=save_path,
-        save_gif=args.render, # TODO combine into just render
-        save_freq=args.save_freq,
-        save_gif_freq=args.save_gif_freq,
-        DEBUG=args.DEBUG
-    )
-    
-    try:
-        # Begin simulation
-        simulation.train()
-    except Exception as err:
-        log_state(err)
+    if args.mode == 'train':
+        simulation = train.train_PPO(
+            env=env,
+            logger_kwargs=logger_kwargs,
+            ppo_kwargs=ppo_kwargs,
+            seed=robust_seed,
+            number_of_agents=args.agent_count,
+            actor_critic_architecture=args.net_type,   
+            global_critic_flag = args.global_critic,                    
+            steps_per_epoch=args.steps_per_epoch,
+            steps_per_episode=args.steps_per_episode,
+            total_epochs=args.epochs,
+            render=args.render,
+            save_path=save_path,
+            save_gif=args.render, # TODO combine into just render
+            save_freq=args.save_freq,
+            save_gif_freq=args.save_gif_freq,
+            DEBUG=args.DEBUG
+        )
+        
+        try:
+            # Begin simulation
+            simulation.train()
+        except Exception as err:
+            log_state(err)
+            
+    # elif args.mode == 'evaluate':
+    #     simulation = evaluate.eval_PPO(
+    #         env=env,
+    #         logger_kwargs=logger_kwargs,
+    #         ppo_kwargs=ppo_kwargs,
+    #         seed=robust_seed,
+    #         number_of_agents=args.agent_count,
+    #         actor_critic_architecture=args.net_type,   
+    #         global_critic_flag = args.global_critic,                    
+    #         steps_per_epoch=args.steps_per_epoch,
+    #         steps_per_episode=args.steps_per_episode,
+    #         total_epochs=args.epochs,
+    #         render=args.render,
+    #         save_path=save_path,
+    #         save_gif=args.render, # TODO combine into just render
+    #         save_freq=args.save_freq,
+    #         save_gif_freq=args.save_gif_freq,
+    #         DEBUG=args.DEBUG
+    #     )
+        
+    #     try:
+    #         # Begin simulation
+    #         simulation.evaluate()
+    #     except Exception as err:
+    #         log_state(err)     
+    else:
+        raise Exception("Unknown mode specified. Acceptable modes: train, evaluate")       
 
 if __name__ == "__main__":
     main()
