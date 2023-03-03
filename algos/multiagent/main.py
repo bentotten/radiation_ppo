@@ -38,6 +38,8 @@ def log_state(error: Exception):
     tfile.write(trace_back)
     tfile.close()                           
 
+# TODO Implement a load from a config file instead of from cli args
+
 @dataclass
 class CliArgs:
     ''' Parameters passed in through the command line 
@@ -391,11 +393,11 @@ def main() -> None:
         'env_name': save_dir_name
         }
     
-    save_path = f"../../models/train/{exp_name}/{save_dir_name}"
+    save_path = f"../../models/train/{exp_name}/{save_dir_name}" # TODO turn into a parameter
 
     # Set up Radiation environment
     dim_length, dim_height = args.dims
-    intial_parameters = {
+    env_kwargs = {
         'bbox': np.array(  # type: ignore
             [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
         ),
@@ -408,7 +410,7 @@ def main() -> None:
         'DEBUG': args.DEBUG
     }
 
-    env: RadSearch = gym.make(args.env_name,**intial_parameters)
+    env: RadSearch = gym.make(args.env_name,**env_kwargs)
     
     # Uncommenting this will make the environment without Gym's oversight (useful for debugging)
     # env: RadSearch = RadSearch(
@@ -514,7 +516,21 @@ def main() -> None:
         except Exception as err:
             log_state(err)
             
-    # elif args.mode == 'evaluate':
+    elif args.mode == 'evaluate':
+        
+        eval_kwargs=dict(
+            env=env,
+            model_path=save_path, # Specify model directory (fpath)
+            episodes=100, # Number of episodes to test on [1 - 1000]
+            montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
+            save_gif=True,
+            actor_critic_architecture=args.net_type, # Neural network type (control)
+            snr='high', # signal to noise ratio [None, low, medium, high]
+            obstruction_count=0, # number of obstacles [0 - 7] (num_obs)
+        )
+        
+
+        
     #     simulation = evaluate.eval_PPO(
     #         env=env,
     #         logger_kwargs=logger_kwargs,

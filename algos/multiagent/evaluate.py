@@ -54,29 +54,50 @@ except:
 
 @dataclass
 class evaluate_PPO:
-    pass
+    '''
+        Test existing model across random episodes for a set number of monte carlo runs per episode.
+        
+        :param env: An environment satisfying the OpenAI Gym API.    
+        :param model_path: (str) Directory containing trained models.
+        :param save_path: (str) Directory to save results to. Defaults to '.'
+        :param seed: (Union[int, None]) Random seed control for reproducability. Defaults to 9389090.
+        :param episodes: (int) Number of episodes to test on [1 - 1000]. Defaults to 100.
+        :param montecarlo_runs: (int) Number of Monte Carlo runs per episode (How many times to run/sample each episode setup). Defaults to 100. 
+        :param snr: (str) Signal to noise ratio [None, low, medium, high] of background radiation and gamma radiation in environment. Defaults to high.
+        :param obstruction_count: (int) Number of obstructions in the environment [0 - 7]. Defaults to zero.
+        
+        :param save_gif: (bool) Save gif of episodes or not. Defaults to True.
+        :param save_gif_freq: (int) How many epsiodes should be saved (including monte-carlo repeats). Defaults to 100.
+    
+    '''
+    env: RadSearch    
+    model_path: str
+    save_path: str = field(default='.')
+    seed: Union[int, None] = field(default=9389090)
+    episodes: int = field(default=100)
+    montecarlo_runs: int = field(default=100)
+    snr: str = field(default='high')
+    obstruction_count: int = field(default=0) 
+    save_gif: bool = field(default=True)
+    save_gif_freq: int = field(default=100)
 
 if __name__ == '__main__':
     # TODO port into current main and call evalute.py instead of train.py
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--fpath', type=str,default='../models/pre_train/rad_a2c/loc24_hid24_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1',
-    help='Specify model directory, Ex: ../models/train/bpf/model_dir')
-    parser.add_argument('--episodes', '-n', type=int, default=100,help='Number of episodes to test on, option: [1-1000]') 
-    parser.add_argument('--render', '-r',type=bool, default=False,help='Produce gif of agent in environment, last episode of n episodes. Num_cpu should be 1')
-    parser.add_argument('--save_gif', type=bool,default=False, help='Save gif of the agent in model folder, render must be true')
-    #parser.add_argument('--control', type=str, default='rad-a2c',help='Control algorithm, options: [rad-a2c,bpf-a2c,gs,rid-fim]')
-    parser.add_argument('--snr', type=str, default='high',help='Signal to Noise ratio (SNR) of environment, options: [low, med, high]')
-    parser.add_argument('--num_obs', type=int, default=0,help='Number of obstructions in environment, options:[0, 1, 2, 3, 4, 5, 6, 7]')
-    parser.add_argument('--mc_runs', type=int, default=100,help='Number of Monte Carlo runs per episode (How many times to run/sample each episode setup)')
-    #parser.add_argument('--num_cpu', '-ncpu', type=int, default=10,help='Number of cpus to run episodes across')
-    #parser.add_argument('--fisher',type=bool, default=False,help='Calculate the posterior Cramer-Rao Bound for BPF based methods')
-    parser.add_argument('--save_results', type=bool, default=False, help='Save list of results across episodes and runs')
-    args = parser.parse_args()
-    
-    
-    plt.rc('font',size=14)
-    seed = 9389090
+    # import argparse
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('--fpath', type=str,default='../models/pre_train/rad_a2c/loc24_hid24_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1',
+    # help='Specify model directory, Ex: ../models/train/bpf/model_dir')
+    # parser.add_argument('--episodes', '-n', type=int, default=100,help='Number of episodes to test on, option: [1-1000]') 
+    # parser.add_argument('--render', '-r',type=bool, default=False,help='Produce gif of agent in environment, last episode of n episodes. Num_cpu should be 1')
+    # parser.add_argument('--save_gif', type=bool,default=False, help='Save gif of the agent in model folder, render must be true')
+    # #parser.add_argument('--control', type=str, default='rad-a2c',help='Control algorithm, options: [rad-a2c,bpf-a2c,gs,rid-fim]')
+    # parser.add_argument('--snr', type=str, default='high',help='Signal to Noise ratio (SNR) of environment, options: [low, med, high]')
+    # parser.add_argument('--num_obs', type=int, default=0,help='Number of obstructions in environment, options:[0, 1, 2, 3, 4, 5, 6, 7]')
+    # parser.add_argument('--mc_runs', type=int, default=100,help='Number of Monte Carlo runs per episode (How many times to run/sample each episode setup)')
+    # #parser.add_argument('--num_cpu', '-ncpu', type=int, default=10,help='Number of cpus to run episodes across')
+    # #parser.add_argument('--fisher',type=bool, default=False,help='Calculate the posterior Cramer-Rao Bound for BPF based methods')
+    # parser.add_argument('--save_results', type=bool, default=False, help='Save list of results across episodes and runs')
+    # args = parser.parse_args()
     
     #Path for the test environments
     env_fpath = 'test_envs/snr/test_env_dict_obs'
@@ -85,7 +106,6 @@ if __name__ == '__main__':
     params = np.arange(0,args.episodes,1)
 
     #Load set of test envs 
-    env = make_env(rng,args.num_obs)
     env_path = env_fpath + str(args.num_obs) if args.snr is None else env_fpath + str(args.num_obs)+'_'+args.snr+'_v4'
 
     try:
