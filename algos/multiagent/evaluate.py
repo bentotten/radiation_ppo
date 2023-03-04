@@ -4,8 +4,8 @@ Evaluate agents and update neural networks using simulation environment.
 
 import os
 import sys
-import glob
 import time
+import random
 from datetime import datetime
 import math
 
@@ -23,6 +23,7 @@ from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
 
 import joblib # type: ignore
+import ray
 
 # Simulation Environment
 import gym  # type: ignore
@@ -51,8 +52,72 @@ except ModuleNotFoundError:
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
-except: 
-    raise Exception
+
+
+# TODO Delete me after working
+@ray.remote
+def sampling_task(num_samples: int, task_id: int,
+                  progress_actor: ray.actor.ActorHandle) -> int:
+    num_inside = 0
+    for i in range(num_samples):
+        x, y = random.uniform(-1, 1), random.uniform(-1, 1)
+        if math.hypot(x, y) <= 1:
+            num_inside += 1
+
+        # Report progress every 1 million samples.
+        if (i + 1) % 1_000_000 == 0:
+            # This is async.
+            progress_actor.report_progress.remote(task_id, i + 1)
+
+    # Report the final progress.
+    progress_actor.report_progress.remote(task_id, num_samples)
+    return num_inside
+
+
+@ray.remote
+class ProgressActor:
+    def __init__(self, total_num_samples: int):
+        self.total_num_samples = total_num_samples
+        self.num_samples_completed_per_task = {}
+
+    def report_progress(self, task_id: int, num_samples_completed: int) -> None:
+        self.num_samples_completed_per_task[task_id] = num_samples_completed
+
+    def get_progress(self) -> float:
+        return (
+            sum(self.num_samples_completed_per_task.values()) / self.total_num_samples
+        )
+
+
+@ray.remote 
+@dataclass
+class Episode:
+    '''
+        Remote function to execute requested number of episodes for requested number of monte carlo runs each episode.
+        
+        :param env_name: (str) Name of environment to be loaded with GymAI.
+        :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
+        :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.    
+    ''' 
+    env_name: str
+    env_kwargs: Dict
+    
+    #: Test variable for distributed testing with Ray
+    _value: int = field(default=0)
+    
+    def __post_init__(self)-> None:
+        pass
+    
+    def create_environment(self) -> RadSearch:
+        return gym.make(self.env_name, **self.env_kwargs)
+    
+    def _increment(self):
+        self._value += 1
+        return self._value
+
+    def _get_counter(self):
+        return self._value    
+
 
 @dataclass
 class evaluate_PPO:
@@ -61,6 +126,8 @@ class evaluate_PPO:
         
         :param env_name: (str) Name of environment to be loaded with GymAI.
         :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
+        :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
+        
         :param model_path: (str) Directory containing trained models.
         :param test_env_path: (str) Directory containing test environments. Each test environment file contains 1000 environments
         :param save_path: (str) Directory to save results to. Defaults to '.'
@@ -80,7 +147,9 @@ class evaluate_PPO:
     
     '''
     env_name: str
+    
     env_kwargs: Dict
+    
     model_path: str
     test_env_path: str = field(default='./evaluation/test_environments')
     save_path: str = field(default='.')
@@ -97,98 +166,49 @@ class evaluate_PPO:
     save_gif_freq: int = field(default=100)
     
     # Initialized elsewhere
-    episode_counter_buffer: npt.NDArray = field(init=False)
+    episode_counter_buffer: npt.NDArray = field(init=False) # TODO is this necessary with ray?
+    #: Sets of environments for specifications. Comes in sets of 1000.
+    environment_sets: Dict = field(init=False)
 
     def __post_init__(self)-> None:
         
         self.episode_counter = np.arange(start=0, stop=100, step=1) # TODO is this necessary with ray?
         
         # Load test environments
-        full_test_env_path = self.test_env_path + f"/test_env_dict_obs{self.obstruction_count}_{self.snr}_v4"
-        environment_sets = joblib.load(full_test_env_path)
+        self.environment_sets = joblib.load(self.test_env_path + f"/test_env_dict_obs{self.obstruction_count}_{self.snr}_v4")
         
-        self.refresh_environment(environment_sets=environment_sets, counter_number=0)
-        pass
+        # Initialize ray
+        ray.init(address='auto')
 
-    def create_environment(self) -> RadSearch:
-        return gym.make(self.env_name, **self.env_kwargs)
+    def _test_remote(self):
+        # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html
         
+        # Change this to match your cluster scale.
+        NUM_SAMPLING_TASKS = 10
+        NUM_SAMPLES_PER_TASK = 10_000_000
+        TOTAL_NUM_SAMPLES = NUM_SAMPLING_TASKS * NUM_SAMPLES_PER_TASK
 
-    def refresh_environment(self, environment_sets: Dict, counter_number: int) -> None:
-        """
-            Load saved test environment parameters from dictionary into the current instantiation of environment
-        """
+        # Create the progress actor.
+        progress_actor = ProgressActor.remote(TOTAL_NUM_SAMPLES)
         
-        # TODO switch out when done
-        env_dict = environment_sets
-        num_obs = self.obstruction_count
-        ###############################
-        
-        key = 'env_'+str(n)
-        env.src_coords    = env_dict[key][0]
-        env.det_coords    = env_dict[key][1].copy()
-        env.intensity     = env_dict[key][2]
-        env.bkg_intensity = env_dict[key][3]
-        env.source        = set_vis_coord(env.source,env.src_coords)
-        env.detector      = set_vis_coord(env.detector,env.det_coords) # TODO Make compatible with multi-agent env
-        
-        if num_obs > 0:
-            env.obs_coord = env_dict[key][4]
-            env.num_obs = len(env_dict[key][4])
-            env.poly = []
-            env.line_segs = []
-            for obs in env.obs_coord:
-                geom = [vis.Point(float(obs[0][jj][0]),float(obs[0][jj][1])) for jj in range(len(obs[0]))]
-                poly = vis.Polygon(geom)
-                env.poly.append(poly)
-                env.line_segs.append([vis.Line_Segment(geom[0],geom[1]),vis.Line_Segment(geom[0],geom[3]),
-                vis.Line_Segment(geom[2],geom[1]),vis.Line_Segment(geom[2],geom[3])]) 
+        # Create and execute all sampling tasks in parallel.
+        results = [
+            sampling_task.remote(NUM_SAMPLES_PER_TASK, i, progress_actor)
+            for i in range(NUM_SAMPLING_TASKS)
+        ]        
             
-            env.env_ls = [solid for solid in env.poly]
-            env.env_ls.insert(0,env.walls)
-            env.world = vis.Environment(env.env_ls)
-            # Check if the environment is valid
-            assert env.world.is_valid(EPSILON), "Environment is not valid"
-            env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
+        # Query progress periodically.
+        while True: 
+            progress = ray.get(progress_actor.get_progress.remote())
+            print(f"Progress: {int(progress * 100)}%")
 
-        o, _, _, _        = env.step(-1)
-        env.det_sto       = [env_dict[key][1].copy()]  # TODO Make compatible with multi-agent env
-        env.src_sto       = [env_dict[key][0].copy()]  # TODO Make compatible with multi-agent env
-        env.meas_sto      = [o[0].copy()]  # TODO Make compatible with multi-agent env
-        env.prev_det_dist = env.world.shortest_path(env.source,env.detector,env.vis_graph,EPSILON).length() # TODO Make compatible with multi-agent env
-        env.iter_count    = 1
-        return o, env
+            if progress == 1:
+                break
 
-    # robust_seed = _int_list_from_bigint(hash_seed(seed))[0]
-    # rng = np.random.default_rng(robust_seed)
-    # params = np.arange(0,args.episodes,1)
-
-    # #Model parameters, must match the model being loaded # TODO load dynamically from saved configs instead
-    # ac_kwargs = {'batch_s': 1, 'hidden': [24], 'hidden_sizes_pol': [32], 'hidden_sizes_rec': [24], 
-    #              'hidden_sizes_val': [32], 'net_type': 'rnn', 'pad_dim': 2, 'seed': robust_seed}
-
-    # # #Bootstrap particle filter parameters for RID-FIM controller and BPF-A2C
-    # # bp_kwargs = {'nParticles':int(6e3), 'noise_params':[15.,1.,1],'thresh':1,'s_size':3,
-    # #             'rng':rng, 'L': 1,'k':0.0, 'alpha':0.6, 'fim_thresh':0.36,'interval':[75,75]}
-    
-    # # #Gradient search parameters
-    # # grad_kwargs = {'q':0.0042,'env':env}
-
-    # #Create partial func. for use with multiprocessing
-    # # TODO use Ray instead
-    # func = partial(run_policy, env, env_set, args.render,args.save_gif, 
-    #                args.fpath, args.mc_runs, args.control,args.fisher,
-    #                ac_kwargs,bp_kwargs,grad_kwargs, args.episodes)
-    # mc_results = []
-    # print(f'Number of cpus available: {os.cpu_count()}')
-    # print('Starting pool')
-    # p = Pool(processes=args.num_cpu)
-    # mc_results.append(p.map(func,params)) 
-    # stats, len_freq = calc_stats(mc_results,mc=args.mc_runs,plot=False,snr=args.snr,control=args.control,obs=args.num_obs)
-    
-    # if args.save_results:
-    #     print('Saving results..')
-    #     joblib.dump(stats,'results/raw/n_'+str(args.episodes)+'_mc'+str(args.mc_runs)+'_'+args.control+'_'+'stats_'+args.snr+'_v4.pkl')
-    #     joblib.dump(len_freq,'results/raw/n_'+str(args.episodes)+'_mc'+str(args.mc_runs)+'_'+args.control+'_'+'freq_stats_'+args.snr+'_v4.pkl')
-    #     joblib.dump(mc_results,'results/raw/n_'+str(args.episodes)+'_mc'+str(args.mc_runs)+'_'+args.control+'_'+'full_dump_'+args.snr+'_v4.pkl')
-      
+            time.sleep(1)            
+        
+        # Get all the sampling tasks results.
+        total_num_inside = sum(ray.get(results))
+        pi = (total_num_inside * 4) / TOTAL_NUM_SAMPLES
+        print(f"Estimated value of π is: {pi}")
+        pass

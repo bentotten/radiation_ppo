@@ -54,3 +54,7 @@ It is recommended to use the Anaconda package manager. The author did all develo
 ## Debugging
 
 In VSCode, you can run the specific algorithm and environment configuration through the Command Palette (Ctrl+Shift+P) by filtering on Debug: Select and Start Debugging or typing 'debug ' and selecting the desired configuration. An existing template has been provided.
+
+## Distributed Evaluation Mode
+
+The evaluation portion of this codebase has been set up to work with [Ray Clusters](https://docs.ray.io/en/latest/cluster/getting-started.html). Each episode runs as it's own [Actor](https://docs.ray.io/en/latest/ray-core/actors.html)

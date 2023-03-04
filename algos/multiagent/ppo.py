@@ -435,7 +435,7 @@ class AgentPPO:
         
         :param seed: (int) For random number generator.
         
-        :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
+        :param actor_critic_args: (dict) Arguments for A2C neural networks for agent.
         
         :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent.
                 

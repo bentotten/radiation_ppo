@@ -1,3 +1,6 @@
+# Ray configurations
+*ray*.yaml
+
 # Documentation (should be generated with Sphinx from doc_source directory)
 doc_build/
 

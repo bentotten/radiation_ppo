@@ -535,7 +535,7 @@ def main() -> None:
         
         simulation = evaluate.evaluate_PPO(**eval_kwargs)
         
-        #simulation.evaluate()
+        simulation._test_remote() #TODO delete me
 
         
     #     try:
