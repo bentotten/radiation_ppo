@@ -73,7 +73,7 @@ def sampling_task(num_samples: int, task_id: int,
     progress_actor.report_progress.remote(task_id, num_samples)
     return num_inside
 
-
+# TODO Delete me after working
 @ray.remote
 class ProgressActor:
     def __init__(self, total_num_samples: int):
@@ -91,7 +91,7 @@ class ProgressActor:
 
 @ray.remote 
 @dataclass
-class Episode:
+class Runner:
     '''
         Remote function to execute requested number of episodes for requested number of monte carlo runs each episode.
         
@@ -99,24 +99,19 @@ class Episode:
         :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
         :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.    
     ''' 
+    id: int
     env_name: str
     env_kwargs: Dict
     
-    #: Test variable for distributed testing with Ray
-    _value: int = field(default=0)
-    
     def __post_init__(self)-> None:
-        pass
+        self.env = self.create_environment()
+        # TODO read in actor models
+        # TODO create tasks
     
     def create_environment(self) -> RadSearch:
-        return gym.make(self.env_name, **self.env_kwargs)
+        return gym.make(self.env_name, **self.env_kwargs) 
     
-    def _increment(self):
-        self._value += 1
-        return self._value
-
-    def _get_counter(self):
-        return self._value    
+    
 
 
 @dataclass
@@ -178,7 +173,14 @@ class evaluate_PPO:
         self.environment_sets = joblib.load(self.test_env_path + f"/test_env_dict_obs{self.obstruction_count}_{self.snr}_v4")
         
         # Initialize ray
-        ray.init(address='auto')
+        try:
+            ray.init(address='auto')
+        except:
+            print("Ray failed to initialize. Running on single server.")
+
+    def evaluate(self):
+        ''' Driver '''
+        pass
 
     def _test_remote(self):
         # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html
