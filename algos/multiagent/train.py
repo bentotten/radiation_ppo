@@ -66,7 +66,7 @@ class train_PPO:
     :param ppo_kwargs: Static parameters for ppo method. Also contains arguments for actor-critic neural networks.
     :param seed: (int) Seed for random number generators.
     :param number_of_agents: (int) Number of agents
-    :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
+    :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent. Defaults to 'cnn' for convolutional neural networks.
     :param global_critic_flag: [bool] Indicate if a global critic will be set after agent intialization
     :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
     :param steps_per_episode: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each episode before resetting the environment.        

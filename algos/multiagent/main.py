@@ -522,6 +522,7 @@ def main() -> None:
         # TODO move to CLI
         eval_kwargs=dict(
             env_name = args.env_name,
+            test_env_path = './evaluation/test_environments',
             env_kwargs=env_kwargs,
             model_path=save_path, # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]

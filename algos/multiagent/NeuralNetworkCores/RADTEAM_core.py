@@ -960,6 +960,9 @@ class Critic(nn.Module):
     def load_model(self, checkpoint_path:str)-> None:
         self.load_state_dict(torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage))
 
+    def is_mock_critic(self)-> bool:
+        return False
+
 class EmptyCritic():
     ''' 
         This is an empty critic object that simulates a critic for compatibility during evaluation runs in order to avoid the volume of conditional statements required otherwise.
@@ -1002,6 +1005,9 @@ class EmptyCritic():
     
     def train(self)-> None:
         return
+    
+    def is_mock_critic(self)-> bool:
+        return True    
 
 #TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo

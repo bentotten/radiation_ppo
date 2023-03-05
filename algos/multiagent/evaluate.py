@@ -34,10 +34,12 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # PPO and logger
 try:
     from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
+    from ppo import BpArgs  # type: ignore
+
 except ModuleNotFoundError:
-    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json
+    from algos.multiagent.ppo import AgentPPO  # type: ignore
+    from algos.multiagent.ppo import BpArgs  # type: ignore    
+    
 except: 
     raise Exception
 
@@ -133,33 +135,10 @@ class EpisodeRunner:
                 print(f'Finished episode {n}!, completed count: {done_count}')
                 return (results,mc_stats)            
         
-        
-        :param env_name: (str) Name of environment to be loaded with GymAI.
-        :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
-        
-        :param model_path: (str) Directory containing trained models.
-        :param test_env_path: (str) Directory containing test environments. Each test environment file contains 1000 environments
-        :param save_path: (str) Directory to save results to. Defaults to '.'
-        :param seed: (Union[int, None]) Random seed control for reproducability. Defaults to 9389090.
-        
-        :param number_of_agents: (int) Number of agents. Defaults to 1.        
-        
-        :param episodes: (int) Number of episodes to test on [1 - 1000]. Defaults to 100.
-        :param montecarlo_runs: (int) Number of Monte Carlo runs per episode (How many times to run/sample each episode setup). Defaults to 100. 
-        :param snr: (str) Signal to noise ratio [None, low, medium, high] of background radiation and gamma radiation in environment. Defaults to high.
-        :param obstruction_count: (int) Number of obstructions in the environment [0 - 7]. Defaults to zero.
-        :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
-            coordinates can be encompased in a matrix element.
-            
-        :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
-        
-        :param save_gif: (bool) Save gif of episodes or not. Defaults to True.
-        :param save_gif_freq: (int) How many epsiodes should be saved (including monte-carlo repeats). Defaults to 100.    
     ''' 
     id: int
     env_name: str
     env_kwargs: Dict
-    ppo_kwargs: Dict    
     env_sets: Dict
     steps_per_episode: int
     
@@ -191,8 +170,16 @@ class EpisodeRunner:
         self.env = self.create_environment()
         
         # Setup Agent arguments
-        # Set up static PPO and A2C args. Remaining      
-        ac_kwargs=dict(
+        # Bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
+        bp_args = BpArgs(
+            bp_decay=0.1,
+            l2_weight=1.0,
+            l1_weight=0.0,
+            elbo_weight=1.0,
+            area_scale=self.env.search_area[2][1]
+        )            
+        # Set up static A2C args.      
+        actor_critic_args=dict(
             action_space=self.env.detectable_directions,
             observation_space=self.env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
             steps_per_episode=self.steps_per_episode,
@@ -206,46 +193,27 @@ class EpisodeRunner:
             GlobalCritic=None,
             no_critic=True
         )         
-
+        # Set up static PPO args.      
         ppo_kwargs=dict(
             observation_space=self.env.observation_space.shape[0],
-            bp_args=self.bp_args,
+            bp_args=bp_args,
             steps_per_epoch=0,
             steps_per_episode=self.steps_per_episode,
             number_of_agents=self.number_of_agents,
             env_height=self.env.search_area[2][1],
             seed=self.seed,        
-            actor_critic_args=ac_kwargs,
+            actor_critic_args=actor_critic_args,
             actor_critic_architecture=self.actor_critic_architecture,
-            minibatch=1,
-            train_pi_iters=args.train_pi_iters,
-            train_v_iters=args.train_v_iters,
-            train_pfgru_iters=args.train_pfgru_iters,
-            reduce_pfgru_iters=args.reduce_pfgru_iters,
-            actor_learning_rate=args.actor_learning_rate,
-            critic_learning_rate=args.critic_learning_rate,
-            pfgru_learning_rate=args.pfgru_learning_rate,
-            gamma=args.gamma,  
-            alpha=args.alpha,                      
-            clip_ratio=args.clip_ratio,
-            target_kl=args.target_kl,
-            lam=args.lam,
-            GlobalCriticOptimizer=None
+            minibatch=1,                  
         )          
         
-        # Initialize agents        
+        # Initialize agents and load agent models
         for i in range(self.number_of_agents):
-            self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
+            self.agents[i] = AgentPPO(id=i, **ppo_kwargs)
+            self.agents[i].load(path=self.model_path)
             
             # Sanity check
-            if self.global_critic_flag:
-                assert self.agents[i].agent.critic is self.GlobalCritic
-                assert self.agents[i].GlobalCriticOptimizer is self.GlobalCriticOptimizer
-            else:
-                assert self.agents[i].agent.critic is not self.GlobalCritic
-                if i > 0:
-                    assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
-                    assert self.agents[i].GlobalCriticOptimizer is not self.GlobalCriticOptimizer              
+            assert self.agents[i].agent.critic.is_mock_critic()
         
         self.run()
     
@@ -283,7 +251,7 @@ class evaluate_PPO:
 
     def __post_init__(self)-> None:
         self.test_env_dir = self.eval_kwargs['test_env_path']
-        self.test_env_path = self.test_env_path + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
+        self.test_env_path = self.test_env_dir + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
                 
         # Load test environments
         self.environment_sets = joblib.load(self.test_env_path)
@@ -306,7 +274,7 @@ class evaluate_PPO:
         #         number_of_obstructions=self.obstruction_count
         #     ) for i in range(self.episodes)} 
         
-        EpisodeRunner(**self.eval_kwargs)
+        EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)
         
     def _test_remote(self):
         # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html
