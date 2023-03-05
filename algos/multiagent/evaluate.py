@@ -78,7 +78,7 @@ def sampling_task(num_samples: int, task_id: int,
 class ProgressActor:
     def __init__(self, total_num_samples: int):
         self.total_num_samples = total_num_samples
-        self.num_samples_completed_per_task = {}
+        self.num_samples_completed_per_task: dict = {}
 
     def report_progress(self, task_id: int, num_samples_completed: int) -> None:
         self.num_samples_completed_per_task[task_id] = num_samples_completed
@@ -88,10 +88,10 @@ class ProgressActor:
             sum(self.num_samples_completed_per_task.values()) / self.total_num_samples
         )
 
-
-@ray.remote 
+# Uncomment when ready to run with Ray
+#@ray.remote 
 @dataclass
-class Runner:
+class EpisodeRunner:
     '''
         Remote function to execute requested number of episodes for requested number of monte carlo runs each episode.
         
@@ -134,20 +134,29 @@ class Runner:
                 return (results,mc_stats)            
         
         :param env_name: (str) Name of environment to be loaded with GymAI.
-        :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
-        :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.    
+        :param env_kwargs: (Dict) Arguments to create Rad-Search environment.
+        :param env_sets: (Dict) Dictionary of test environments
+        
     ''' 
     id: int
     env_name: str
     env_kwargs: Dict
+    env_sets: Dict
+    number_of_obstructions: int
     
     def __post_init__(self)-> None:
-        # Create environment
+        # Create own instatiation of environment
         self.env = self.create_environment()
         
-        # - refresh environment with test env
+        self.env.render(path='.', just_env=True)
+        
+        # Refresh environment with test env
+        self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.number_of_obstructions)
+        self.env.render(path='.', just_env=True)
+        
         # - create agent
         # - Get initial environment observation
+        pass
     
     def create_environment(self) -> RadSearch:
         return gym.make(self.env_name, **self.env_kwargs) 
@@ -213,16 +222,32 @@ class evaluate_PPO:
         # Load test environments
         self.environment_sets = joblib.load(self.test_env_path + f"/test_env_dict_obs{self.obstruction_count}_{self.snr}_v4")
         
+        # Uncomment when ready to run with Ray                
         # Initialize ray
-        try:
-            ray.init(address='auto')
-        except:
-            print("Ray failed to initialize. Running on single server.")
+        # try:
+        #     ray.init(address='auto')
+        # except:
+        #     print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
-        ''' Driver '''
-        pass
-
+        ''' Driver '''       
+        # Uncomment when ready to run with Ray        
+        # runners = {i: EpisodeRunner.remote(
+        #         id=i, 
+        #         env_name=self.env_name, 
+        #         env_kwargs=self.env_kwargs, 
+        #         env_sets=self.environment_sets, 
+        #         number_of_obstructions=self.obstruction_count
+        #     ) for i in range(self.episodes)} 
+        
+        EpisodeRunner(
+                id=0, 
+                env_name=self.env_name, 
+                env_kwargs=self.env_kwargs, 
+                env_sets=self.environment_sets, 
+                number_of_obstructions=self.obstruction_count
+            )
+        
     def _test_remote(self):
         # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html
         

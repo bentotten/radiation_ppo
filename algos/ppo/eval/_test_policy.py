@@ -263,10 +263,10 @@ def refresh_env(env_dict,env,n,num_obs=0):
         env.vis_graph = vis.Visibility_Graph(env.world, EPSILON)
 
     o, _, _, _        = env.step(-1)
-    env.det_sto       = [env_dict[key][1].copy()]  # TODO Make compatible with multi-agent env
-    env.src_sto       = [env_dict[key][0].copy()]  # TODO Make compatible with multi-agent env
-    env.meas_sto      = [o[0].copy()]  # TODO Make compatible with multi-agent env
-    env.prev_det_dist = env.world.shortest_path(env.source,env.detector,env.vis_graph,EPSILON).length() # TODO Make compatible with multi-agent env
+    env.det_sto       = [env_dict[key][1].copy()]  
+    env.src_sto       = [env_dict[key][0].copy()] 
+    env.meas_sto      = [o[0].copy()]  
+    env.prev_det_dist = env.world.shortest_path(env.source,env.detector,env.vis_graph,EPSILON).length() 
     env.iter_count    = 1
     return o, env
 

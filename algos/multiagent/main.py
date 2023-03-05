@@ -413,87 +413,85 @@ def main() -> None:
         'DEBUG': args.DEBUG
     }
 
-    env: RadSearch = gym.make(args.env_name,**env_kwargs)
-    
-    # Uncommenting this will make the environment without Gym's oversight (useful for debugging)
-    # env: RadSearch = RadSearch(
-    #     bbox=np.array(  # type: ignore
-    #         [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
-    #     ),
-    #     observation_area=np.array(args.area_obs),  # type: ignore
-    #     obstruction_count=args.obstruct,
-    #     np_random=rng,
-    #     number_agents = args.agent_count
-    # )    
-    
-    # Bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
-    bp_args = BpArgs(
-        bp_decay=0.1,
-        l2_weight=1.0,
-        l1_weight=0.0,
-        elbo_weight=1.0,
-        area_scale=env.search_area[2][1]
-    )    
-    
-    # Set up static A2C actor-critic args
-    # TODO switch all of these to switch statements
-    if args.net_type == 'mlp' or args.net_type =='rnn':
-        ac_kwargs=dict(
-            obs_dim=env.observation_space.shape[0],
-            act_dim=env.detectable_directions,
-            hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
-            hidden_sizes_val=[[args.hid_val]] * args.l_val,
-            hidden_sizes_rec=[args.hid_rec],
-            hidden=[[args.hid_gru]],
-            net_type=args.net_type,
-            batch_s=args.minibatches,
-            seed=args.seed,
-            pad_dim=2                     
-        )
-    else:
-        ac_kwargs=dict(
-            action_space=env.detectable_directions,
-            observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
-            steps_per_episode=args.steps_per_episode,
-            number_of_agents=args.agent_count,
-            detector_step_size=env.step_size,
-            environment_scale=env.scale,
-            bounds_offset=env.observation_area,
-            enforce_boundaries=args.enforce_boundaries,
-            grid_bounds=env.scaled_grid_max,
-            resolution_multiplier=args.resolution_multiplier,
-            GlobalCritic=None
-        )         
-
-    # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
-    ppo_kwargs=dict(
-        observation_space=env.observation_space.shape[0],
-        bp_args=bp_args,
-        steps_per_epoch=args.steps_per_epoch,
-        steps_per_episode=args.steps_per_episode,
-        number_of_agents=args.agent_count,
-        env_height=env.search_area[2][1],
-        seed=args.seed,        
-        actor_critic_args=ac_kwargs,
-        actor_critic_architecture=args.net_type,
-        minibatch=args.minibatches,
-        train_pi_iters=args.train_pi_iters,
-        train_v_iters=args.train_v_iters,
-        train_pfgru_iters=args.train_pfgru_iters,
-        reduce_pfgru_iters=args.reduce_pfgru_iters,
-        actor_learning_rate=args.actor_learning_rate,
-        critic_learning_rate=args.critic_learning_rate,
-        pfgru_learning_rate=args.pfgru_learning_rate,
-        gamma=args.gamma,  
-        alpha=args.alpha,                      
-        clip_ratio=args.clip_ratio,
-        target_kl=args.target_kl,
-        lam=args.lam,
-        GlobalCriticOptimizer=None
-    )
-
     # Set up training
     if args.mode == 'train':
+        env: RadSearch = gym.make(args.env_name,**env_kwargs)
+        # Uncommenting this will make the environment without Gym's oversight (useful for debugging)
+        # env: RadSearch = RadSearch(
+        #     bbox=np.array(  # type: ignore
+        #         [[0.0, 0.0], [dim_length, 0.0], [dim_length, dim_height], [0.0, dim_height]]
+        #     ),
+        #     observation_area=np.array(args.area_obs),  # type: ignore
+        #     obstruction_count=args.obstruct,
+        #     np_random=rng,
+        #     number_agents = args.agent_count
+        # )    
+        
+        # Bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
+        bp_args = BpArgs(
+            bp_decay=0.1,
+            l2_weight=1.0,
+            l1_weight=0.0,
+            elbo_weight=1.0,
+            area_scale=env.search_area[2][1]
+        )    
+        
+        # Set up static A2C actor-critic args
+        if args.net_type == 'mlp' or args.net_type =='rnn':
+            ac_kwargs=dict(
+                obs_dim=env.observation_space.shape[0],
+                act_dim=env.detectable_directions,
+                hidden_sizes_pol=[[args.hid_pol]] * args.l_pol,
+                hidden_sizes_val=[[args.hid_val]] * args.l_val,
+                hidden_sizes_rec=[args.hid_rec],
+                hidden=[[args.hid_gru]],
+                net_type=args.net_type,
+                batch_s=args.minibatches,
+                seed=args.seed,
+                pad_dim=2                     
+            )
+        else:
+            ac_kwargs=dict(
+                action_space=env.detectable_directions,
+                observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
+                steps_per_episode=args.steps_per_episode,
+                number_of_agents=args.agent_count,
+                detector_step_size=env.step_size,
+                environment_scale=env.scale,
+                bounds_offset=env.observation_area,
+                enforce_boundaries=args.enforce_boundaries,
+                grid_bounds=env.scaled_grid_max,
+                resolution_multiplier=args.resolution_multiplier,
+                GlobalCritic=None
+            )         
+
+        # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
+        ppo_kwargs=dict(
+            observation_space=env.observation_space.shape[0],
+            bp_args=bp_args,
+            steps_per_epoch=args.steps_per_epoch,
+            steps_per_episode=args.steps_per_episode,
+            number_of_agents=args.agent_count,
+            env_height=env.search_area[2][1],
+            seed=args.seed,        
+            actor_critic_args=ac_kwargs,
+            actor_critic_architecture=args.net_type,
+            minibatch=args.minibatches,
+            train_pi_iters=args.train_pi_iters,
+            train_v_iters=args.train_v_iters,
+            train_pfgru_iters=args.train_pfgru_iters,
+            reduce_pfgru_iters=args.reduce_pfgru_iters,
+            actor_learning_rate=args.actor_learning_rate,
+            critic_learning_rate=args.critic_learning_rate,
+            pfgru_learning_rate=args.pfgru_learning_rate,
+            gamma=args.gamma,  
+            alpha=args.alpha,                      
+            clip_ratio=args.clip_ratio,
+            target_kl=args.target_kl,
+            lam=args.lam,
+            GlobalCriticOptimizer=None
+        )
+
         simulation = train.train_PPO(
             env=env,
             logger_kwargs=logger_kwargs,
@@ -521,6 +519,7 @@ def main() -> None:
             
     elif args.mode == 'evaluate':
         
+        # TODO move to CLI
         eval_kwargs=dict(
             env_name = args.env_name,
             env_kwargs=env_kwargs,
@@ -535,9 +534,8 @@ def main() -> None:
         
         simulation = evaluate.evaluate_PPO(**eval_kwargs)
         
-        simulation._test_remote() #TODO delete me
+        simulation.evaluate() 
 
-        
     #     try:
     #         # Begin simulation
     #         simulation.evaluate()

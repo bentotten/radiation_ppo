@@ -322,7 +322,8 @@ class RadSearch(gym.Env):
     coord_noise: bool = False
     seed: Union[int, None] = field(default=None)  # TODO make env generation work with this
     scale: float = field(init=False)  # Used to deflate and inflate coordinates
-    scaled_grid_max: Tuple = field(default_factory=lambda: (1,1)) # Max x and max y for grid after deflation   
+    scaled_grid_max: Tuple = field(default_factory=lambda: (1,1)) # Max x and max y for grid after deflation  
+    epoch_end: bool = field(default=False) 
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
@@ -687,15 +688,23 @@ class RadSearch(gym.Env):
         :param id: (int) ID number of environment for dictionary
         :param num_obs: (int) Number of obstructions
         """
+        
+        # Reset counts and flags
+        self.epoch_end = False 
+        self.done = False
+        self.iter_count = 0
+        
         key = 'env_'+str(id)
-        self.src_coords = env_dict[key][0]
+        self.src_coords = env_dict[key][0] # TODO save these in JSON format with labels instead
         self.intensity = env_dict[key][2]
         self.bkg_intensity = env_dict[key][3]
-        self.source = self.to_vis_p(self.src_coords)
+        self.source = to_vis_p(self.src_coords)
         
         for id, agent in self.agents.items():
+            agent.out_of_bounds = False
+            agent.out_of_bounds_count = 0
             agent.det_coords = env_dict[key][1].copy()
-            agent.detector = self.to_vis_p(self.det_coords)
+            agent.detector = to_vis_p(agent.det_coords)
         
         if num_obs > 0:
             self.obs_coord = env_dict[key][4]
@@ -717,15 +726,13 @@ class RadSearch(gym.Env):
             assert self.world.is_valid(EPSILON), "Environment is not valid"
             self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
 
-        observation, _, _, _ = self.step(8) # Take idle step
+        observation, _, _, _ = self.step(action=None) # Take idle step
         
         # Erase previous results from agent's memory
         for id, agent in self.agents.items():
             agent.det_sto = [env_dict[key][1].copy()] 
-            #self.src_sto       = [env_dict[key][0].copy()] 
-            test = [env_dict[key][0].copy()] 
             agent.meas_sto = [observation[0].copy()]  
-            agent.prev_det_dist = self.world.shortest_path(self.source,self.detector,self.vis_graph,EPSILON).length() 
+            agent.prev_det_dist = self.world.shortest_path(self.source, agent.detector, self.vis_graph, EPSILON).length() 
         
         # increment iteration counter
         self.iter_count = 1
@@ -1432,7 +1439,7 @@ class RadSearch(gym.Env):
         flattened_rewards = [x for v in cum_episode_rewards for x in v]   
         data_length = len(self.agents[0].det_sto)
         reward_length = len(cum_episode_rewards[0]) if len(cum_episode_rewards) > 0 else 0
-        if data_length != reward_length:
+        if data_length != reward_length and not just_env:
             print(f"Error: episode reward array length: {reward_length} does not match existing detector locations array length {data_length}. \
             Check: Are you trying to render more than one episode?")
             return
@@ -1502,7 +1509,7 @@ class RadSearch(gym.Env):
             # Figure is not reused, ok to close 
             plt.close(fig)
             print(f"Render Complete", end='\r') # Acts as a progress bar
-            print("Figures open", plt.get_fignums)
+            print("Figures open", plt.get_fignums())
             return
             
         else:
