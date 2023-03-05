@@ -208,12 +208,15 @@ class EpisodeRunner:
             if arg != 'no_critic' and arg != 'GlobalCritic':
                 print(arg)
                 print(type(original_configs[arg]))
-                if type(original_configs[arg]) == int or type(original_configs[arg]) == float:
+                if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
                     assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
-                if type(original_configs[arg]) is str:
+                elif type(original_configs[arg]) is str:
                     to_list = original_configs[arg].strip('][').split(' ')
                     config = np.array([float(x) for x in to_list], dtype=np.float32)
-                    assert np.array_equal(config, actor_critic_args[arg]), f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"   
+                    assert np.array_equal(config, actor_critic_args[arg]), f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                elif type(original_configs[arg]) is list:
+                    for a,b in zip(original_configs[arg], actor_critic_args[arg]):
+                        assert a == b, f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 else:
                     assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"             
         

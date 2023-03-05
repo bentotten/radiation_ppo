@@ -49,7 +49,9 @@
         "--obstruct",
         "0",
         "--agent-count",
-        "3"
+        "3",
+        "--enforce-boundaries",
+        "True" // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
