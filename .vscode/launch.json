@@ -47,6 +47,8 @@
         "--exp-name",
         "TEAM-RAD",
         "--obstruct",
+        "0",
+        "--agent-count",
         "3"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"

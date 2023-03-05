@@ -207,7 +207,15 @@ class EpisodeRunner:
         for arg in actor_critic_args:
             if arg != 'no_critic' and arg != 'GlobalCritic':
                 print(arg)
-                assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                print(type(original_configs[arg]))
+                if type(original_configs[arg]) == int or type(original_configs[arg]) == float:
+                    assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                if type(original_configs[arg]) is str:
+                    to_list = original_configs[arg].strip('][').split(' ')
+                    config = np.array([float(x) for x in to_list], dtype=np.float32)
+                    assert np.array_equal(config, actor_critic_args[arg]), f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"   
+                else:
+                    assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"             
         
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
