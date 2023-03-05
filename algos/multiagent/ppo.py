@@ -562,7 +562,8 @@ class AgentPPO:
             raise ValueError('Unsupported Neural Network type requested')
             
         # Inititalize buffer
-        self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, max_episode_length=self.steps_per_episode, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
+        if self.steps_per_epoch > 0:
+            self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, max_episode_length=self.steps_per_episode, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
         
     def reduce_pfgru_training(self):
         '''Reduce localization module training iterations after some number of epochs to speed up training'''
@@ -718,7 +719,7 @@ class AgentPPO:
                 
                 # TODO Pull out for global critic
                 self.agent_optimizer.critic_optimizer.zero_grad()
-                critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps)
+                critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
                 critic_loss_results['critic_loss'].backward()
                 self.agent_optimizer.critic_optimizer.step()
                       
@@ -759,9 +760,6 @@ class AgentPPO:
     
     def compute_batched_losses_pi(self, sample, data, map_buffer_maps, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
-                
-        if not minibatch:
-            minibatch = self.minibatch
         
         # TODO make more concise 
         # Due to linear layer in CNN, this must be run individually
@@ -839,14 +837,8 @@ class AgentPPO:
 
         return loss_pi, pi_info  
 
-    def compute_batched_losses_critic(self, data, map_buffer_maps):
-        ''' Simulates batched processing through CNN. Wrapper for single-batch computing critic loss'''
-        
-        # Randomize and sample observation batch indexes
-        ep_length = data["ep_len"].item()
-        indexes = np.arange(0, ep_length, dtype=np.int32)
-        number_of_samples = int((ep_length / self.minibatch))
-        sample = np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform            
+    def compute_batched_losses_critic(self, data, map_buffer_maps, sample):
+        ''' Simulates batched processing through CNN. Wrapper for single-batch computing critic loss'''    
         
         # TODO make more concise 
         # Due to linear layer in CNN, this must be run fully online (read: every map)
