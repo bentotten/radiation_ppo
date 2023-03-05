@@ -311,7 +311,7 @@ class RadSearch(gym.Env):
     action_space: spaces.Discrete = spaces.Discrete(A_SIZE)
     number_actions: int = A_SIZE
     detectable_directions: int = DETECTABLE_DIRECTIONS
-    _max_episode_steps: int = 120
+    #_max_episode_steps: int = 120 # TODO Remove; artifact from RAD-A2C
     background_radiation_bounds: Point = Point((10, 51))
     continuous: bool = False
     done: bool = False

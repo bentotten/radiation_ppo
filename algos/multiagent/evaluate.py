@@ -98,7 +98,7 @@ class EpisodeRunner:
         Process from RAD-A2C:
         - 100 episodes classes:
             - [done] create environment
-            - refresh environment with test env
+            - [done] refresh environment with test env
             - create agent
             - Get initial environment observation
             - Do monte-carlo runs
@@ -133,42 +133,6 @@ class EpisodeRunner:
                 print(f'Finished episode {n}!, completed count: {done_count}')
                 return (results,mc_stats)            
         
-        :param env_name: (str) Name of environment to be loaded with GymAI.
-        :param env_kwargs: (Dict) Arguments to create Rad-Search environment.
-        :param env_sets: (Dict) Dictionary of test environments
-        
-    ''' 
-    id: int
-    env_name: str
-    env_kwargs: Dict
-    env_sets: Dict
-    number_of_obstructions: int
-    
-    def __post_init__(self)-> None:
-        # Create own instatiation of environment
-        self.env = self.create_environment()
-        
-        self.run()
-    
-    def run(self)-> None:
-        # Refresh environment with test env parameters
-        self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.number_of_obstructions)
-        self.env.render(path='.', just_env=True)
-        
-        # - create agent
-        # - Get initial environment observation
-        pass
-    
-    def create_environment(self) -> RadSearch:
-        return gym.make(self.env_name, **self.env_kwargs) 
-    
-    
-
-
-@dataclass
-class evaluate_PPO:
-    '''
-        Test existing model across random episodes for a set number of monte carlo runs per episode.
         
         :param env_name: (str) Name of environment to be loaded with GymAI.
         :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
@@ -189,39 +153,95 @@ class evaluate_PPO:
         :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
         
         :param save_gif: (bool) Save gif of episodes or not. Defaults to True.
-        :param save_gif_freq: (int) How many epsiodes should be saved (including monte-carlo repeats). Defaults to 100.
-    
-    '''
+        :param save_gif_freq: (int) How many epsiodes should be saved (including monte-carlo repeats). Defaults to 100.    
+    ''' 
+    id: int
     env_name: str
-    
     env_kwargs: Dict
+    ppo_kwargs: Dict    
+    env_sets: Dict
+    steps_per_episode: int
     
     model_path: str
     test_env_path: str = field(default='./evaluation/test_environments')
     save_path: str = field(default='.')
+    save_gif: bool = field(default=True)
+    save_gif_freq: int = field(default=100)      
     seed: Union[int, None] = field(default=9389090)
+    
+    obstruction_count: int = field(default=0) 
+    actor_critic_architecture: str = field(default="cnn")    
+    
     number_of_agents: int = field(default=1)
     episodes: int = field(default=100)
     montecarlo_runs: int = field(default=100)
     snr: str = field(default='high')
-    obstruction_count: int = field(default=0) 
-    
-    actor_critic_architecture: str = field(default='cnn')
-    
-    save_gif: bool = field(default=True)
-    save_gif_freq: int = field(default=100)
+  
     
     # Initialized elsewhere
-    episode_counter_buffer: npt.NDArray = field(init=False) # TODO is this necessary with ray?
+    #: Object that holds agents    
+    agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
+    
+    
+    def __post_init__(self)-> None:
+        # Create own instatiation of environment
+        self.env = self.create_environment()
+        
+        # Initialize Agents
+        # Initialize agents        
+        for i in range(self.number_of_agents):
+            self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
+            
+            # Sanity check
+            if self.global_critic_flag:
+                assert self.agents[i].agent.critic is self.GlobalCritic
+                assert self.agents[i].GlobalCriticOptimizer is self.GlobalCriticOptimizer
+            else:
+                assert self.agents[i].agent.critic is not self.GlobalCritic
+                if i > 0:
+                    assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
+                    assert self.agents[i].GlobalCriticOptimizer is not self.GlobalCriticOptimizer              
+        
+        self.run()
+    
+    def run(self)-> None:
+        # Refresh environment with test env parameters
+        self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
+        self.env.render(path='.', just_env=True)
+        
+        # - create agent
+        # - Get initial environment observation
+        pass
+    
+    def create_environment(self) -> RadSearch:
+        return gym.make(self.env_name, **self.env_kwargs) 
+    
+    
+
+
+@dataclass
+class evaluate_PPO:
+    '''
+        Test existing model across random episodes for a set number of monte carlo runs per episode.
+
+    '''
+
+    eval_kwargs: Dict
+    
+    # Initialized elsewhere
+    #: Directory containing test environments. Each test environment file contains 1000 environment configurations.
+    test_env_dir: str = field(init=False)
+    #: Full path to file containing chosen test environment. Each test environment file contains 1000 environment configurations.
+    test_env_path: str = field(init=False)    
     #: Sets of environments for specifications. Comes in sets of 1000.
     environment_sets: Dict = field(init=False)
 
     def __post_init__(self)-> None:
-        
-        self.episode_counter = np.arange(start=0, stop=100, step=1) # TODO is this necessary with ray?
-        
+        self.test_env_dir = self.eval_kwargs['test_env_path']
+        self.test_env_path = self.test_env_path + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
+                
         # Load test environments
-        self.environment_sets = joblib.load(self.test_env_path + f"/test_env_dict_obs{self.obstruction_count}_{self.snr}_v4")
+        self.environment_sets = joblib.load(self.test_env_path)
         
         # Uncomment when ready to run with Ray                
         # Initialize ray
@@ -241,13 +261,7 @@ class evaluate_PPO:
         #         number_of_obstructions=self.obstruction_count
         #     ) for i in range(self.episodes)} 
         
-        EpisodeRunner(
-                id=0, 
-                env_name=self.env_name, 
-                env_kwargs=self.env_kwargs, 
-                env_sets=self.environment_sets, 
-                number_of_obstructions=self.obstruction_count
-            )
+        EpisodeRunner(**self.eval_kwargs)
         
     def _test_remote(self):
         # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html

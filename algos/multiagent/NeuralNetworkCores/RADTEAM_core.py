@@ -819,6 +819,13 @@ class Actor(nn.Module):
             if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):            
                 layer.reset_parameters()
                 
+    def save_model(self, checkpoint_path:str)-> None:
+        ''' Save model to a file'''
+        torch.save(self.state_dict(), f"{checkpoint_path}/actor.pt")   
+
+    def load_model(self, checkpoint_path:str)-> None:
+        self.load_state_dict(torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage)) 
+                
 
 class Critic(nn.Module):
     ''' 
@@ -945,7 +952,56 @@ class Critic(nn.Module):
         for layer in self.critic:
             if isinstance(layer, nn.Conv2d) or isinstance(layer, nn.Linear):            
                 layer.reset_parameters()
+                
+    def save_model(self, checkpoint_path:str)-> None:
+        ''' Save model to a file'''
+        torch.save(self.state_dict(), f"{checkpoint_path}/critic.pt")
 
+    def load_model(self, checkpoint_path:str)-> None:
+        self.load_state_dict(torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage))
+
+class EmptyCritic():
+    ''' 
+        This is an empty critic object that simulates a critic for compatibility during evaluation runs in order to avoid the volume of conditional statements required otherwise.
+    '''
+    
+    def __init__(self, map_dim: Union[int, None] = None, batches: int=1, map_count: int=5):
+        super(EmptyCritic, self).__init__()
+        self.training: bool = False
+        return 
+        
+    def _test(self, state_map_stack)-> None: 
+        return
+    
+    def forward(self, observation_map_stack: torch.Tensor)-> None:
+        raise ValueError("Attempting forward pass on empty critic object!")
+
+    def act(self, observation_map_stack: torch.Tensor)-> None:
+        raise ValueError("Attempting act on empty critic object!")
+
+    def put_in_training_mode(self)-> None:
+        return
+        
+    def put_in_evaluation_mode(self)-> None:
+        return
+
+    def reset_output_layers(self)-> None:
+        return              
+        
+    def reset_all_hidden(self)-> None:
+        return  
+    
+    def save_model(self, checkpoint_path:str)-> None:
+        return
+    
+    def load_model(self, checkpoint_path:str)-> None:
+        return    
+    
+    def eval(self)-> None:
+        return   
+    
+    def train(self)-> None:
+        return
 
 #TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
@@ -1176,6 +1232,11 @@ class PFGRUCell(PFRNNBaseCell):
         hidden = (h0, p0)
         return hidden
 
+    def save_model(self, checkpoint_path: str)-> None:
+        torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")       
+        
+    def load_model(self, checkpoint_path:str)-> None:
+        self.load_state_dict(torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage))        
 
 @dataclass
 class CCNBase:
@@ -1227,12 +1288,13 @@ class CCNBase:
     grid_bounds: Tuple[int, int] = field(default_factory= lambda: (1, 1))
     resolution_multiplier: float = field(default=0.01)
     GlobalCritic: Union[Critic, None] = field(default=None)
+    no_critic: bool = field(default=False)
    
     # Initialized elsewhere
     #: Policy/Actor network
     pi: Actor = field(init=False)
     #: Critic/Value network
-    critic: Critic = field(default=None)  # type: ignore             
+    critic: Union[Critic, EmptyCritic] = field(default=None)  # type: ignore             
     #: Particle Filter Gated Recurrent Unit (PFGRU) for guessing the location of the radiation. This is named model for backwards compatibility reasons.
     model: PFGRUCell = field(init=False)
     #: Buffer that holds map-stacks and converts observations to maps
@@ -1275,7 +1337,9 @@ class CCNBase:
         # Set up actor and critic
         self.pi = Actor(map_dim=self.maps.map_dimensions, action_dim=self.action_space)
         if self.GlobalCritic:
-            self.critic = self.GlobalCritic            
+            self.critic = self.GlobalCritic       
+        elif self.no_critic:
+            self.critic = EmptyCritic()
         else:
             self.critic = Critic(map_dim=self.maps.map_dimensions)
 
@@ -1369,9 +1433,9 @@ class CCNBase:
         predictor_train_mode: bool = self.model.training # TODO rename
         self.set_mode(mode='eval')
         
-        torch.save(self.pi.state_dict(), f"{checkpoint_path}/actor.pt")
-        torch.save(self.critic.state_dict(), f"{checkpoint_path}/critic.pt")
-        torch.save(self.model.state_dict(), f"{checkpoint_path}/predictor.pt")       
+        self.pi.save_model(checkpoint_path=checkpoint_path)
+        self.critic.save_model(checkpoint_path=checkpoint_path)
+        self.model.save_model(checkpoint_path=checkpoint_path)
         
         # Restore original modes
         if pi_train_mode: self.pi.train() 
@@ -1386,10 +1450,10 @@ class CCNBase:
             Load a saved actor, critic, and predictor neural network model.
             
             :param checkpoint_path: (str) Path to read neural network models from.
-        '''        
-        self.pi.load_state_dict(torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage)) 
-        self.critic.load_state_dict(torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage))
-        self.model.load_state_dict(torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage)) # Actor-critic         
+        '''
+        self.pi.load_model(checkpoint_path=checkpoint_path)
+        self.critic.load_model(checkpoint_path=checkpoint_path)
+        self.model.load_model(checkpoint_path=checkpoint_path)  
         
     def clear_maps(self)-> None:
         ''' Clear all maps for new episode'''
