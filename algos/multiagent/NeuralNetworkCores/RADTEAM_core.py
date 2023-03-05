@@ -824,6 +824,7 @@ class Actor(nn.Module):
         torch.save(self.state_dict(), f"{checkpoint_path}/actor.pt")   
 
     def load_model(self, checkpoint_path:str)-> None:
+        assert path.isfile(f"{checkpoint_path}/actor.pt"), "Model does not exist"
         self.load_state_dict(torch.load(f"{checkpoint_path}/actor.pt", map_location=lambda storage, loc: storage)) 
                 
 
@@ -958,6 +959,7 @@ class Critic(nn.Module):
         torch.save(self.state_dict(), f"{checkpoint_path}/critic.pt")
 
     def load_model(self, checkpoint_path:str)-> None:
+        assert path.isfile(f"{checkpoint_path}/critic.pt"), "Model does not exist"        
         self.load_state_dict(torch.load(f"{checkpoint_path}/critic.pt", map_location=lambda storage, loc: storage))
 
     def is_mock_critic(self)-> bool:
@@ -1242,10 +1244,11 @@ class PFGRUCell(PFRNNBaseCell):
         torch.save(self.state_dict(), f"{checkpoint_path}/predictor.pt")       
         
     def load_model(self, checkpoint_path:str)-> None:
+        assert path.isfile(f"{checkpoint_path}/predictor.pt"), "Model does not exist"                
         self.load_state_dict(torch.load(f"{checkpoint_path}/predictor.pt", map_location=lambda storage, loc: storage))        
 
 @dataclass
-class CCNBase:
+class CNNBase:
     '''
     This is the base class for the Actor-Critic (A2C) Convolutional Neural Network (CNN) architecture. The Actor subclass is an approximator for an Agent's policy.
     The Critic subclass is an approximator for the value function (for more information, see Barto and Sutton's "Reinforcement Learning"). 

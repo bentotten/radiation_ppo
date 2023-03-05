@@ -94,7 +94,7 @@ class CliArgs:
             help="Batches to sample data during actor policy update (k_epochs)"
 
     Parameters for Neural Networks:
-        --net-type, type=str, default="rnn",
+        --net-type, type=str, default="cnn",
             help="Choose between convolutional neural network, recurrent neural network, MLP Actor-Critic (A2C , feed forward, or uniform option: cnn, rnn, mlp, ff, uniform",
             
     Parameters for RAD-TEAM
@@ -346,7 +346,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--net-type",
         type=str,
-        default="rnn",
+        default="cnn",
         help="Choose between convolutional neural network, recurrent neural network, MLP Actor-Critic (A2C), feed forward, or uniform option: cnn, rnn, mlp, ff, uniform",
     )    
     parser.add_argument(
@@ -524,7 +524,7 @@ def main() -> None:
             env_name = args.env_name,
             test_env_path = './evaluation/test_environments',
             env_kwargs=env_kwargs,
-            model_path=save_path, # Specify model directory (fpath)
+            model_path='./evaluation/saves/2023-03-02-13:39:06', # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             save_gif=True,

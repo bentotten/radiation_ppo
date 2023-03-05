@@ -22,6 +22,7 @@ from typing import Any, List, Literal, NewType, Optional, TypedDict, cast, get_a
 from typing_extensions import TypeAlias
 from dataclasses import dataclass, field
 
+import json
 import joblib # type: ignore
 import ray
 
@@ -162,12 +163,21 @@ class EpisodeRunner:
     
     # Initialized elsewhere
     #: Object that holds agents    
-    agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
+    agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda:dict())
     
     
     def __post_init__(self)-> None:
         # Create own instatiation of environment
         self.env = self.create_environment()
+        
+        # Get agent model paths and general agent parameters
+        agent_models = {}
+        for child in os.scandir(self.model_path):
+            if child.is_dir() and 'agent' in child.name:
+                agent_models[int(child.name[0])] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name 
+            if child.is_dir() and 'general' in child.name:
+                general_config_path = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name 
+        original_configs = list(json.load(open(f"{general_config_path}/config.json"))['self'].values())[0]['ppo_kwargs']['actor_critic_args']
         
         # Setup Agent arguments
         # Bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
@@ -177,7 +187,7 @@ class EpisodeRunner:
             l1_weight=0.0,
             elbo_weight=1.0,
             area_scale=self.env.search_area[2][1]
-        )            
+        )
         # Set up static A2C args.      
         actor_critic_args=dict(
             action_space=self.env.detectable_directions,
@@ -192,25 +202,20 @@ class EpisodeRunner:
             resolution_multiplier=self.resolution_multiplier,
             GlobalCritic=None,
             no_critic=True
-        )         
-        # Set up static PPO args.      
-        ppo_kwargs=dict(
-            observation_space=self.env.observation_space.shape[0],
-            bp_args=bp_args,
-            steps_per_epoch=0,
-            steps_per_episode=self.steps_per_episode,
-            number_of_agents=self.number_of_agents,
-            env_height=self.env.search_area[2][1],
-            seed=self.seed,        
-            actor_critic_args=actor_critic_args,
-            actor_critic_architecture=self.actor_critic_architecture,
-            minibatch=1,                  
-        )          
+        )
+        
+        for arg in actor_critic_args:
+            print(arg)
+            print(actor_critic_args[arg])
+            print()
         
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
-            self.agents[i] = AgentPPO(id=i, **ppo_kwargs)
-            self.agents[i].load(path=self.model_path)
+            self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
+            # try: 
+            self.agents[i].load(checkpoint_path=agent_models[i])
+            # except:
+            #     raise Exception("Model does not exist. Be sure to doublecheck path and number of agents are correct")
             
             # Sanity check
             assert self.agents[i].agent.critic.is_mock_critic()

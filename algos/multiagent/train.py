@@ -147,7 +147,7 @@ class train_PPO:
         # Instatiate loggers   
         for id in range(self.number_of_agents):
             logger_kwargs_set: Dict = setup_logger_kwargs(
-                exp_name=f"{self.logger_kwargs['exp_name']}_agent{id}",
+                exp_name=f"{id}_agent_{self.logger_kwargs['exp_name']}",
                 seed=self.logger_kwargs['seed'],
                 data_dir=self.logger_kwargs['data_dir'],
                 env_name=self.logger_kwargs['env_name']
@@ -157,7 +157,7 @@ class train_PPO:
         
         # Initialize Global Critic
         if self.global_critic_flag:
-            prototype = RADCNN_core.CCNBase(id=0, **self.ppo_kwargs['actor_critic_args'])
+            prototype = RADCNN_core.CNNBase(id=0, **self.ppo_kwargs['actor_critic_args'])
             self.GlobalCritic = RADCNN_core.Critic(map_dim=prototype.get_map_dimensions(), batches=prototype.get_batch_size(), map_count=prototype.get_map_count())
             self.GlobalCriticOptimizer = Adam(self.GlobalCritic.parameters(), lr=self.ppo_kwargs['critic_learning_rate'])
             

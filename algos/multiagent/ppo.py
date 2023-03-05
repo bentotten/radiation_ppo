@@ -509,21 +509,22 @@ class AgentPPO:
     lam: float = field(default= 0.9)
     
     # Initialized elsewhere
-    agent: Union[RADCNN_core.CCNBase, RADA2C_core.RNNModelActorCritic, RADFF_core.PPO] = field(init=False)
+    agent: Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic, RADFF_core.PPO] = field(init=False)
 
     def __post_init__(self):
         ''' Initialize Agent's neural network architecture'''
                   
         # Simple Feed Forward Network
         if self.actor_critic_architecture == 'ff':
-            self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)        
-            if not self.GlobalCriticOptimizer:
-                CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
-            else:
-                CriticOptimizer = self.GlobalCriticOptimizer                  
+            raise NotImplementedError("Feed forward is not yet available")
+            # self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)        
+            # if not self.GlobalCriticOptimizer:
+            #     CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
+            # else:
+            #     CriticOptimizer = self.GlobalCriticOptimizer                  
         # Convolutional Network for RAD-TEAM
         elif self.actor_critic_architecture == 'cnn':
-            self.agent = RADCNN_core.CCNBase(id=self.id, **self.actor_critic_args)             
+            self.agent = RADCNN_core.CNNBase(id=self.id, **self.actor_critic_args)             
 
             if not self.GlobalCriticOptimizer:
                 CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
@@ -559,7 +560,7 @@ class AgentPPO:
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = self.CriticOptimizer,  # Allows for global optimizer
+                critic_optimizer = CriticOptimizer,  # Allows for global optimizer
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
