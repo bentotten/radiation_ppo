@@ -513,19 +513,22 @@ class AgentPPO:
 
     def __post_init__(self):
         ''' Initialize Agent's neural network architecture'''
-
-            
-        if not self.GlobalCriticOptimizer:
-            CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
-        else:
-            CriticOptimizer = self.GlobalCriticOptimizer
                   
         # Simple Feed Forward Network
         if self.actor_critic_architecture == 'ff':
-            self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)              
+            self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)        
+            if not self.GlobalCriticOptimizer:
+                CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
+            else:
+                CriticOptimizer = self.GlobalCriticOptimizer                  
         # Convolutional Network for RAD-TEAM
         elif self.actor_critic_architecture == 'cnn':
             self.agent = RADCNN_core.CCNBase(id=self.id, **self.actor_critic_args)             
+
+            if not self.GlobalCriticOptimizer:
+                CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
+            else:
+                CriticOptimizer = self.GlobalCriticOptimizer
             
             # Initialize learning opitmizers                           
             self.agent_optimizer = OptimizationStorage(
@@ -544,6 +547,11 @@ class AgentPPO:
         elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             # Initialize Agents                
             self.agent = RADA2C_core.RNNModelActorCritic(**self.actor_critic_args)
+            
+            if not self.GlobalCriticOptimizer:
+                CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
+            else:
+                CriticOptimizer = self.GlobalCriticOptimizer            
             
             # Initialize learning opitmizers                           
             self.agent_optimizer = OptimizationStorage(
