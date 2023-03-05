@@ -136,7 +136,6 @@ class EpisodeRunner:
         
         :param env_name: (str) Name of environment to be loaded with GymAI.
         :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
-        :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.
         
         :param model_path: (str) Directory containing trained models.
         :param test_env_path: (str) Directory containing test environments. Each test environment file contains 1000 environments
@@ -149,7 +148,9 @@ class EpisodeRunner:
         :param montecarlo_runs: (int) Number of Monte Carlo runs per episode (How many times to run/sample each episode setup). Defaults to 100. 
         :param snr: (str) Signal to noise ratio [None, low, medium, high] of background radiation and gamma radiation in environment. Defaults to high.
         :param obstruction_count: (int) Number of obstructions in the environment [0 - 7]. Defaults to zero.
-    
+        :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
+            coordinates can be encompased in a matrix element.
+            
         :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent
         
         :param save_gif: (bool) Save gif of episodes or not. Defaults to True.
@@ -162,6 +163,8 @@ class EpisodeRunner:
     env_sets: Dict
     steps_per_episode: int
     
+    resolution_multiplier: float
+    
     model_path: str
     test_env_path: str = field(default='./evaluation/test_environments')
     save_path: str = field(default='.')
@@ -170,8 +173,8 @@ class EpisodeRunner:
     seed: Union[int, None] = field(default=9389090)
     
     obstruction_count: int = field(default=0) 
+    enforce_boundaries: bool = field(default=False)
     actor_critic_architecture: str = field(default="cnn")    
-    
     number_of_agents: int = field(default=1)
     episodes: int = field(default=100)
     montecarlo_runs: int = field(default=100)
@@ -187,7 +190,49 @@ class EpisodeRunner:
         # Create own instatiation of environment
         self.env = self.create_environment()
         
-        # Initialize Agents
+        # Setup Agent arguments
+        # Set up static PPO and A2C args. Remaining      
+        ac_kwargs=dict(
+            action_space=self.env.detectable_directions,
+            observation_space=self.env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
+            steps_per_episode=self.steps_per_episode,
+            number_of_agents=self.number_of_agents,
+            detector_step_size=self.env.step_size,
+            environment_scale=self.env.scale,
+            bounds_offset=self.env.observation_area,
+            enforce_boundaries=self.enforce_boundaries,
+            grid_bounds=self.env.scaled_grid_max,
+            resolution_multiplier=self.resolution_multiplier,
+            GlobalCritic=None,
+            no_critic=True
+        )         
+
+        ppo_kwargs=dict(
+            observation_space=self.env.observation_space.shape[0],
+            bp_args=self.bp_args,
+            steps_per_epoch=0,
+            steps_per_episode=self.steps_per_episode,
+            number_of_agents=self.number_of_agents,
+            env_height=self.env.search_area[2][1],
+            seed=self.seed,        
+            actor_critic_args=ac_kwargs,
+            actor_critic_architecture=self.actor_critic_architecture,
+            minibatch=1,
+            train_pi_iters=args.train_pi_iters,
+            train_v_iters=args.train_v_iters,
+            train_pfgru_iters=args.train_pfgru_iters,
+            reduce_pfgru_iters=args.reduce_pfgru_iters,
+            actor_learning_rate=args.actor_learning_rate,
+            critic_learning_rate=args.critic_learning_rate,
+            pfgru_learning_rate=args.pfgru_learning_rate,
+            gamma=args.gamma,  
+            alpha=args.alpha,                      
+            clip_ratio=args.clip_ratio,
+            target_kl=args.target_kl,
+            lam=args.lam,
+            GlobalCriticOptimizer=None
+        )          
+        
         # Initialize agents        
         for i in range(self.number_of_agents):
             self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)

@@ -919,7 +919,7 @@ class Critic(nn.Module):
         print(x)
         pass
     
-    def forward(self, observation_map_stack)-> torch.Tensor:
+    def forward(self, observation_map_stack: torch.Tensor)-> torch.Tensor:
         ''' 
             Get the state-value for a given state-observation from the environment 
             :param observation_map_stack: (Tensor) Contains five stacked observation maps. Should be in shape [batch_size, number of maps, map width, map height]. 
@@ -1271,6 +1271,7 @@ class CCNBase:
     :param enforce_boundaries: Indicates whether or not agents can walk out of the gridworld. If they can, CNNs must be expanded to include the maximum step count so that all
         coordinates can be encompased in a matrix element.
     :param GlobalCritc: (Critic) Actual global critic object
+    :param no_critic: (bool) Used to indicate if A2C should be instatiated with a empty, stand-in critic object. This is used during evaluation.
     
     **Important variables that are initialized elsewhere:**
     
@@ -1404,7 +1405,9 @@ class CCNBase:
             
             # Get actions and values                          
             action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
-            state_value: torch.Tensor = self.critic.forward(batched_map_stack)  # size(1)
+            state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
+            if not state_value:
+                raise Exception("No state-value! Likely called forward on empty mock critic object, is this being used during evaluation?")
 
         # TODO remove numpy 
         return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())

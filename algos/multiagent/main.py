@@ -523,7 +523,6 @@ def main() -> None:
         eval_kwargs=dict(
             env_name = args.env_name,
             env_kwargs=env_kwargs,
-            ppo_kwargs=ppo_kwargs,            
             model_path=save_path, # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
@@ -532,8 +531,10 @@ def main() -> None:
             snr='high', # signal to noise ratio [None, low, medium, high]
             obstruction_count=args.obstruct, # number of obstacles [0 - 7] (num_obs)
             steps_per_episode=args.steps_per_episode,
-            number_of_agents=args.agent_count
-        )
+            number_of_agents=args.agent_count,
+            enforce_boundaries=args.enforce_boundaries,
+            resolution_multiplier=args.resolution_multiplier
+        )      
         
         simulation = evaluate.evaluate_PPO(eval_kwargs=eval_kwargs)
         
