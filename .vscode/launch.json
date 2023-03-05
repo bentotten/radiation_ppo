@@ -41,7 +41,14 @@
       "program": "${workspaceFolder}/algos/multiagent/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--mode", "evaluate", "--exp-name", "TEAM-RAD"],
+      "args": [
+        "--mode",
+        "evaluate",
+        "--exp-name",
+        "TEAM-RAD",
+        "--obstruct",
+        "2"
+      ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {

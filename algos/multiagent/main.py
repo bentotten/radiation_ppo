@@ -529,7 +529,7 @@ def main() -> None:
             save_gif=True,
             actor_critic_architecture=args.net_type, # Neural network type (control)
             snr='high', # signal to noise ratio [None, low, medium, high]
-            obstruction_count=0, # number of obstacles [0 - 7] (num_obs)
+            obstruction_count=args.obstruct, # number of obstacles [0 - 7] (num_obs)
         )
         
         simulation = evaluate.evaluate_PPO(**eval_kwargs)

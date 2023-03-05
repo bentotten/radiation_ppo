@@ -97,7 +97,7 @@ class EpisodeRunner:
         
         Process from RAD-A2C:
         - 100 episodes classes:
-            - create environment
+            - [done] create environment
             - refresh environment with test env
             - create agent
             - Get initial environment observation
@@ -148,9 +148,10 @@ class EpisodeRunner:
         # Create own instatiation of environment
         self.env = self.create_environment()
         
-        self.env.render(path='.', just_env=True)
-        
-        # Refresh environment with test env
+        self.run()
+    
+    def run(self)-> None:
+        # Refresh environment with test env parameters
         self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.number_of_obstructions)
         self.env.render(path='.', just_env=True)
         

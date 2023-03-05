@@ -680,7 +680,7 @@ class RadSearch(gym.Env):
         self.iter_count = 0
         return step
 
-    def refresh_environment(self, env_dict, id, num_obs=0):
+    def refresh_environment(self, env_dict: Dict, id: int, num_obs: int = 0)-> Dict:
         """
         Load saved test environment parameters from dictionary into the current instantiation of environment
         
@@ -706,21 +706,35 @@ class RadSearch(gym.Env):
             agent.det_coords = env_dict[key][1].copy()
             agent.detector = to_vis_p(agent.det_coords)
         
+        # Get obstacles from parameters
         if num_obs > 0:
-            self.obs_coord = env_dict[key][4]
             self.num_obs = len(env_dict[key][4])
             self.poly = []
             self.line_segs = []
-            for obs in self.obs_coord:
-                geom = [vis.Point(float(obs[0][jj][0]),float(obs[0][jj][1])) for jj in range(len(obs[0]))]
-                poly = vis.Polygon(geom)
-                self.poly.append(poly)
-                self.line_segs.append([vis.Line_Segment(geom[0],geom[1]),vis.Line_Segment(geom[0],geom[3]),
-                vis.Line_Segment(geom[2],geom[1]),vis.Line_Segment(geom[2],geom[3])]) 
+            obs_coord = env_dict[key][4]
             
-            self.env_ls = [solid for solid in self.poly]
-            self.env_ls.insert(0,self.walls)
-            self.world = vis.Environment(self.env_ls)
+            # Make compatible with latest Rad-Search env
+            self.obs_coord: List[List[Point]] = [[] for _ in range(self.num_obs)]
+            for i, obstruction in enumerate(obs_coord):
+                self.obs_coord[i].extend(list(map(tuple, obstruction[0]))) # type: ignore
+
+            # Create Visilibity environment
+            for obs in self.obs_coord:
+                poly = Polygon(obs)
+                self.poly.append(poly)
+                self.line_segs.append(
+                    [
+                        vis.Line_Segment(to_vis_p(p1), to_vis_p(p2))
+                        for p1, p2 in (
+                            (poly[0], poly[1]),
+                            (poly[0], poly[3]),
+                            (poly[2], poly[1]),
+                            (poly[2], poly[3]),
+                        )
+                    ]
+                )
+            self.env_ls: List[Polygon] = [self.walls, *self.poly]
+            self.world = vis.Environment(list(map(to_vis_poly, self.env_ls)))                
             
             # Check if the environment is valid
             assert self.world.is_valid(EPSILON), "Environment is not valid"
@@ -728,7 +742,7 @@ class RadSearch(gym.Env):
 
         observation, _, _, _ = self.step(action=None) # Take idle step
         
-        # Erase previous results from agent's memory
+        # Erase previous results from agent's memory (for render)
         for id, agent in self.agents.items():
             agent.det_sto = [env_dict[key][1].copy()] 
             agent.meas_sto = [observation[0].copy()]  
