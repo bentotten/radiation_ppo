@@ -383,7 +383,6 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
     obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8) 
     
     #Get initial FIM calculation if applicable
-     # TODO Make compatible with multi-agent env
     est_init_bnd, x_est_init = get_action([x_est,env.det_sto[ep_len],env.bkg_intensity,scale_mat,uni_probs[None,:],obs_std],init_est=True) 
     loc_est_ls[mc].append(x_est_init)
     FIM_bound[mc].append(est_init_bnd)
@@ -392,7 +391,6 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
         loc_est_ls[mc].append(x_est)
 
         #Get action, fisher score, and hidden state when applicable
-         # TODO Make compatible with multi-agent env
         action, score, hidden = get_action([x_est,np.append(env.meas_sto[ep_len],env.det_sto[ep_len]),obs_std,env.bkg_intensity,scale_mat],
                                             hidden=hidden,act=True,step=ep_len)
 
@@ -426,7 +424,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
                 loc_est_err =np.append(loc_est_err, math.sqrt(np.sum(np.square(loc_est_ls[mc][:,1:] - env.src_coords),axis=1).mean()))    
             else:
                 loc_est_err = np.append(loc_est_err,math.sqrt(np.sum(np.square(np.array(loc_est_ls[mc])[:,1:] - env.src_coords),axis=1).mean()))
-            det_ls[mc].append(np.array(env.det_sto))  # TODO Make compatible with multi-agent env
+            det_ls[mc].append(np.array(env.det_sto))
             if mc < 1:
                 if d:
                     done_dist_int = np.append(done_dist_int,env.intensity)
@@ -479,7 +477,6 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
             #Get initial location prediction
             x_est = get_action(np.append((env.meas_sto[ep_len]),env.det_sto[ep_len]),est=True)
             if fish_analysis and mc < MC:
-                 # TODO Make compatible with multi-agent env
                 est_init_bnd, x_est_init = get_action([x_est,env.det_sto[ep_len],env.bkg_intensity,scale_mat,uni_probs[None,:],obs_std],init_est=True) 
                 est_init_bnd = (est_init_bnd) 
                 loc_est_ls[mc].append(x_est_init)

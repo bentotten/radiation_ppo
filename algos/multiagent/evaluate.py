@@ -95,6 +95,44 @@ class Runner:
     '''
         Remote function to execute requested number of episodes for requested number of monte carlo runs each episode.
         
+        Process from RAD-A2C:
+        - 100 episodes classes:
+            - create environment
+            - refresh environment with test env
+            - create agent
+            - Get initial environment observation
+            - Do monte-carlo runs
+                - Get action
+                - Take step in env
+                - Save return and increment steps-in-episode
+                - If terminal or timeout: 
+                    - Save det_sto from environment (why?)
+                    - If first monte-carlo:
+                        - If terminal, save intensity/background intenity into "done" list
+                        - If not terminal, save intensity/background intenity into "not done" list
+                    - If Terminal, increment done counter, add episode length to "done" list, and add episode return to "done" list
+                    - If not Terminal, add episode length to "not done" list, and add episode return to "not done" list
+                    - Render if desired
+                    - Refresh environment and reset episode tracking
+                    - ? #Reset model in action selection fcn. get_action(0)
+                    - ? #Get initial location prediction
+            - Render
+            - Save stats/results and return:
+                mc_stats['dEpLen'] = d_ep_len
+                mc_stats['ndEpLen'] = nd_ep_len
+                mc_stats['dEpRet'] = d_ep_ret
+                mc_stats['ndEpRet'] = nd_ep_ret
+                mc_stats['dIntDist'] = done_dist_int
+                mc_stats['ndIntDist'] = not_done_dist_int
+                mc_stats['dBkgDist'] = done_dist_bkg
+                mc_stats['ndBkgDist'] = not_done_dist_bkg
+                mc_stats['DoneCount'] = np.array([done_count])
+                mc_stats['TotEpLen'] = tot_ep_len
+                mc_stats['LocEstErr'] = loc_est_err
+                results = [loc_est_ls, FIM_bound, J_score_ls, det_ls]
+                print(f'Finished episode {n}!, completed count: {done_count}')
+                return (results,mc_stats)            
+        
         :param env_name: (str) Name of environment to be loaded with GymAI.
         :param env_kwargs: (Dict) Arguments to create Rad-Search environment. Needs to be the arguments so multiple environments can be used in parallel.
         :param ac_kwargs: (dict) Arguments for A2C neural networks for agent.    
