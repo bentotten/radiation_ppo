@@ -55,7 +55,7 @@ DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
 DIST_TH_FRAC = 78.0  # Diagonal detector-obstruction range measurement threshold in cm #TODO unused
-EPSILON = 0.0000001
+EPSILON = 0.0000001  # Parameter for Visilibity function to check if environment is valid
 COLORS = [
     #Colorcode([148, 0, 211]), # Violet (Removed due to being too similar to indigo)
     Colorcode([255, 105, 180]), # Pink
@@ -679,7 +679,7 @@ class RadSearch(gym.Env):
         self.iter_count = 0
         return step
 
-    def refresh_env(self, env_dict, id, num_obs=0):
+    def refresh_environment(self, env_dict, id, num_obs=0):
         """
         Load saved test environment parameters from dictionary into the current instantiation of environment
         
@@ -688,12 +688,14 @@ class RadSearch(gym.Env):
         :param num_obs: (int) Number of obstructions
         """
         key = 'env_'+str(id)
-        self.src_coords    = env_dict[key][0]
-        self.det_coords    = env_dict[key][1].copy()
-        self.intensity     = env_dict[key][2]
+        self.src_coords = env_dict[key][0]
+        self.intensity = env_dict[key][2]
         self.bkg_intensity = env_dict[key][3]
-        self.source        = set_vis_coord(self.source,self.src_coords)
-        self.detector      = set_vis_coord(self.detector,self.det_coords)
+        self.source = self.to_vis_p(self.src_coords)
+        
+        for id, agent in self.agents.items():
+            agent.det_coords = env_dict[key][1].copy()
+            agent.detector = self.to_vis_p(self.det_coords)
         
         if num_obs > 0:
             self.obs_coord = env_dict[key][4]
@@ -710,17 +712,26 @@ class RadSearch(gym.Env):
             self.env_ls = [solid for solid in self.poly]
             self.env_ls.insert(0,self.walls)
             self.world = vis.Environment(self.env_ls)
+            
             # Check if the environment is valid
             assert self.world.is_valid(EPSILON), "Environment is not valid"
             self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
 
-        o, _, _, _        = self.step(-1)
-        self.det_sto       = [env_dict[key][1].copy()]  
-        self.src_sto       = [env_dict[key][0].copy()] 
-        self.meas_sto      = [o[0].copy()]  
-        self.prev_det_dist = self.world.shortest_path(self.source,self.detector,self.vis_graph,EPSILON).length() 
-        self.iter_count    = 1
-        return o
+        observation, _, _, _ = self.step(8) # Take idle step
+        
+        # Erase previous results from agent's memory
+        for id, agent in self.agents.items():
+            agent.det_sto = [env_dict[key][1].copy()] 
+            #self.src_sto       = [env_dict[key][0].copy()] 
+            test = [env_dict[key][0].copy()] 
+            agent.meas_sto = [observation[0].copy()]  
+            agent.prev_det_dist = self.world.shortest_path(self.source,self.detector,self.vis_graph,EPSILON).length() 
+        
+        # increment iteration counter
+        self.iter_count = 1
+        
+        # return observation
+        return observation
 
     def take_action(self, agent: Agent, action: Optional[Union[Action, int]], proposed_coordinates: List, agent_id: int = 0) -> bool:
         """
