@@ -176,7 +176,7 @@ class EpisodeRunner:
             if child.is_dir() and 'agent' in child.name:
                 agent_models[int(child.name[0])] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name 
             if child.is_dir() and 'general' in child.name:
-                general_config_path = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name 
+                general_config_path = child.path  
         original_configs = list(json.load(open(f"{general_config_path}/config.json"))['self'].values())[0]['ppo_kwargs']['actor_critic_args']
         
         # Setup Agent arguments
@@ -205,9 +205,9 @@ class EpisodeRunner:
         )
         
         for arg in actor_critic_args:
-            print(arg)
-            print(actor_critic_args[arg])
-            print()
+            if arg != 'no_critic' and arg != 'GlobalCritic':
+                print(arg)
+                assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
         
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
