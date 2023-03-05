@@ -679,6 +679,49 @@ class RadSearch(gym.Env):
         self.iter_count = 0
         return step
 
+    def refresh_env(self, env_dict, id, num_obs=0):
+        """
+        Load saved test environment parameters from dictionary into the current instantiation of environment
+        
+        :param env_dict: (Dict) Parameters to refresh environment with
+        :param id: (int) ID number of environment for dictionary
+        :param num_obs: (int) Number of obstructions
+        """
+        key = 'env_'+str(id)
+        self.src_coords    = env_dict[key][0]
+        self.det_coords    = env_dict[key][1].copy()
+        self.intensity     = env_dict[key][2]
+        self.bkg_intensity = env_dict[key][3]
+        self.source        = set_vis_coord(self.source,self.src_coords)
+        self.detector      = set_vis_coord(self.detector,self.det_coords)
+        
+        if num_obs > 0:
+            self.obs_coord = env_dict[key][4]
+            self.num_obs = len(env_dict[key][4])
+            self.poly = []
+            self.line_segs = []
+            for obs in self.obs_coord:
+                geom = [vis.Point(float(obs[0][jj][0]),float(obs[0][jj][1])) for jj in range(len(obs[0]))]
+                poly = vis.Polygon(geom)
+                self.poly.append(poly)
+                self.line_segs.append([vis.Line_Segment(geom[0],geom[1]),vis.Line_Segment(geom[0],geom[3]),
+                vis.Line_Segment(geom[2],geom[1]),vis.Line_Segment(geom[2],geom[3])]) 
+            
+            self.env_ls = [solid for solid in self.poly]
+            self.env_ls.insert(0,self.walls)
+            self.world = vis.Environment(self.env_ls)
+            # Check if the environment is valid
+            assert self.world.is_valid(EPSILON), "Environment is not valid"
+            self.vis_graph = vis.Visibility_Graph(self.world, EPSILON)
+
+        o, _, _, _        = self.step(-1)
+        self.det_sto       = [env_dict[key][1].copy()]  
+        self.src_sto       = [env_dict[key][0].copy()] 
+        self.meas_sto      = [o[0].copy()]  
+        self.prev_det_dist = self.world.shortest_path(self.source,self.detector,self.vis_graph,EPSILON).length() 
+        self.iter_count    = 1
+        return o
+
     def take_action(self, agent: Agent, action: Optional[Union[Action, int]], proposed_coordinates: List, agent_id: int = 0) -> bool:
         """
         Method that checks which direction to move the detector based on the action.

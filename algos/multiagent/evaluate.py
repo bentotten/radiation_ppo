@@ -142,9 +142,12 @@ class Runner:
     env_kwargs: Dict
     
     def __post_init__(self)-> None:
+        # Create environment
         self.env = self.create_environment()
-        # TODO read in actor models
-        # TODO create tasks
+        
+        # - refresh environment with test env
+        # - create agent
+        # - Get initial environment observation
     
     def create_environment(self) -> RadSearch:
         return gym.make(self.env_name, **self.env_kwargs) 
