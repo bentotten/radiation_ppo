@@ -80,6 +80,7 @@ class train_PPO:
     :param DEBUG: (bool) indicate whether in debug mode with hardcoded start/stopping locations   
     
     '''
+    # TODO change global_critic_flag to cooperative/competative mode flag
     # Environment
     env: RadSearch    
     
@@ -241,7 +242,7 @@ class train_PPO:
                         raise ValueError("Maps did not reset")                       
             
             # Start episode!
-            for steps_in_epoch in range(self.steps_per_epoch):             
+            for steps_in_epoch in range(self.steps_per_epoch):
                 # Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode
                 if self.actor_critic_architecture == 'cnn':
                     # TODO add back in for PFGRU
@@ -252,7 +253,10 @@ class train_PPO:
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                         for id in self.agents:
                             standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
-                        
+
+                ############################################################################################################
+                # TODO: Duplicated in evaluate function. For consistency, this should be a mutual function instead
+                ############################################################################################################
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
                 for id, ac in self.agents.items():
@@ -269,7 +273,7 @@ class train_PPO:
                 # Take step in environment - Critical that this value is saved as "next" observation so we can link
                 #  rewards from this new state to the prior step/action
                 next_observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions) 
-                
+                                
                 # Incremement Counters and save new (individual) cumulative returns
                 if not self.global_critic_flag:
                     for id in rewards['individual_reward']:
@@ -277,8 +281,9 @@ class train_PPO:
                 else:
                     for id in self.agents:
                         episode_return[id] += np.array(rewards['team_reward'], dtype="float32").item() # TODO if saving team reward, no need to keep duplicates for each agent
-                    
                 steps_in_episode += 1    
+
+                ############################################################################################################
 
                 # Store previous observations in buffers, update mean/std for the next observation in stat buffers,
                 #   record state values with logger 
@@ -303,6 +308,9 @@ class train_PPO:
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                         self.stat_buffers[id].update(next_observations[id][0])                    
 
+                ############################################################################################################
+                # TODO: Duplicated in evaluate function. For consistency, this should be a mutual function instead
+                ############################################################################################################
                 # Update obs (critical!)
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation'
                 observations = next_observations
@@ -324,6 +332,7 @@ class train_PPO:
                 timeout: bool = steps_in_episode == self.steps_per_episode
                 terminal: bool = terminal_reached_flag or timeout
                 epoch_ended: bool = steps_in_epoch == self.steps_per_epoch - 1
+                ############################################################################################################
 
                 if terminal or epoch_ended:
                     if epoch_ended and not (terminal):
@@ -365,6 +374,9 @@ class train_PPO:
                             # TODO verify matches logger - goal is to get logger out of PPO buffer
                             ac.ppo_buffer.store_episode_length(episode_length=steps_in_episode)
 
+                    ############################################################################################################
+                    # TODO: Move to own render function
+                    ############################################################################################################
                     # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
                     asked_to_save = epoch_ended and self.render
                     save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
@@ -399,7 +411,6 @@ class train_PPO:
                         
                         )                              
                         self.render_first_episode = False             
-
                     # Always render last epoch's episode
                     if self.DEBUG and epoch == self.total_epochs-1:
                         self.env.render(
@@ -413,6 +424,7 @@ class train_PPO:
                                     epoch_count=epoch,
                                     add_value_text=True
                                 )                            
+                    ############################################################################################################
 
                     # Reset the environment and counters
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            

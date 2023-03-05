@@ -57,6 +57,24 @@ except ModuleNotFoundError:
     from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
 
 
+@dataclass
+class Results():
+    episode_length: List[int] = field(default_factory=lambda: list())
+    episode_return: List[float] = field(default_factory=lambda: list())
+    intensity: List[float] = field(default_factory=lambda: list())
+    background_intensity: List[float] = field(default_factory=lambda: list())
+    success_count: List[int] = field(default_factory=lambda: list())
+
+
+@dataclass
+class MonteCarloResults():
+    id: int
+    successful: Results = field(default_factory=lambda: Results())
+    unsuccessful: Results = field(default_factory=lambda: Results())
+    total_episode_length: List[int] = field(default_factory=lambda: list())
+    success_counter: int = field(default=0)
+
+
 # TODO Delete me after working
 @ray.remote
 def sampling_task(num_samples: int, task_id: int,
@@ -102,8 +120,8 @@ class EpisodeRunner:
         - 100 episodes classes:
             - [done] create environment
             - [done] refresh environment with test env
-            - create agent
-            - Get initial environment observation
+            - [done] create and upload agent
+            - [done] Get initial environment observation
             - Do monte-carlo runs
                 - Get action
                 - Take step in env
@@ -142,14 +160,16 @@ class EpisodeRunner:
     env_kwargs: Dict
     env_sets: Dict
     steps_per_episode: int
-    
+    team_mode: str
     resolution_multiplier: float
+    
+    render: bool
+    save_gif_freq: int
+    render_path: str
     
     model_path: str
     test_env_path: str = field(default='./evaluation/test_environments')
     save_path: str = field(default='.')
-    save_gif: bool = field(default=True)
-    save_gif_freq: int = field(default=100)      
     seed: Union[int, None] = field(default=9389090)
     
     obstruction_count: int = field(default=0) 
@@ -159,8 +179,9 @@ class EpisodeRunner:
     episodes: int = field(default=100)
     montecarlo_runs: int = field(default=100)
     snr: str = field(default='high')
-  
     
+    render_first_episode: bool = field(default=True)
+  
     # Initialized elsewhere
     #: Object that holds agents    
     agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda:dict())
@@ -170,7 +191,7 @@ class EpisodeRunner:
         # Create own instatiation of environment
         self.env = self.create_environment()
         
-        # Get agent model paths and general agent parameters
+        # Get agent model paths and saved agent configurations
         agent_models = {}
         for child in os.scandir(self.model_path):
             if child.is_dir() and 'agent' in child.name:
@@ -179,15 +200,6 @@ class EpisodeRunner:
                 general_config_path = child.path  
         original_configs = list(json.load(open(f"{general_config_path}/config.json"))['self'].values())[0]['ppo_kwargs']['actor_critic_args']
         
-        # Setup Agent arguments
-        # Bootstrap particle filter args for the PFGRU, from Particle Filter Recurrent Neural Networks by Ma et al. 2020.
-        bp_args = BpArgs(
-            bp_decay=0.1,
-            l2_weight=1.0,
-            l1_weight=0.0,
-            elbo_weight=1.0,
-            area_scale=self.env.search_area[2][1]
-        )
         # Set up static A2C args.      
         actor_critic_args=dict(
             action_space=self.env.detectable_directions,
@@ -204,6 +216,7 @@ class EpisodeRunner:
             no_critic=True
         )
         
+        # Check current important parameters match parameters read in 
         for arg in actor_critic_args:
             if arg != 'no_critic' and arg != 'GlobalCritic':
                 print(arg)
@@ -223,30 +236,185 @@ class EpisodeRunner:
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
             self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
-            # try: 
             self.agents[i].load(checkpoint_path=agent_models[i])
-            # except:
-            #     raise Exception("Model does not exist. Be sure to doublecheck path and number of agents are correct")
             
             # Sanity check
             assert self.agents[i].agent.critic.is_mock_critic()
-        
-        self.run()
     
-    def run(self)-> None:
+    def run(self)-> MonteCarloResults:
+        # Prepare tracking buffers
+        episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
+        steps_in_episode: int = 0
+        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)        
+        
+        # Prepare results buffers
+        results = MonteCarloResults(id=self.id)
+
+        # results['dEpLen'] = d_ep_len
+        # results['ndEpLen'] = nd_ep_len
+        # results['dEpRet'] = d_ep_ret
+        # results['ndEpRet'] = nd_ep_ret
+        # results['dIntDist'] = done_dist_int
+        # results['ndIntDist'] = not_done_dist_int
+        # results['dBkgDist'] = done_dist_bkg
+        # results['ndBkgDist'] = not_done_dist_bkg
+        # results['DoneCount'] = np.array([done_count])
+        # results['TotEpLen'] = tot_ep_len
+        # results['LocEstErr'] = loc_est_err
+        
         # Refresh environment with test env parameters
-        self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
+        observations: Dict = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
         self.env.render(path='.', just_env=True)
         
-        # - create agent
-        # - Get initial environment observation
-        pass
-    
+        for agent in self.agents.values(): 
+            agent.set_mode('eval')
+        
+        for run_counter in range(self.montecarlo_runs):
+            # TODO this is repeated in train(); create seperate function?
+            # Get Agent choices
+            agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
+            for id, agent in self.agents.items():
+                agent_thoughts[id] = agent.select_action(id=id, state_observation=observations, save_map = True)    
+                
+            # Create action list to send to environment
+            agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts}  
+            
+            # Ensure no item is above max actions or below 0. Idle action is max action dimension (here 8)
+            for action in agent_action_decisions.values():
+                assert 0 <= action and action < int(self.env.number_actions)
+            
+            # Take step in environment - Critical that this value is saved as "next" observation so we can link
+            #  rewards from this new state to the prior step/action
+            observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions) 
+            
+            # Incremement Counters and save new (individual) cumulative returns
+            if self.team_mode == 'competative':
+                for id in rewards['individual_reward']:
+                    episode_return[id] += np.array(rewards['individual_reward'][id], dtype="float32").item()
+            else:
+                for id in self.agents:
+                    episode_return[id] += np.array(rewards['team_reward'], dtype="float32").item() # TODO if saving team reward, no need to keep duplicates for each agent
+                
+            steps_in_episode += 1
+            
+            # Tally up ending conditions
+            # TODO move this to seperate function
+            # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
+            terminal_reached_flag = False
+            for id in terminal_counter:
+                if terminals[id] == True and not timeout:
+                    terminal_counter[id] += 1   
+                    terminal_reached_flag = True
+                    
+            # Stopping conditions for episode
+            timeout: bool = steps_in_episode == self.steps_per_episode
+            terminal: bool = terminal_reached_flag or timeout            
+
+            if terminal or timeout:
+                if run_counter < 1:
+                    if terminal:
+                        results.successful.intensity.append(self.env.intensity)
+                        results.successful.background_intensity.append(self.env.bkg_intensity)
+                    else:
+                        results.unsuccessful.intensity.append(self.env.intensity)
+                        results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
+                results.total_episode_length.append(steps_in_episode)
+                
+                if terminal:
+                    results.success_counter += 1
+                    results.successful.episode_length.append(steps_in_episode)
+                    results.successful.episode_return.append(episode_return[0]) # TODO change for competative mode
+                else:
+                    results.unsuccessful.episode_length.append(steps_in_episode)
+                    results.unsuccessful.episode_return.append(episode_return[0]) # TODO change for competative mode
+                    
+
+                # Render
+                save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+                time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
+                if (self.render and time_to_save):
+                    # Render Agent heatmaps
+                    if self.actor_critic_architecture == 'cnn':
+                        for id, ac in self.agents.items():
+                            ac.render(
+                                savepath=self.render_path, 
+                                epoch_count=run_counter, # TODO change this to a more flexible name
+                                add_value_text=True
+                            )
+                    # Render gif           
+                    self.env.render(
+                        path=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                    )     
+                    # Render environment image
+                    self.env.render(
+                        path=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        just_env=True
+                    )                                               
+                # Always render first episode
+                if self.render and run_counter == 0 and self.render_first_episode:
+                    # Render Agent heatmaps
+                    if self.actor_critic_architecture == 'cnn':
+                        for id, ac in self.agents.items():
+                            ac.render(
+                                savepath=self.render_path, 
+                                epoch_count=run_counter, # TODO change this to a more flexible name
+                                add_value_text=True
+                            )
+                    # Render gif           
+                    self.env.render(
+                        path=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                    )     
+                    # Render environment image
+                    self.env.render(
+                        path=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        just_env=True
+                    )  
+                    self.render_first_episode = False             
+
+                # Always render last episode
+                if self.render and run_counter == self.montecarlo_runs-1: 
+                    # Render Agent heatmaps
+                    if self.actor_critic_architecture == 'cnn':
+                        for id, ac in self.agents.items():
+                            ac.render(
+                                savepath=self.render_path, 
+                                epoch_count=run_counter, # TODO change this to a more flexible name
+                                add_value_text=True
+                            )
+                    # Render gif           
+                    self.env.render(
+                        path=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                    )     
+                    # Render environment image
+                    self.env.render(
+                        path=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        just_env=True
+                    )  
+                
+                # Reset environment without performing an env.reset()
+                episode_return = {id: 0.0 for id in self.agents}
+                steps_in_episode = 0
+                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)        
+                
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
+
+                # Reset agents
+                for agent in self.agents.values():
+                    agent.reset()
+                                
+        print(f'Finished episode {self.id}! Success count: {results.success_counter}')
+        return results
+
+
     def create_environment(self) -> RadSearch:
         return gym.make(self.env_name, **self.env_kwargs) 
     
-    
-
 
 @dataclass
 class evaluate_PPO:
@@ -289,8 +457,14 @@ class evaluate_PPO:
         #         env_sets=self.environment_sets, 
         #         number_of_obstructions=self.obstruction_count
         #     ) for i in range(self.episodes)} 
+        #
+        #full_results = ray.get([runner.remote.run() for runner in runners])
         
-        EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)
+        runners = EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)
+        full_results = [runner.run() for runner in runners]
+        
+
+        
         
     def _test_remote(self):
         # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html

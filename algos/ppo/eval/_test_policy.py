@@ -378,7 +378,7 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
 
 
     #Make initial location prediction if applicable
-    x_est = get_action(np.append((env.meas_sto[ep_len]),env.det_sto[ep_len]),est=True)  # TODO Make compatible with multi-agent env
+    x_est = get_action(np.append((env.meas_sto[ep_len]),env.det_sto[ep_len]),est=True) 
     obs_std = o
     obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8) 
     
@@ -412,7 +412,6 @@ def run_policy(env, env_set, render=True, save_gif=False, save_path=None,
         
         if fish_analysis:
             #Calculate PCRB if an algorithm is using the bootstrap particle filter
-             # TODO Make compatible with multi-agent env
             R_t = get_action([x_est,env.det_sto[ep_len],env.bkg_intensity,scale_mat],FIM=ep_len)
             rec_bpf = pro_covar + R_t - np.square(pro_covar) @ inv(FIM_bound[mc][ep_len-1]  + pro_covar)
             FIM_bound[mc].append(rec_bpf)

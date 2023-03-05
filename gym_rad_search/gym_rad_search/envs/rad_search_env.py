@@ -688,7 +688,7 @@ class RadSearch(gym.Env):
         :param id: (int) ID number of environment for dictionary
         :param num_obs: (int) Number of obstructions
         """
-        
+                
         # Reset counts and flags
         self.epoch_end = False 
         self.done = False
@@ -701,10 +701,9 @@ class RadSearch(gym.Env):
         self.source = to_vis_p(self.src_coords)
         
         for id, agent in self.agents.items():
-            agent.out_of_bounds = False
-            agent.out_of_bounds_count = 0
+            agent.reset()
             agent.det_coords = env_dict[key][1].copy()
-            agent.detector = to_vis_p(agent.det_coords)
+            agent.detector = to_vis_p(agent.det_coords)    
         
         # Get obstacles from parameters
         if num_obs > 0:

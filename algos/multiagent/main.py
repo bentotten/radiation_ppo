@@ -534,7 +534,11 @@ def main() -> None:
             steps_per_episode=args.steps_per_episode,
             number_of_agents=args.agent_count,
             enforce_boundaries=args.enforce_boundaries,
-            resolution_multiplier=args.resolution_multiplier
+            resolution_multiplier=args.resolution_multiplier,
+            team_mode='cooperative', # TODO change to enum
+            render=args.render,
+            save_gif_freq=args.save_gif_freq,
+            render_path='.'
         )      
         
         simulation = evaluate.evaluate_PPO(eval_kwargs=eval_kwargs)
