@@ -49,9 +49,13 @@
         "--obstruct",
         "0",
         "--agent-count",
-        "3",
+        "1",
         "--enforce-boundaries",
         "True" // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE
+        // "--render",
+        // "True",
+        // "--save-gif-freq",
+        // "25"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },

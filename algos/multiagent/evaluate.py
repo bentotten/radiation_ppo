@@ -169,6 +169,7 @@ class EpisodeRunner:
     render_path: str
     
     model_path: str
+    save_path_for_ac: str
     test_env_path: str = field(default='./evaluation/test_environments')
     save_path: str = field(default='.')
     seed: Union[int, None] = field(default=9389090)
@@ -194,6 +195,7 @@ class EpisodeRunner:
         
         # Get agent model paths and saved agent configurations
         agent_models = {}
+        print(os.getcwd())
         for child in os.scandir(self.model_path):
             if child.is_dir() and 'agent' in child.name:
                 agent_models[int(child.name[0])] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name 
@@ -214,12 +216,13 @@ class EpisodeRunner:
             grid_bounds=self.env.scaled_grid_max,
             resolution_multiplier=self.resolution_multiplier,
             GlobalCritic=None,
-            no_critic=True
+            no_critic=True,
+            save_path=self.save_path_for_ac
         )
         
         # Check current important parameters match parameters read in 
         for arg in actor_critic_args:
-            if arg != 'no_critic' and arg != 'GlobalCritic':
+            if arg != 'no_critic' and arg != 'GlobalCritic' and arg != 'save_path':
                 if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
                     assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is str:
@@ -391,7 +394,7 @@ class EpisodeRunner:
                 # Reset environment without performing an env.reset()
                 episode_return = {id: 0.0 for id in self.agents}
                 steps_in_episode = 0
-                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)        
+                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
                 
                 observations = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
 
@@ -434,16 +437,17 @@ class evaluate_PPO:
                 
         # Load test environments
         self.environment_sets = joblib.load(self.test_env_path)
-        
+                
+        #Initialize ray                
         # Uncomment when ready to run with Ray                
-        # Initialize ray
-        # try:
-        #     ray.init(address='auto')
-        # except:
-        #     print("Ray failed to initialize. Running on single server.")
+        try:
+            ray.init(address='auto')
+        except:
+            print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
-        ''' Driver '''       
+        ''' Driver '''    
+        start_time = time.time()           
         #Uncomment when ready to run with Ray
         runners = {i: EpisodeRunner.remote(
                 id=i, 
@@ -451,12 +455,11 @@ class evaluate_PPO:
                 **self.eval_kwargs
             ) for i in range(self.eval_kwargs['episodes'])} 
         
-        start_time = time.time()
-        #full_results = ray.get([runner.remote.run() for runner in runners.values()])
         full_results = ray.get([runner.run.remote() for runner in runners.values()])
         
         #print(full_results)
         
+        #Uncomment when to run without Ray        
         # self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
         # full_results = [runner.run() for runner in self.runners.values()]
         
