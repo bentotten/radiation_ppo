@@ -32,11 +32,11 @@ except:
 def log_state(error: Exception):
     trace_back = traceback.format_exc()  # Gives error and location    
     trace = inspect.trace()
-    vars = json.dumps(trace[-1].frame.f_locals, indent = 4)
+    #vars = json.dumps(trace[-1].frame.f_locals, indent = 4) # Non-serializable
 
-    vfile = open('RADTEAM_ERROR_STATE.log', 'w')
-    vfile.write(vars)
-    vfile.close()   
+    # vfile = open('RADTEAM_ERROR_STATE.log', 'w')
+    # vfile.write(vars)
+    # vfile.close()   
     tfile = open('RADTEAM_ERROR_TRACEBACK.log', 'w')
     tfile.write(trace_back)
     tfile.close()                           
@@ -396,7 +396,7 @@ def main() -> None:
         'env_name': save_dir_name
         }
     
-    save_path = f"../../models/train/{exp_name}/{save_dir_name}" # TODO turn into a parameter
+    save_path = [f"../../models/train/{save_dir_name}", f"{exp_name}_s{args.seed}"] # TODO turn into a parameter
 
     # Set up Radiation environment
     dim_length, dim_height = args.dims
@@ -462,7 +462,8 @@ def main() -> None:
                 enforce_boundaries=args.enforce_boundaries,
                 grid_bounds=env.scaled_grid_max,
                 resolution_multiplier=args.resolution_multiplier,
-                GlobalCritic=None
+                GlobalCritic=None,
+                save_path = save_path
             )         
 
         # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here

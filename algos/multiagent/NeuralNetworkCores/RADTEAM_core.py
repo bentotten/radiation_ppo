@@ -17,6 +17,7 @@ from torch.distributions import Categorical
 import matplotlib.pyplot as plt # type: ignore
 
 import warnings
+import json
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
@@ -293,7 +294,7 @@ class Normalizer():
             warnings.warn("Increment mismatch from first use of normalize_incremental_logscale function! Ensure this was intentional")
             
         result = (log(increment_value + current_value, base)) * 1/log(increment_value * base, base) # Put in range [0, 1]
-        assert result >= 0 and result <= 1, "Normalization error"
+        assert result >= 0 and result <= 1, f"Normalization error for Result: {result}, Increment_value: {increment_value}, Current value: {current_value}, Base: {base}"
         
         return result
 
@@ -444,7 +445,7 @@ class MapsBuffer:
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
         :return: Returns a tuple of five 2d map arrays.
         '''
-        
+        raise Exception("test")
         # Add intensity readings to readings buffer for estimates
         for obs in observation.values():
             key: Tuple[int, int] = self._inflate_coordinates(obs)
@@ -1299,6 +1300,7 @@ class CNNBase:
     resolution_multiplier: float = field(default=0.01)
     GlobalCritic: Union[Critic, None] = field(default=None)
     no_critic: bool = field(default=False)
+    save_path: Union[str, list] = field(default='.')
    
     # Initialized elsewhere
     #: Policy/Actor network
@@ -1322,6 +1324,9 @@ class CNNBase:
     render_counter: int = field(init=False)    
 
     def __post_init__(self)-> None:
+        # Put agent number on save_path
+        self.save_path_test = self.save_path
+        self.save_path = f"{self.save_path[0]}/{self.id}_agent_{self.save_path[1]}"
         # Set resolution accuracy
         self.resolution_accuracy = calculate_resolution_accuracy(resolution_multiplier=self.resolution_multiplier, scale=self.environment_scale)
             
@@ -1384,37 +1389,42 @@ class CNNBase:
             :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
             :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         '''
-        
-        # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
-        with torch.no_grad():
-            if save_map:     
-                # TODO Maps are not matching between agents, needs check 
-                (
-                    location_map,
-                    others_locations_map,
-                    readings_map,
-                    visit_counts_map,
-                    obstacles_map
-                ) = self.maps.observation_to_map(state_observation, id)
+        try:
+            # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
+            with torch.no_grad():
+                if save_map:     
+                    # TODO Maps are not matching between agents, needs check 
+                    (
+                        location_map,
+                        others_locations_map,
+                        readings_map,
+                        visit_counts_map,
+                        obstacles_map
+                    ) = self.maps.observation_to_map(state_observation, id)
+                    
+                    # Convert map to tensor
+                    map_stack: torch.Tensor = torch.stack(
+                        [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
+                    )
+                    
+                    # TODO Move to PPO buffer
+                    self.maps.observation_buffer.append([state_observation[self.id], map_stack]) 
+                else:
+                    with torch.no_grad():
+                        # TODO Move to PPO buffer                    
+                        map_stack = self.maps.observation_buffer[-1][1]
+                    
+                # Add single batch tensor dimension for action selection
+                batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
                 
-                # Convert map to tensor
-                map_stack: torch.Tensor = torch.stack(
-                    [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
-                )
-                
-                # TODO Move to PPO buffer
-                self.maps.observation_buffer.append([state_observation[self.id], map_stack]) 
-            else:
-                with torch.no_grad():
-                    # TODO Move to PPO buffer                    
-                    map_stack = self.maps.observation_buffer[-1][1]
-                
-            # Add single batch tensor dimension for action selection
-            batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
-            
-            # Get actions and values                          
-            action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
-            state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
+                # Get actions and values                          
+                action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
+                state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
+        except Exception as err:
+            ''' If exception, save current model, dump the local variables to a file, and print exception'''
+            print("Exception encountered, saving model...")
+            self.save(checkpoint_path=self.save_path)
+            print(repr(err))
 
         # TODO remove numpy 
         if state_value:

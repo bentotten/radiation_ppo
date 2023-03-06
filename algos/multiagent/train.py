@@ -466,8 +466,7 @@ class train_PPO:
                         self.loggers[id].save_state({}, None)
                     else:
                         test = self.loggers[id].output_dir       
-                        agent.save(path=test) # TODO move to own arg
-                        agent.load(path=test)
+                        agent.save(path=test) 
 
             # Reduce localization module training iterations after 100 epochs to speed up training
             if epoch > 99:
