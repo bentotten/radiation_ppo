@@ -271,7 +271,9 @@ def refresh_env(env_dict,env,n,num_obs=0):
     return o, env
 
 def calc_stats(results,mc=None,plot=False,snr=None,control=None,obs=None):
-    """Calculate results from the evaluation"""
+    """
+    Calculate results from the evaluation
+    """
     stats = np.zeros((len(results[0]),len(results[0][0][1]),3))
     keys = results[0][0][1].keys()
     num_elem = 101
@@ -567,7 +569,7 @@ if __name__ == '__main__':
     p = Pool(processes=args.num_cpu)
     mc_results.append(p.map(func,params)) 
     
-    stats, len_freq = calc_stats(mc_results,mc=args.mc_runs,plot=False,snr=args.snr,control=args.control,obs=args.num_obs)
+    stats, len_freq = calc_stats(mc_results, mc=args.mc_runs, plot=False,snr=args.snr,control=args.control,obs=args.num_obs)
     
     if args.save_results:
         print('Saving results..')

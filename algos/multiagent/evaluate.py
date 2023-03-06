@@ -111,7 +111,7 @@ class ProgressActor:
         )
 
 # Uncomment when ready to run with Ray
-#@ray.remote 
+@ray.remote 
 @dataclass
 class EpisodeRunner:
     '''
@@ -444,21 +444,25 @@ class evaluate_PPO:
 
     def evaluate(self):
         ''' Driver '''       
-        # Uncomment when ready to run with Ray        
-        # runners = {i: EpisodeRunner.remote(
-        #         id=i, 
-        #         env_name=self.env_name, 
-        #         env_kwargs=self.env_kwargs, 
-        #         env_sets=self.environment_sets, 
-        #         number_of_obstructions=self.obstruction_count
-        #     ) for i in range(self.episodes)} 
-        #
-        #full_results = ray.get([runner.remote.run() for runner in runners].values())
+        #Uncomment when ready to run with Ray
+        runners = {i: EpisodeRunner.remote(
+                id=i, 
+                env_sets=self.environment_sets, 
+                **self.eval_kwargs
+            ) for i in range(self.eval_kwargs['episodes'])} 
         
-        self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
-        full_results = [runner.run() for runner in self.runners.values()]
+        start_time = time.time()
+        #full_results = ray.get([runner.remote.run() for runner in runners.values()])
+        full_results = ray.get([runner.run.remote() for runner in runners.values()])
         
+        #print(full_results)
+        
+        # self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
+        # full_results = [runner.run() for runner in self.runners.values()]
+        
+        print(time.time() - start_time)
         pass
+
         
     def calc_stats(results, mc=None, plot=False, snr=None, control=None, obs=None):
         """
