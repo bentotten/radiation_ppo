@@ -58,7 +58,7 @@ class ActionChoice(NamedTuple):
     #: The log of the policy distribution. Taking the gradient of the log probability is more stable than using the actual density.
     action_logprob: npt.NDArray[np.float32] # size (1)
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
-    state_value: npt.NDArray[np.float32] # size(1)
+    state_value: Union[npt.NDArray[np.float32], None] # size(1)
     #: Coordinates predicted by the location prediction model (PFGRU). TODO: Implement for CNN
     loc_pred: Union[torch.Tensor, None] = None
 
@@ -979,7 +979,7 @@ class EmptyCritic():
         return
     
     def forward(self, observation_map_stack: torch.Tensor)-> None:
-        raise ValueError("Attempting forward pass on empty critic object!")
+        return
 
     def act(self, observation_map_stack: torch.Tensor)-> None:
         raise ValueError("Attempting act on empty critic object!")
@@ -1415,11 +1415,11 @@ class CNNBase:
             # Get actions and values                          
             action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
             state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
-            if not state_value:
-                raise Exception("No state-value! Likely called forward on empty mock critic object, is this being used during evaluation?")
 
         # TODO remove numpy 
-        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value.numpy())
+        if state_value:
+            state_value = state_value.numpy()            
+        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value)
 
     def get_map_dimensions(self)-> Tuple[int, int]:
         return self.maps.map_dimensions

@@ -219,8 +219,6 @@ class EpisodeRunner:
         # Check current important parameters match parameters read in 
         for arg in actor_critic_args:
             if arg != 'no_critic' and arg != 'GlobalCritic':
-                print(arg)
-                print(type(original_configs[arg]))
                 if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
                     assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is str:
@@ -239,13 +237,14 @@ class EpisodeRunner:
             self.agents[i].load(checkpoint_path=agent_models[i])
             
             # Sanity check
-            assert self.agents[i].agent.critic.is_mock_critic()
+            assert self.agents[i].critic.is_mock_critic()
     
     def run(self)-> MonteCarloResults:
-        # Prepare tracking buffers
+        # Prepare tracking buffers and counters
         episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
         steps_in_episode: int = 0
         terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)        
+        run_counter = 0
         
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
@@ -264,12 +263,12 @@ class EpisodeRunner:
         
         # Refresh environment with test env parameters
         observations: Dict = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
-        self.env.render(path='.', just_env=True)
+
         
         for agent in self.agents.values(): 
             agent.set_mode('eval')
         
-        for run_counter in range(self.montecarlo_runs):
+        while run_counter < self.montecarlo_runs:
             # TODO this is repeated in train(); create seperate function?
             # Get Agent choices
             agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
@@ -308,11 +307,11 @@ class EpisodeRunner:
                     
             # Stopping conditions for episode
             timeout: bool = steps_in_episode == self.steps_per_episode
-            terminal: bool = terminal_reached_flag or timeout            
+            terminal: bool = terminal_reached_flag or timeout         
 
             if terminal or timeout:
                 if run_counter < 1:
-                    if terminal:
+                    if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
                         results.successful.background_intensity.append(self.env.bkg_intensity)
                     else:
@@ -320,7 +319,7 @@ class EpisodeRunner:
                         results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
                 results.total_episode_length.append(steps_in_episode)
                 
-                if terminal:
+                if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
                     results.successful.episode_return.append(episode_return[0]) # TODO change for competative mode
@@ -397,6 +396,9 @@ class EpisodeRunner:
                         just_env=True
                     )  
                 
+                # Incremenet run counter
+                run_counter +=1 
+                
                 # Reset environment without performing an env.reset()
                 episode_return = {id: 0.0 for id in self.agents}
                 steps_in_episode = 0
@@ -408,12 +410,14 @@ class EpisodeRunner:
                 for agent in self.agents.values():
                     agent.reset()
                                 
-        print(f'Finished episode {self.id}! Success count: {results.success_counter}')
+        print(f'Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}')
         return results
 
 
     def create_environment(self) -> RadSearch:
-        return gym.make(self.env_name, **self.env_kwargs) 
+        env = gym.make(self.env_name, **self.env_kwargs) 
+        env.reset()
+        return env
     
 
 @dataclass
@@ -432,6 +436,8 @@ class evaluate_PPO:
     test_env_path: str = field(init=False)    
     #: Sets of environments for specifications. Comes in sets of 1000.
     environment_sets: Dict = field(init=False)
+    #: runners
+    runners: Dict = field(init=False)
 
     def __post_init__(self)-> None:
         self.test_env_dir = self.eval_kwargs['test_env_path']
@@ -458,10 +464,12 @@ class evaluate_PPO:
         #         number_of_obstructions=self.obstruction_count
         #     ) for i in range(self.episodes)} 
         #
-        #full_results = ray.get([runner.remote.run() for runner in runners])
+        #full_results = ray.get([runner.remote.run() for runner in runners].values())
         
-        runners = EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)
-        full_results = [runner.run() for runner in runners]
+        self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
+        full_results = [runner.run() for runner in self.runners.values()]
+        
+        pass
         
 
         

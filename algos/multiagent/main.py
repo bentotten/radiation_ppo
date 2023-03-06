@@ -527,7 +527,6 @@ def main() -> None:
             model_path='./evaluation/saves/2023-03-02-13:39:06', # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
-            save_gif=True,
             actor_critic_architecture=args.net_type, # Neural network type (control)
             snr='high', # signal to noise ratio [None, low, medium, high]
             obstruction_count=args.obstruct, # number of obstacles [0 - 7] (num_obs)
