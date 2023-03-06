@@ -445,7 +445,6 @@ class MapsBuffer:
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
         :return: Returns a tuple of five 2d map arrays.
         '''
-        raise Exception("test")
         # Add intensity readings to readings buffer for estimates
         for obs in observation.values():
             key: Tuple[int, int] = self._inflate_coordinates(obs)
