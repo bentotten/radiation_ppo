@@ -327,7 +327,8 @@ class RadSearch(gym.Env):
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
-    
+    all_agent_max_count: float = field(init=False) # Sets y limit for radiation count graph
+
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # For debugging
     DEBUG: bool = field(default=False)
@@ -447,7 +448,7 @@ class RadSearch(gym.Env):
                     agent.prev_det_dist = agent.sp_dist
                     agent.terminal_sto.append(False)                    
                 else:
-                    agent.terminal_sto.append(False)                    
+                    agent.terminal_sto.append(False)
                     if action == max(get_args(Action)):
                         reward = -1.0 * agent.sp_dist / self.max_dist  # If idle, extra penalty
                     else:
@@ -624,6 +625,7 @@ class RadSearch(gym.Env):
         self.done = False
         self.iter_count = 0
         self.dwell_time = 1
+        self.all_agent_max_count = 0.0        
 
         if self.epoch_end:
             if self.obstruction_count == -1:
@@ -1174,7 +1176,7 @@ class RadSearch(gym.Env):
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
 
-        def update(
+        def update( 
             frame_number: int, 
             #data: List, 
             ax1: plt.Axes, 
@@ -1183,7 +1185,7 @@ class RadSearch(gym.Env):
             src: Point, 
             area_dim: BBox, 
             measurements: List,
-            flattened_rewards: List
+            flattened_rewards: List,
             ) -> None:
             """
             Renders each frame
@@ -1290,7 +1292,10 @@ class RadSearch(gym.Env):
             
                 # Set up radiation graph
                 # TODO make this less terrible
-                count_max = max(agent.meas_sto)
+                for agent in self.agents.values():
+                    count_max: float = max(agent.meas_sto)
+                    if count_max > self.all_agent_max_count:
+                        self.all_agent_max_count = count_max
                 # count_max: float = 0.0
                 # for agent in self.agents.values():
                 #     for measurement in agent.meas_sto:
@@ -1299,7 +1304,7 @@ class RadSearch(gym.Env):
                 ax2.cla()
                 ax2.set_xlim(0, self.iter_count)
                 ax2.xaxis.set_major_formatter(FormatStrFormatter("%d"))
-                ax2.set_ylim(0, count_max)
+                ax2.set_ylim(0, (self.all_agent_max_count + 50))
                 #ax2.set_ylim(0, self.intensity)
                 ax2.set_xlabel("n")
                 ax2.set_ylabel("Counts")                
@@ -1400,8 +1405,11 @@ class RadSearch(gym.Env):
                     markerline.set_markeredgecolor(current_color)
                     
                     # Plot rewards graph - line graph, previous reading connects to current reading   
-                    ax3.scatter(current_index, agent.team_reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current team reward              
-                    ax3.plot([current_index-1, current_index], agent.cum_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"Detector {agent_id}")  # Cumulative line graph
+                    #ax3.scatter(current_index, agent.team_reward_sto[current_index], marker=',', c=[agent.marker_color], s=2, label=f"{agent_id}_Detector") # Current team reward              
+                    # Plots individual rewards
+                    #ax3.plot([current_index-1, current_index], agent.cum_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"Detector {agent_id}")  # Cumulative line graph
+                    # Plots cumulative rewards
+                    ax3.plot([current_index-1, current_index], agent.team_reward_sto[current_index-1:current_index+1], c=agent.marker_color, label=f"Detector {agent_id}")  # Cumulative line graph                    
                         
                 
                 # TODO make multi-agent and fix

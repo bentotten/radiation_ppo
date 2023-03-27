@@ -68,17 +68,17 @@
       "justMyCode": false,
       "args": [
         "--agent-count",
-        "2",
+        "3",
         "--steps-per-epoch",
-        "12",
+        "120",
         "--steps-per-episode",
-        "12",
+        "120",
         "--epochs",
-        "30",
-        // "--render",
-        // "True",
-        // "--save-gif-freq",
-        // "1",
+        "1",
+        "--render",
+        "True",
+        "--save-gif-freq",
+        "1",
         "--obstruct",
         "7",
         "--seed",
@@ -91,8 +91,8 @@
         "cnn",
         "--DEBUG",
         "True",
-        "--save-freq",
-        "1"
+        // "--save-freq",
+        // "1"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
