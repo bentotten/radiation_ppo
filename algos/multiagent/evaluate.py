@@ -8,7 +8,7 @@ import time
 import random
 from datetime import datetime
 import math
-from statsmodels.stats.weightstats import DescrStatsW
+from statsmodels.stats.weightstats import DescrStatsW # type: ignore
 
 import torch
 from torch.optim import Adam
@@ -58,6 +58,15 @@ except ModuleNotFoundError:
     from algos.multiagent.NeuralNetworkCores.RADTEAM_core import StatisticStandardization # type: ignore
 
 
+# Helpful functions
+def median(data: List)-> np.float32:
+    return np.median(data) if len(data) > 0 else np.nan
+
+
+def variance(data: List)-> np.float32:
+    return np.var(np.array(data) / len(data)) if len(data) > 0 else np.nan
+
+
 @dataclass
 class Results():
     episode_length: List[int] = field(default_factory=lambda: list())
@@ -70,48 +79,27 @@ class Results():
 @dataclass
 class MonteCarloResults():
     id: int
+    completed_runs: int = field(init=False, default=0)
     successful: Results = field(default_factory=lambda: Results())
     unsuccessful: Results = field(default_factory=lambda: Results())
     total_episode_length: List[int] = field(default_factory=lambda: list())
     success_counter: int = field(default=0)
 
 
-# TODO Delete me after working
-@ray.remote
-def sampling_task(num_samples: int, task_id: int,
-                  progress_actor: ray.actor.ActorHandle) -> int:
-    num_inside = 0
-    for i in range(num_samples):
-        x, y = random.uniform(-1, 1), random.uniform(-1, 1)
-        if math.hypot(x, y) <= 1:
-            num_inside += 1
+@dataclass
+class Metrics():
+    medians: List = field(default_factory=lambda: list())
+    variances: List = field(default_factory=lambda: list())
 
-        # Report progress every 1 million samples.
-        if (i + 1) % 1_000_000 == 0:
-            # This is async.
-            progress_actor.report_progress.remote(task_id, i + 1)
 
-    # Report the final progress.
-    progress_actor.report_progress.remote(task_id, num_samples)
-    return num_inside
+@dataclass
+class Distribution():
+    unique: List = field(default_factory=lambda: list())
+    counts: List = field(default_factory=lambda: list())
 
-# TODO Delete me after working
-@ray.remote
-class ProgressActor:
-    def __init__(self, total_num_samples: int):
-        self.total_num_samples = total_num_samples
-        self.num_samples_completed_per_task: dict = {}
-
-    def report_progress(self, task_id: int, num_samples_completed: int) -> None:
-        self.num_samples_completed_per_task[task_id] = num_samples_completed
-
-    def get_progress(self) -> float:
-        return (
-            sum(self.num_samples_completed_per_task.values()) / self.total_num_samples
-        )
 
 # Uncomment when ready to run with Ray
-@ray.remote 
+# @ray.remote 
 @dataclass
 class EpisodeRunner:
     '''
@@ -401,10 +389,11 @@ class EpisodeRunner:
                 # Reset agents
                 for agent in self.agents.values():
                     agent.reset()
+                    
+        results.completed_runs = run_counter
                                 
         print(f'Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}')
         return results
-
 
     def create_environment(self) -> RadSearch:
         env = gym.make(self.env_name, **self.env_kwargs) 
@@ -418,7 +407,6 @@ class evaluate_PPO:
         Test existing model across random episodes for a set number of monte carlo runs per episode.
 
     '''
-
     eval_kwargs: Dict
     
     # Initialized elsewhere
@@ -440,32 +428,104 @@ class evaluate_PPO:
                 
         #Initialize ray                
         # Uncomment when ready to run with Ray                
-        try:
-            ray.init(address='auto')
-        except:
-            print("Ray failed to initialize. Running on single server.")
+        # try:
+        #     ray.init(address='auto')
+        # except:
+        #     print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         ''' Driver '''    
         start_time = time.time()           
         #Uncomment when ready to run with Ray
-        runners = {i: EpisodeRunner.remote(
-                id=i, 
-                env_sets=self.environment_sets, 
-                **self.eval_kwargs
-            ) for i in range(self.eval_kwargs['episodes'])} 
+        # runners = {i: EpisodeRunner.remote(
+        #         id=i, 
+        #         env_sets=self.environment_sets, 
+        #         **self.eval_kwargs
+        #     ) for i in range(self.eval_kwargs['episodes'])} 
         
-        full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
         
         #print(full_results)
         
         #Uncomment when to run without Ray        
-        # self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
-        # full_results = [runner.run() for runner in self.runners.values()]
+        self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
+        full_results = [runner.run() for runner in self.runners.values()]
         
         print(time.time() - start_time)
+        
+        self.parse_results(full_results)
         pass
 
+    def parse_results(self, results: List):
+        ''' Get the weighted median episode length and the weighted success rate for each  environment configuration (scenario) '''
+        
+        # Succesful objects
+        successful_runs = []
+        success_episode_return  = Metrics()
+        success_episode_lengths  = Metrics()        
+        success_intensity  = Metrics()
+        success_background_intensity = Metrics()
+        
+        # Unsuccesful objects
+        unsuccess_episode_return  = Metrics()
+        unsuccess_episode_lengths  = Metrics()        
+        unsuccess_intensity  = Metrics()
+        unsuccess_background_intensity = Metrics()
+        
+        # Successful episode length object
+        success_episode_len_dist = Distribution()
+        
+        for scenario in results:
+            # Get medians and variances for successful runs
+            successful_runs.append(scenario.success_counter)
+
+            success_episode_return.medians.append( median(scenario.successful.background_intensity) )
+            success_episode_return.variances.append( variance(scenario.successful.background_intensity) )
+
+            success_episode_lengths.medians.append( median(scenario.successful.background_intensity) )
+            success_episode_lengths.variances.append( variance(scenario.successful.background_intensity) )            
+
+            success_intensity.medians.append( median(scenario.successful.background_intensity) )
+            success_intensity.variances.append( variance(scenario.successful.background_intensity) )
+
+            success_background_intensity.medians.append( median(scenario.successful.background_intensity) )
+            success_background_intensity.variances.append( variance(scenario.successful.background_intensity) )
+
+            # Get medians and variances for unsuccessful runs
+            unsuccess_episode_return.medians.append( median(scenario.successful.background_intensity) )
+            unsuccess_episode_return.variances.append( variance(scenario.successful.background_intensity) )
+
+            unsuccess_episode_lengths.medians.append( median(scenario.successful.background_intensity) )
+            unsuccess_episode_lengths.variances.append( variance(scenario.successful.background_intensity) )            
+
+            unsuccess_intensity.medians.append( median(scenario.successful.background_intensity) )
+            unsuccess_intensity.variances.append( variance(scenario.successful.background_intensity) )
+
+            unsuccess_background_intensity.medians.append( median(scenario.successful.background_intensity) )
+            unsuccess_background_intensity.variances.append( variance(scenario.successful.background_intensity) )
+        
+            # Get 'weighted median' for successful episode lengths
+            unique, counts = np.unique(scenario.successful.episode_length, return_counts=True)
+            sort_idx = np.argsort(counts)
+            
+            test = [0, 1, 2, 3, 4]
+            
+            print(test[:])
+            
+            # if len(sort_idx) > scenario.completed_runs+1:
+            #     success_episode_len_dist.unique.append( unique[sort_idx][-scenario.successful.episode_length:] )
+            #     success_episode_len_dist.counts.append( counts[sort_idx][-scenario.successful.episode_length:] )
+            # else:
+            #     success_episode_len_dist.unique.append( unique[sort_idx][-scenario.successful.episode_length:] )
+            #     success_episode_len_dist.counts.append( counts[sort_idx][-scenario.successful.episode_length:] )                
+
+            #     d_count_dist[jj,0,:] = uni[sort_idx][-num_elem:]
+            #     d_count_dist[jj,1,:] = counts[sort_idx][-num_elem:]
+            # else:
+            #     d_count_dist[jj,0,num_elem-len(sort_idx):] = uni[sort_idx][-num_elem:]
+            #     d_count_dist[jj,1,num_elem-len(sort_idx):] = counts[sort_idx][-num_elem:]
+        pass
+            
         
     def calc_stats(results, mc=None, plot=False, snr=None, control=None, obs=None):
         """
@@ -551,36 +611,3 @@ class evaluate_PPO:
                         print('Weighted Median '+ key +': ' +str(np.round(weight_med,decimals=2))+ ' Weighted Percentiles (' +str(np.round(lp_w,3))+','+str(np.round(hp_w,3))+')')
 
         return stats, d_count_dist
-            
-    def _test_remote(self):
-        # https://docs.ray.io/en/latest/ray-core/examples/monte_carlo_pi.html
-        
-        # Change this to match your cluster scale.
-        NUM_SAMPLING_TASKS = 10
-        NUM_SAMPLES_PER_TASK = 10_000_000
-        TOTAL_NUM_SAMPLES = NUM_SAMPLING_TASKS * NUM_SAMPLES_PER_TASK
-
-        # Create the progress actor.
-        progress_actor = ProgressActor.remote(TOTAL_NUM_SAMPLES)
-        
-        # Create and execute all sampling tasks in parallel.
-        results = [
-            sampling_task.remote(NUM_SAMPLES_PER_TASK, i, progress_actor)
-            for i in range(NUM_SAMPLING_TASKS)
-        ]        
-            
-        # Query progress periodically.
-        while True: 
-            progress = ray.get(progress_actor.get_progress.remote())
-            print(f"Progress: {int(progress * 100)}%")
-
-            if progress == 1:
-                break
-
-            time.sleep(1)            
-        
-        # Get all the sampling tasks results.
-        total_num_inside = sum(ray.get(results))
-        pi = (total_num_inside * 4) / TOTAL_NUM_SAMPLES
-        print(f"Estimated value of π is: {pi}")
-        pass
