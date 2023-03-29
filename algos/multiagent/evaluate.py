@@ -99,7 +99,7 @@ class Distribution():
 
 
 # Uncomment when ready to run with Ray
-# @ray.remote 
+@ray.remote 
 @dataclass
 class EpisodeRunner:
     '''
@@ -145,9 +145,11 @@ class EpisodeRunner:
         
     ''' 
     id: int
+    #env_sets: Dict    
+    current_dir: str
+    
     env_name: str
     env_kwargs: Dict
-    env_sets: Dict
     steps_per_episode: int
     team_mode: str
     resolution_multiplier: float
@@ -176,8 +178,13 @@ class EpisodeRunner:
     #: Object that holds agents    
     agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda:dict())
     
-    
     def __post_init__(self)-> None:
+        # Change to correct directory
+        os.chdir(self.current_dir)
+           
+        # Load test environments
+        self.env_sets = joblib.load(self.test_env_path)
+                
         # Create own instatiation of environment
         self.env = self.create_environment()
         
@@ -400,12 +407,68 @@ class EpisodeRunner:
         env.reset()
         return env
     
+    def getattr(self, attr):
+        return getattr(self, attr)    
+    
+    def say_hello(self):
+        return self.id    
+    
+    
+# @ray.remote 
+# @dataclass
+# class Runner():
+#     id: int
+#     current_dir: str
+#     # env_sets: Dict
+#     env_name: str
+#     env_kwargs: Dict    
+#     steps_per_episode: int
+#     team_mode: str
+#     resolution_multiplier: float
+    
+#     render: bool
+#     save_gif_freq: int
+#     render_path: str
+    
+#     model_path: str
+#     save_path_for_ac: str
+#     test_env_path: str
+#     save_path: str = field(default='.')
+#     seed: Union[int, None] = field(default=9389090)
+    
+#     obstruction_count: int = field(default=0) 
+#     enforce_boundaries: bool = field(default=False)
+#     actor_critic_architecture: str = field(default="cnn")    
+#     number_of_agents: int = field(default=1)
+#     episodes: int = field(default=100)
+#     montecarlo_runs: int = field(default=100)
+#     snr: str = field(default='high')
+    
+#     render_first_episode: bool = field(default=True)
+  
+#     # Initialized elsewhere
+#     #: Object that holds agents    
+#     agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda:dict())
+    
+#     def __post_init__(self)-> None:
+#         # Load test environments
+#         os.chdir(self.current_dir)
+        
+#         # Load test environments
+#         self.environment_sets = joblib.load(self.test_env_path)
+#         pass
+    
+#     def say_hello(self):
+#         return self.id    
+    
+#     def where_am_I(self):
+#         return os.getcwd()
+
 
 @dataclass
 class evaluate_PPO:
     '''
         Test existing model across random episodes for a set number of monte carlo runs per episode.
-
     '''
     eval_kwargs: Dict
     
@@ -422,38 +485,39 @@ class evaluate_PPO:
     def __post_init__(self)-> None:
         self.test_env_dir = self.eval_kwargs['test_env_path']
         self.test_env_path = self.test_env_dir + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
-                
+        self.eval_kwargs['test_env_path'] = self.test_env_path
+
         # Load test environments
         self.environment_sets = joblib.load(self.test_env_path)
                 
         #Initialize ray                
-        # Uncomment when ready to run with Ray                
-        # try:
-        #     ray.init(address='auto')
-        # except:
-        #     print("Ray failed to initialize. Running on single server.")
+        #Uncomment when ready to run with Ray                
+        try:
+            ray.init(address='auto')
+        except:
+            print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         ''' Driver '''    
         start_time = time.time()           
         #Uncomment when ready to run with Ray
-        # runners = {i: EpisodeRunner.remote(
-        #         id=i, 
-        #         env_sets=self.environment_sets, 
-        #         **self.eval_kwargs
-        #     ) for i in range(self.eval_kwargs['episodes'])} 
-        
-        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        runners = {i: EpisodeRunner.remote(
+                id=i, 
+                current_dir=os.getcwd(),
+                **self.eval_kwargs
+            ) for i in range(self.eval_kwargs['episodes'])} 
+                
+        full_results = ray.get([runner.run.remote() for runner in runners.values()])
         
         #print(full_results)
         
         #Uncomment when to run without Ray        
-        self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
-        full_results = [runner.run() for runner in self.runners.values()]
+        # self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
+        # full_results = [runner.run() for runner in self.runners.values()]
         
-        print(time.time() - start_time)
+        print('Runtime: {}', time.time() - start_time)
         
-        self.parse_results(full_results)
+        #self.parse_results(full_results)
         pass
 
     def parse_results(self, results: List):
