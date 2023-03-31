@@ -49,7 +49,7 @@
         "--obstruct",
         "0",
         "--agent-count",
-        "1",
+        "3",
         "--enforce-boundaries",
         "True" // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE
         // "--render",

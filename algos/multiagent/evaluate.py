@@ -94,8 +94,8 @@ class Metrics():
 
 @dataclass
 class Distribution():
-    unique: List = field(default_factory=lambda: list())
-    counts: List = field(default_factory=lambda: list())
+    unique: Dict = field(default_factory=lambda: dict())
+    counts: Dict = field(default_factory=lambda: dict())
 
 
 # Uncomment when ready to run with Ray
@@ -412,57 +412,6 @@ class EpisodeRunner:
     
     def say_hello(self):
         return self.id    
-    
-    
-# @ray.remote 
-# @dataclass
-# class Runner():
-#     id: int
-#     current_dir: str
-#     # env_sets: Dict
-#     env_name: str
-#     env_kwargs: Dict    
-#     steps_per_episode: int
-#     team_mode: str
-#     resolution_multiplier: float
-    
-#     render: bool
-#     save_gif_freq: int
-#     render_path: str
-    
-#     model_path: str
-#     save_path_for_ac: str
-#     test_env_path: str
-#     save_path: str = field(default='.')
-#     seed: Union[int, None] = field(default=9389090)
-    
-#     obstruction_count: int = field(default=0) 
-#     enforce_boundaries: bool = field(default=False)
-#     actor_critic_architecture: str = field(default="cnn")    
-#     number_of_agents: int = field(default=1)
-#     episodes: int = field(default=100)
-#     montecarlo_runs: int = field(default=100)
-#     snr: str = field(default='high')
-    
-#     render_first_episode: bool = field(default=True)
-  
-#     # Initialized elsewhere
-#     #: Object that holds agents    
-#     agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda:dict())
-    
-#     def __post_init__(self)-> None:
-#         # Load test environments
-#         os.chdir(self.current_dir)
-        
-#         # Load test environments
-#         self.environment_sets = joblib.load(self.test_env_path)
-#         pass
-    
-#     def say_hello(self):
-#         return self.id    
-    
-#     def where_am_I(self):
-#         return os.getcwd()
 
 
 @dataclass
@@ -486,9 +435,6 @@ class evaluate_PPO:
         self.test_env_dir = self.eval_kwargs['test_env_path']
         self.test_env_path = self.test_env_dir + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
         self.eval_kwargs['test_env_path'] = self.test_env_path
-
-        # Load test environments
-        self.environment_sets = joblib.load(self.test_env_path)
                 
         #Initialize ray                
         #Uncomment when ready to run with Ray                
@@ -501,23 +447,30 @@ class evaluate_PPO:
         ''' Driver '''    
         start_time = time.time()           
         #Uncomment when ready to run with Ray
-        runners = {i: EpisodeRunner.remote(
-                id=i, 
-                current_dir=os.getcwd(),
-                **self.eval_kwargs
-            ) for i in range(self.eval_kwargs['episodes'])} 
+        runners = {i: EpisodeRunner
+                   .remote(
+                        id=i, 
+                        current_dir=os.getcwd(),
+                        **self.eval_kwargs
+                    ) 
+                for i in range(self.eval_kwargs['episodes'])
+            } 
                 
         full_results = ray.get([runner.run.remote() for runner in runners.values()])
         
         #print(full_results)
         
         #Uncomment when to run without Ray        
-        # self.runners = {0: EpisodeRunner(id=0, env_sets=self.environment_sets, **self.eval_kwargs)}
+        # self.runners = {0: EpisodeRunner(
+        #                 id=0, 
+        #                 current_dir=os.getcwd(),
+        #                 **self.eval_kwargs
+        #     )}
         # full_results = [runner.run() for runner in self.runners.values()]
         
         print('Runtime: {}', time.time() - start_time)
         
-        #self.parse_results(full_results)
+        self.parse_results(full_results)
         pass
 
     def parse_results(self, results: List):
@@ -572,22 +525,27 @@ class evaluate_PPO:
             unique, counts = np.unique(scenario.successful.episode_length, return_counts=True)
             sort_idx = np.argsort(counts)
             
-            test = [0, 1, 2, 3, 4]
+            success_episode_len_dist.unique[scenario.id] = list()
+            success_episode_len_dist.counts[scenario.id] = list()
             
-            print(test[:])
-            
-            # if len(sort_idx) > scenario.completed_runs+1:
-            #     success_episode_len_dist.unique.append( unique[sort_idx][-scenario.successful.episode_length:] )
-            #     success_episode_len_dist.counts.append( counts[sort_idx][-scenario.successful.episode_length:] )
-            # else:
-            #     success_episode_len_dist.unique.append( unique[sort_idx][-scenario.successful.episode_length:] )
-            #     success_episode_len_dist.counts.append( counts[sort_idx][-scenario.successful.episode_length:] )                
+            for index in sort_idx:
+                success_episode_len_dist.unique[scenario.id].append(unique[index])
+                success_episode_len_dist.counts[scenario.id].append(counts[index])
 
-            #     d_count_dist[jj,0,:] = uni[sort_idx][-num_elem:]
-            #     d_count_dist[jj,1,:] = counts[sort_idx][-num_elem:]
-            # else:
-            #     d_count_dist[jj,0,num_elem-len(sort_idx):] = uni[sort_idx][-num_elem:]
-            #     d_count_dist[jj,1,num_elem-len(sort_idx):] = counts[sort_idx][-num_elem:]
+        for ii, key in enumerate(keys):
+            if key in ['dIntDist','ndIntDist', 'dBkgDist','ndBkgDist','dEpRet','ndEpRet','ndEpLen','TotEpLen']:
+                pass
+            else:
+                if 'LocEstErr' in key:
+                    tot_mean = np.mean(stats[:,ii,0])
+                    std_error = math.sqrt(np.nansum(stats[:,ii,1]/stats[:,ii,2]))
+                    #print('Mean '+ key +': ' +str(np.round(tot_mean,decimals=2))+ ' +/- ' +str(np.round(std_error,3)))
+                else:
+                    if np.nansum(stats[:,ii,0]) > 1:
+                        d1 = DescrStatsW(stats[:,ii,0], weights=stats[:,ii,2])
+                        lp_w, weight_med, hp_w = d1.quantile([0.025,0.5,0.975],return_pandas=False)
+                        q1, q3 = d1.quantile([0.25,0.75],return_pandas=False)
+                        print('Weighted Median '+ key +': ' +str(np.round(weight_med,decimals=2))+ ' Weighted Percentiles (' +str(np.round(lp_w,3))+','+str(np.round(hp_w,3))+')')
         pass
             
         

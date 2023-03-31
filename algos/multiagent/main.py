@@ -238,7 +238,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of timesteps per epoch (before updating agent networks)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=3000, help="Number of total epochs to train the agent"
+        "--epochs", type=int, default=2000, help="Number of total epochs to train the agent"
     )
     parser.add_argument("--seed", type=int, default=2, help="Random seed control")
     parser.add_argument(
@@ -525,7 +525,7 @@ def main() -> None:
             env_name = args.env_name,
             test_env_path = './evaluation/test_environments',
             env_kwargs=env_kwargs,
-            model_path='./evaluation/saves/2023-03-02-17:10:28', # Specify model directory (fpath)
+            model_path='./evaluation/saves/2023-03-02-13:39:06', # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture=args.net_type, # Neural network type (control)
