@@ -731,6 +731,7 @@ class Test_Actor:
         pi.put_in_evaluation_mode()
         assert pi.actor.training == False
 
+
 class Test_Critic:
     @pytest.fixture
     def init_parameters(self)-> dict:
