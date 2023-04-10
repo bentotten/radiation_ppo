@@ -59,3 +59,42 @@ class Test_CombinedShape:
         for step in source_buff:
             for agent_observation in step:
                 assert len(agent_observation) == 11       
+                
+
+class Test_DiscountCumSum:    
+    @pytest.fixture
+    def init_parameters(self)-> dict:
+        ''' Set up initialization parameters needed to test discount_cumsum '''
+        last_state_value  = -0.26717135
+        return dict(
+            gamma = 0.99,
+            lam = 0.90,
+            reward_buffer = [-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49, last_state_value],
+            values_buffer = [-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135, last_state_value],
+        )
+        
+                
+    def test_DiscountCumSum(self)-> None:
+        
+        
+        def generalized_advantage_estimate(gamma, lamda, value_old_state, value_new_state, reward, done):
+            """
+            Get generalized advantage estimate of a trajectory
+            gamma: trajectory discount (scalar)
+            lamda: exponential mean discount (scalar)
+            value_old_state: value function result with old_state input
+            value_new_state: value function result with new_state input
+            reward: agent reward of taking actions in the environment
+            done: flag for end of episode
+            """
+            batch_size = done.shape[0]
+
+            advantage = np.zeros(batch_size + 1)
+
+            for t in reversed(range(batch_size)):
+                delta = reward[t] + (gamma * value_new_state[t] * done[t]) - value_old_state[t]
+                advantage[t] = delta + (gamma * lamda * advantage[t + 1] * done[t])
+
+            value_target = advantage[:batch_size] + np.squeeze(value_old_state)
+
+            return advantage[:batch_size], value_target

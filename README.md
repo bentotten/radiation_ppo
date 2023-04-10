@@ -58,3 +58,14 @@ In VSCode, you can run the specific algorithm and environment configuration thro
 ## Distributed Evaluation Mode
 
 The evaluation portion of this codebase has been set up to work with [Ray Clusters](https://docs.ray.io/en/latest/cluster/getting-started.html). Each episode runs as it's own [Actor](https://docs.ray.io/en/latest/ray-core/actors.html)
+
+## Needed Patches
+
+- Fix reward scheme to only use one agent reward for team-mode 
+- Make critic only take combined agent locations map and only update once per epoch instead of once per agent for Team mode
+
+## Desired Patches
+
+- Move maps buffer into PPO buffer class
+- Switch to leaky ReLU
+- Add PFGRU and new map

@@ -200,8 +200,7 @@ class PPO:
         for reward, is_terminal in zip(reversed(self.buffer.rewards), reversed(self.buffer.is_terminals)):
             if is_terminal:
                 discounted_reward = 0
-            discounted_reward = reward + (self.gamma * discounted_reward)  # TODO I think the discounted_reward and reward are reversed here, doublecheck; also should lamda be increasing in powers?
-                                                                            # https://towardsdatascience.com/generalized-advantage-estimate-maths-and-code-b5d5bd3ce737
+            discounted_reward = reward + (self.gamma * discounted_reward)
             rewards.insert(0, discounted_reward)
             
         # Normalizing the rewards

@@ -33,8 +33,9 @@ Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     '''
-        This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for numpy.zeros() or tensor creation). Length is in x position. 
-        If shape is a tuple, flatten it and add it to remaining tuple positions. Returns dimensions of new shape.
+        This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for numpy.zeros() or tensor creation). 
+        Length is in x position. If shape is a tuple, flatten it and add it to remaining tuple positions. Returns dimensions of new shape.
+        
         Example 1 : Size (steps_per_epoch) - Make a buffer to store advantages for an epoch. Returns (x, )
         Example 2: Size (steps_per_epoch, 2) - Make a buffer for source locations (x, y) for an epoch. Returns Returns (x, 2)
         Example 3: Size (steps_per_epoch, num_agents, observation_dimensions) - Make a buffer for agent observations for an epoch. Returns (x, n, 11)
@@ -42,11 +43,16 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         :param length: (int) X position of tuple.
         :param shape: (int | Tuple[int, Any]) remaining positions in tuple.
     '''
+    # See Example 1
     if shape is None:
         return (length,)
+    
+    # See Example 2
     elif np.isscalar(shape):
         shape = cast(int, shape)
         return (length, shape)
+    
+    # See Example 3
     else:
         shape = cast(Tuple[int, Any], shape) 
         return (length, *shape) 
@@ -177,7 +183,7 @@ class PPOBuffer:
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
-    episode_lengths_buffer: npt.NDArray[np.float32] = field(init=False)  # Stores episode lengths
+    episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
     full_observation_buffer: npt.NDArray[np.float32] = field(init=False) # Full Observation buffer with observations from every agent
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
     act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
@@ -191,8 +197,8 @@ class PPOBuffer:
     obs_win: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete?
     obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
 
-    gamma: float = 0.99
-    lam: float = 0.90  # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
+    gamma: float = 0.99 # trajectory discount for Generalize Advantage Estimate (GAE) 
+    lam: float = 0.90  # exponential mean discount Generalize Advantage Estimate (GAE). Can be thought of like a smoothing parameter.
     beta: float = 0.005
     
     def __post_init__(self):
@@ -200,7 +206,7 @@ class PPOBuffer:
         self.path_start_idx = 0     
 
         # TODO finish implementing to get logger out of PPO buffer
-        self.episode_lengths_buffer = np.array()
+        self.episode_lengths_buffer = []
         
         # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
         self.full_observation_buffer= np.zeros(
@@ -292,15 +298,18 @@ class PPOBuffer:
         the targets for the value function.
 
         The "last_val" argument should be 0 if the trajectory ended
-        because the agent reached a terminal state (died), and otherwise
+        because the agent reached a terminal state (found source), and otherwise
         should be V(s_T), the value function estimated for the last state.
         This allows us to bootstrap the reward-to-go calculation to account
         for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
         """
 
         path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
+        rews = np.append(self.rew_buf[path_slice], last_val) # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
+        vals = np.append(self.val_buf[path_slice], last_val) # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
+        
+        print(rews)
+        print(vals)
 
         # the next two lines implement GAE-Lambda advantage calculation
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
@@ -327,7 +336,7 @@ class PPOBuffer:
         # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
         # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
 
-        episode_lengths: npt.NDArray = self.episode_lengths_buffer # TODO this needs to be cleared before can be used
+        episode_lengths: npt.NDArray = np.array(self.episode_lengths_buffer) # TODO this needs to be cleared before can be used
         epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         
         number_episodes = len(episode_lengths)
