@@ -61,6 +61,7 @@ The evaluation portion of this codebase has been set up to work with [Ray Cluste
 
 ## Needed Patches
 
+- Unit tests
 - Fix reward scheme to only use one agent reward for team-mode 
 - Make critic only take combined agent locations map and only update once per epoch instead of once per agent for Team mode
 
