@@ -33,8 +33,12 @@ Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     '''
-        Method to combine length and existing shape dimension into a new tuple. Length is in x position. If shape is a tuple, flatten it and add it to remaining tuple positions.
-        
+        This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for numpy.zeros() or tensor creation). Length is in x position. 
+        If shape is a tuple, flatten it and add it to remaining tuple positions. Returns dimensions of new shape.
+        Example 1 : Size (steps_per_epoch) - Make a buffer to store advantages for an epoch. Returns (x, )
+        Example 2: Size (steps_per_epoch, 2) - Make a buffer for source locations (x, y) for an epoch. Returns Returns (x, 2)
+        Example 3: Size (steps_per_epoch, num_agents, observation_dimensions) - Make a buffer for agent observations for an epoch. Returns (x, n, 11)
+                
         :param length: (int) X position of tuple.
         :param shape: (int | Tuple[int, Any]) remaining positions in tuple.
     '''
@@ -175,12 +179,12 @@ class PPOBuffer:
 
     episode_lengths_buffer: npt.NDArray[np.float32] = field(init=False)  # Stores episode lengths
     full_observation_buffer: npt.NDArray[np.float32] = field(init=False) # Full Observation buffer with observations from every agent
-    obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer
-    act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer
-    adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer
-    rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer
-    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Cumulative(?) return buffer
-    val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer
+    obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
+    act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
+    adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
+    rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer for each step
+    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Cumulative return buffer up to current step
+    val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer for each step
     source_tar: npt.NDArray[np.float32] = field(init=False) # Source location buffer (for moving targets)
     logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
         
@@ -198,7 +202,7 @@ class PPOBuffer:
         # TODO finish implementing to get logger out of PPO buffer
         self.episode_lengths_buffer = np.array()
         
-        # TODO finish implementing to get mapstack buffer out of CNN
+        # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
         self.full_observation_buffer= np.zeros(
             combined_shape(self.max_size, (self.number_agents, self.observation_dimension)), dtype=np.float32
         )        
