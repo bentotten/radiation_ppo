@@ -171,7 +171,6 @@ class PPOBuffer:
     number_agents: int
 
     ptr: int = field(init=False)  # For keeping track of location in buffer during update
-    episode_ptr: int = field(init=False) # For keeping track of episode index in buffer during an update
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: npt.NDArray[np.float32] = field(init=False)  # Stores episode lengths
@@ -195,12 +194,9 @@ class PPOBuffer:
     def __post_init__(self):
         self.ptr = 0
         self.path_start_idx = 0     
-        self.episode_ptr = 0
 
         # TODO finish implementing to get logger out of PPO buffer
-        self.episode_lengths_buffer = np.zeros(
-            combined_shape(self.max_size), dtype=np.float32
-        )
+        self.episode_lengths_buffer = np.array()
         
         # TODO finish implementing to get mapstack buffer out of CNN
         self.full_observation_buffer= np.zeros(
@@ -280,7 +276,7 @@ class PPOBuffer:
         """
         Save episode length at the end of an epoch for later calculations
         """
-        self.episode_lengths_buffer[self.episode_ptr] = episode_length
+        self.episode_lengths_buffer.append(episode_length)
             
     def finish_path(self, last_val: int = 0) -> None:
         """
