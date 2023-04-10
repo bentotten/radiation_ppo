@@ -65,36 +65,65 @@ class Test_DiscountCumSum:
     @pytest.fixture
     def init_parameters(self)-> dict:
         ''' Set up initialization parameters needed to test discount_cumsum '''
-        last_state_value  = -0.26717135
         return dict(
             gamma = 0.99,
-            lam = 0.90,
-            reward_buffer = [-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49, last_state_value],
-            values_buffer = [-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135, last_state_value],
+            lamb = 0.90,
+            done = np.array([False, False, False, False, False, False, False, False, False, False]),
+            rewards = np.array([-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49]),
+            values = np.array([-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135]),
+            last_val  = -0.26717135
         )
         
                 
-    def test_DiscountCumSum(self)-> None:
-        
-        
-        def generalized_advantage_estimate(gamma, lamda, value_old_state, value_new_state, reward, done):
+    def test_DiscountCumSum(self, init_parameters)-> None:
+        ''' test discount cumsum by testing GAE '''
+        # Manual GAE calculation
+        def generalized_advantage_estimate(gamma, lamb, done, rewards, values, last_val):
             """
-            Get generalized advantage estimate of a trajectory
             gamma: trajectory discount (scalar)
             lamda: exponential mean discount (scalar)
-            value_old_state: value function result with old_state input
-            value_new_state: value function result with new_state input
-            reward: agent reward of taking actions in the environment
-            done: flag for end of episode
+            values: value function results for each step
+            rewards: rewards for each step
+            done: flag for end of episode (ensures advantage only calculated for single epsiode, when multiple episodes are present)
+            
+            Thank you to https://nn.labml.ai/rl/ppo/gae.html
             """
             batch_size = done.shape[0]
 
-            advantage = np.zeros(batch_size + 1)
+            advantages = np.zeros(batch_size + 1)
+            
+            last_advantage = 0
+            last_value = values[-1]
 
             for t in reversed(range(batch_size)):
-                delta = reward[t] + (gamma * value_new_state[t] * done[t]) - value_old_state[t]
-                advantage[t] = delta + (gamma * lamda * advantage[t + 1] * done[t])
+                # Make mask to filter out values by episode
+                mask = 1.0 - done[t] # convert bools into variable to multiply by
+                
+                # Apply terminal mask to values and advantages 
+                last_value = last_value * mask
+                last_advantage = last_advantage * mask
+                
+                # Calculate deltas
+                delta = rewards[t] + gamma * last_value - values[t]
 
-            value_target = advantage[:batch_size] + np.squeeze(value_old_state)
+                # Get last advantage and add to proper element in advantages array
+                last_advantage = delta + gamma * lamb * last_advantage                
+                advantages[t] = last_advantage
+                
+                # Get new last value
+                last_value = values[t]
+                
+            return advantages
+                      
+        manual_gae = generalized_advantage_estimate(**init_parameters)[:-1] # Remove last non-step element        
+        
+        # Setup for RAD-TEAM GAE from spinningup
+        rews = np.append(init_parameters['rewards'], init_parameters['last_val'])
+        vals = np.append(init_parameters['values'], init_parameters['last_val'])      
+        
+        # GAE
+        deltas = rews[:-1] + init_parameters['gamma'] * vals[1:] - vals[:-1]        
+        advantages = PPO.discount_cumsum(deltas, init_parameters['gamma'] * init_parameters['lamb'])
 
-            return advantage[:batch_size], value_target
+        for result, to_test in zip(manual_gae, advantages):
+            assert result == to_test

@@ -82,6 +82,45 @@ def discount_cumsum(x: npt.NDArray[np.float64], discount: float) -> npt.NDArray[
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
+# NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
+def generalized_advantage_estimate(gamma, lamb, done, rewards, values):
+    """
+    gamma: trajectory discount (scalar)
+    lamda: exponential mean discount (scalar)
+    values: value function results for each step
+    rewards: rewards for each step
+    done: flag for end of episode (ensures advantage only calculated for single epsiode, when multiple episodes are present)
+    
+    Thank you to https://nn.labml.ai/rl/ppo/gae.html
+    """
+    batch_size = done.shape[0]
+
+    advantages = np.zeros(batch_size + 1)
+    
+    last_advantage = 0
+    last_value = values[-1]
+
+    for t in reversed(range(batch_size)):
+        # Make mask to filter out values by episode
+        mask = 1.0 - done[t] # convert bools into variable to multiply by
+        
+        # Apply terminal mask to values and advantages 
+        last_value = last_value * mask
+        last_advantage = last_advantage * mask
+        
+        # Calculate deltas
+        delta = rewards[t] + gamma * last_value - values[t]
+
+        # Get last advantage and add to proper element in advantages array
+        last_advantage = delta + gamma * lamb * last_advantage                
+        advantages[t] = last_advantage
+        
+        # Get new last value
+        last_value = values[t]
+        
+    return advantages
+
+
 class UpdateResult(NamedTuple):
     ''' Object that contains the return values from the neural network updates '''
     stop_iteration: int
@@ -189,7 +228,7 @@ class PPOBuffer:
     act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
     adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
     rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer for each step
-    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Cumulative return buffer up to current step
+    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
     val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer for each step
     source_tar: npt.NDArray[np.float32] = field(init=False) # Source location buffer (for moving targets)
     logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
@@ -302,6 +341,8 @@ class PPOBuffer:
         should be V(s_T), the value function estimated for the last state.
         This allows us to bootstrap the reward-to-go calculation to account
         for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
+        
+        Note: Nice description of GAE choices: https://github.com/openai/spinningup/issues/349
         """
 
         path_slice = slice(self.path_start_idx, self.ptr)
@@ -318,7 +359,7 @@ class PPOBuffer:
         self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lam)
 
         # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1]
+        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1] # Remove last non-step element
 
     def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, Dict]]:
         """
