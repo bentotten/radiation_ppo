@@ -4,6 +4,7 @@ import pytest
 import algos.multiagent.ppo as PPO
 
 import numpy as np
+import torch
 
 # Helper functions
 @pytest.fixture
@@ -395,7 +396,6 @@ class Test_PPOBuffer:
             full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
         )               
               
-              
         buffer.GAE_advantage_and_rewardsToGO(last_state_value=test['last_val'])
         
         for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
@@ -421,18 +421,9 @@ class Test_PPOBuffer:
             values = np.array([-0.26629043, -0.26634163]),
             src = np.array([788.0, 306.0]),
             act = np.array([1, 2]),
-            logp = np.array([-1.777620792388916, -1.777620792388916])          
+            logp = np.array([-1.777620792388916, -1.777620792388916]),
+            last_val = -0.26634163
         )     
-                                
-        # setup PPO buffer
-        init_parameters = dict(
-            observation_dimension = 11,
-            max_size = 10,
-            max_episode_length = 2,
-            number_agents = 2
-        )
-        
-        buffer = PPO.PPOBuffer(**init_parameters)
             
         # Prime buffer
         # 1st step: 
@@ -455,8 +446,31 @@ class Test_PPOBuffer:
             src=test['src'],
             full_observation=test['full_obs']
         )
+        
+        buffer.store_episode_length(2)
+        buffer.GAE_advantage_and_rewardsToGO(test['last_val'])
+        data = buffer.get()
 
-    
-# Classes
-# PPOBuffer
-# AgentPPO
+        # Make sure reset happened
+        assert buffer.ptr == 0     
+        assert buffer.path_start_idx == 0                   
+        assert len(buffer.episode_lengths_buffer) == 0
+        
+        # Check observations        
+        i = 0
+        obs_buffer_tensor =  data['obs'].tolist()        
+        for x, y in zip(*obs_buffer_tensor):
+            assert x == test['obs'][i]
+            assert y == test['obs'][i]
+            i += 1
+
+        # Check actions
+        i = 0
+        act_buffer_tensor =  data['act'].tolist()        
+        for x in act_buffer_tensor:
+            assert x == test['act'][i]
+            i += 1    
+
+        # TODO Finish remaining checks when time. For now skipping to move on to more important checks
+        assert 1 == 0, "Finish remaining checks when time. For now skipping to move on to more important checks"                     
+            

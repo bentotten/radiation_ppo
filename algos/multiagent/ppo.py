@@ -378,7 +378,7 @@ class PPOBuffer:
         assert self.ptr == self.max_size 
                 
         # Get episode lengths
-        episode_lengths: List[int] = self.episode_lengths_buffer # TODO this needs to be cleared before can be used
+        episode_lengths: List[int] = self.episode_lengths_buffer
         number_episodes = len(episode_lengths)
         total_episode_length = sum(episode_lengths)
         
@@ -390,19 +390,7 @@ class PPOBuffer:
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
         
         # Reset pointers and episode lengths buffer
-        self.quick_reset()        
-        
-        # Convert to tensors
-        data = dict(
-            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
-            act=torch.as_tensor(self.act_buf, dtype=torch.float32),
-            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
-            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
-            logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
-            ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
-            ep_form = []
-        )           
+        self.quick_reset()                
 
         # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that number_episodes is the correct size.
         # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
@@ -441,8 +429,18 @@ class PPOBuffer:
             episode_form[jj].append(
                 torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
             )
-
-        data["ep_form"] = episode_form
+            
+        # Convert to tensors
+        data = dict(
+            obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+            act=torch.as_tensor(self.act_buf, dtype=torch.float32),
+            ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+            adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+            logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+            ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
+            ep_form = episode_form
+        )               
 
         return data
 
