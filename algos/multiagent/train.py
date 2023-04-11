@@ -367,7 +367,7 @@ class train_PPO:
                         
                     # Finish the trajectory and compute advantages. See function comments for more information                        
                     for id, ac in self.agents.items():
-                        ac.ppo_buffer.GAE_discount_cumsum_and_rewardsToGo(last_state_value)
+                        ac.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value)
                         
                     if terminal:
                         # only save episode returns and episode length if trajectory finished

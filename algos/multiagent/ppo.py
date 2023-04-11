@@ -338,7 +338,7 @@ class PPOBuffer:
         """
         self.episode_lengths_buffer.append(episode_length)
             
-    def GAE_discount_cumsum_and_rewardsToGo(self, last_state_value: float = 0.0) -> None:
+    def GAE_advantage_and_rewardsToGO(self, last_state_value: float = 0.0) -> None:
         """
         Call this at the end of a trajectory when an episode has ended or the max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started, 
         and uses rewards and value estimates from the whole trajectory to compute advantage estimates with GAE-Lambda, as well as compute the rewards-to-go for each state, 
@@ -359,7 +359,8 @@ class PPOBuffer:
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
         # lambda introduces bias when VF is inaccurate
         deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = discount_cumsum(deltas, self.gamma * self.lam)
+        gae = discount_cumsum(deltas, self.gamma * self.lam)
+        self.adv_buf[path_slice] = gae
 
         # the next line computes rewards-to-go, to be targets for the value function
         self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1] # Remove last non-step element
