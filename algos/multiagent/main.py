@@ -452,11 +452,11 @@ def main() -> None:
             )
         else:
             ac_kwargs=dict(
-                action_space=env.detectable_directions,
-                observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
+                action_space=env.detectable_directions, # Usually 8
+                observation_space=env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
                 steps_per_episode=args.steps_per_episode,
                 number_of_agents=args.agent_count,
-                detector_step_size=env.step_size,
+                detector_step_size=env.step_size, # Usually 100 cm
                 environment_scale=env.scale,
                 bounds_offset=env.observation_area,
                 enforce_boundaries=args.enforce_boundaries,

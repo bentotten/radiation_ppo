@@ -150,7 +150,7 @@ class Test_DiscountCumSum:
 class Test_PPOBuffer:
     @pytest.fixture
     def init_parameters(self)-> dict:
-        ''' Set up initialization parameters needed to test discount_cumsum '''
+        ''' Set up initialization parameters '''
         return dict(
             observation_dimension = 11,
             max_size = 2,
@@ -474,3 +474,43 @@ class Test_PPOBuffer:
         # TODO Finish remaining checks when time. For now skipping to move on to more important checks
         assert 1 == 0, "Finish remaining checks when time. For now skipping to move on to more important checks"                     
             
+
+class Test_PPOAgent:
+    @pytest.fixture
+    def init_parameters(self)-> dict:
+        ''' Set up initialization parameters '''
+        bpargs = dict(
+            bp_decay=0.1,
+            l2_weight=1.0,
+            l1_weight=0.0,
+            elbo_weight=1.0,
+            area_scale=5
+        )          
+        ac_kwargs={
+            'action_space': 8, 
+            'observation_space': 11, 
+            'steps_per_episode': 1, 
+            'number_of_agents': 2, 
+            'detector_step_size': 100.0, 
+            'environment_scale': 0.00045454545454545455, 
+            'bounds_offset': np.array([200., 500.]), 
+            'enforce_boundaries': False, 
+            'grid_bounds': (1, 1), 
+            'resolution_multiplier': 0.01, 
+            'GlobalCritic': None, 
+            'save_path': ['../../models/train/test/2023-04-11-16:34:26', '2023-04-11-16:34:26_test_agents1_s2']
+            }
+                      
+        return dict(
+            id = 0,
+            observation_space = 11,
+            bp_args = bpargs,
+            steps_per_epoch = 3,
+            steps_per_episode = 2,
+            number_of_agents = 2,
+            env_height = 5,
+            actor_critic_args = ac_kwargs  
+        )
+            
+    def test_Init(self, init_parameters):
+        _ = PPO.AgentPPO(**init_parameters)            

@@ -164,10 +164,10 @@ class OptimizationStorage:
             for early stopping. It's usually small, 0.01 or 0.05.
     '''
     train_pi_iters: int
-    train_v_iters: int
+    train_v_iters: Union[int, None]
     train_pfgru_iters: int    
     pi_optimizer: torch.optim.Optimizer
-    critic_optimizer: torch.optim.Optimizer
+    critic_optimizer: Union[torch.optim.Optimizer, None]
     model_optimizer: torch.optim.Optimizer
     clip_ratio: float
     alpha: float
@@ -177,7 +177,7 @@ class OptimizationStorage:
     #: Schedules gradient steps for actor
     pi_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)
     #: Schedules gradient steps for value function (critic)
-    critic_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)  # TODO 
+    critic_scheduler: Union[torch.optim.lr_scheduler.StepLR, None] = field(init=False)
     #: Schedules gradient steps for PFGRU location predictor module    
     pfgru_scheduler: torch.optim.lr_scheduler.StepLR = field(init=False)   
     #: Loss calculator utility for Critic   
@@ -186,13 +186,17 @@ class OptimizationStorage:
     def __post_init__(self):        
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
-        )
-        self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
-            self.critic_optimizer, step_size=100, gamma=0.99
-        )        
+        )     
         self.pfgru_scheduler = torch.optim.lr_scheduler.StepLR(
             self.model_optimizer, step_size=100, gamma=0.99
         )        
+        
+        if self.train_v_iters and self.critic_optimizer:
+            self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
+                self.critic_optimizer, step_size=100, gamma=0.99
+            )
+        else:
+            self.critic_scheduler = None # RAD-A2C has critic embeded in pi
 
 
 @dataclass
@@ -522,9 +526,9 @@ class AgentPPO:
     steps_per_episode: int 
     number_of_agents: int # Number of agents
     env_height: float
+    actor_critic_args: Dict[str, Any]
+    actor_critic_architecture: str = field(default="cnn")    
     seed: int = field(default= 0)
-    actor_critic_args: Dict[str, Any] = field(default_factory= lambda: dict())
-    actor_critic_architecture: str = field(default="cnn")
     minibatch: int = field(default=1)    
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
@@ -547,15 +551,7 @@ class AgentPPO:
         ''' Initialize Agent's neural network architecture'''
                   
         # Simple Feed Forward Network
-        if self.actor_critic_architecture == 'ff':
-            raise NotImplementedError("Feed forward is not yet available")
-            # self.agent = RADFF_core.PPO(self.observation_space, self.action_space, **self.actor_critic_args)        
-            # if not self.GlobalCriticOptimizer:
-            #     CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
-            # else:
-            #     CriticOptimizer = self.GlobalCriticOptimizer                  
-        # Convolutional Network for RAD-TEAM
-        elif self.actor_critic_architecture == 'cnn':
+        if self.actor_critic_architecture == 'cnn':
             self.agent = RADCNN_core.CNNBase(id=self.id, **self.actor_critic_args)             
 
             if not self.GlobalCriticOptimizer:
@@ -581,18 +577,16 @@ class AgentPPO:
             # Initialize Agents                
             self.agent = RADA2C_core.RNNModelActorCritic(**self.actor_critic_args)
             
-            if not self.GlobalCriticOptimizer:
-                CriticOptimizer = Adam(self.agent.critic.parameters(), lr=self.critic_learning_rate)
-            else:
-                CriticOptimizer = self.GlobalCriticOptimizer            
+            if self.GlobalCriticOptimizer:
+                raise Exception("No global critic option for RAD-A2C")        
             
             # Initialize learning opitmizers                           
             self.agent_optimizer = OptimizationStorage(
                 train_pi_iters = self.train_pi_iters,                
-                train_v_iters = self.train_v_iters,
+                train_v_iters = None, # Critic is embeded in policy for RAD-A2C
                 train_pfgru_iters = self.train_pfgru_iters,              
                 pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = CriticOptimizer,  # Allows for global optimizer
+                critic_optimizer = None, # Critic is embeded in policy for RAD-A2C
                 model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 MSELoss = torch.nn.MSELoss(reduction="mean"),
                 clip_ratio = self.clip_ratio,
@@ -605,6 +599,8 @@ class AgentPPO:
         # Inititalize buffer
         if self.steps_per_epoch > 0:
             self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, max_episode_length=self.steps_per_episode, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
+        else:
+            raise ValueError("Steps per epoch cannot be 0")
         
     def reduce_pfgru_training(self):
         '''Reduce localization module training iterations after some number of epochs to speed up training'''
