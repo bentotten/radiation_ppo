@@ -68,6 +68,12 @@ class Helpers:
                 
         return batch_rtgs     
 
+    @staticmethod
+    def normalization_trick(adv_buffer: np.array):
+        adv_mean = adv_buffer.mean()
+        adv_std = adv_buffer.std()
+        return (adv_buffer - adv_mean) / adv_std        
+
 
 class Test_CombinedShape:    
     def test_CreateBufferofScalars(self)-> None:
@@ -79,7 +85,6 @@ class Test_CombinedShape:
         adv_buff = np.zeros(buffer_dims, dtype=np.float32)
         
         assert len(adv_buff) == 10
-        
         
     def test_CreateListofArrays(self)-> None:
         ''' Make a list of lists. Example: Make a buffer for source locations for an epoch (x, y). Size (x, y)'''
@@ -333,7 +338,7 @@ class Test_PPOBuffer:
         for result, to_test in zip(manual_gae, buffer.adv_buf):
             assert result == pytest.approx(to_test)    
 
-    def test_GAE_advantage_and_rewardsToGO_with_storage(self)-> None:        
+    def test_GAE_advantage_and_rewardsToGO_with_storage(self, helpers)-> None:        
         # Manual test variables                
         test = dict(
             gamma = 0.99,
@@ -444,16 +449,13 @@ class Test_PPOBuffer:
         buffer.store(
             obs=test['obs'],
             act=test['act'][1],
-            rew=test['rewards'][2],
-            val=test['values'][3],
-            logp=test['logp'][4],
+            rew=test['rewards'][1],
+            val=test['values'][1],
+            logp=test['logp'][1],
             src=test['src'],
             full_observation=test['full_obs']
         )
-            
-        adv_mean = self.adv_buf.mean()
-        adv_std = self.adv_buf.std()
-        self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
+
     
 # Classes
 # PPOBuffer
