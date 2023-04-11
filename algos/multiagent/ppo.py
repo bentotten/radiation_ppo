@@ -207,7 +207,6 @@ class PPOBuffer:
         :param max_size: Max steps per epoch.
         :param max_episode_length: (int) Maximum steps per episode
         :param number_agents: Number of agents.
-        :param episode_lengths: 
         :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
         :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
     """
@@ -295,26 +294,21 @@ class PPOBuffer:
         obs: npt.NDArray[np.float32],
         act: int,
         rew: float,
-        val: npt.NDArray[np.float32],
-        logp: npt.NDArray[np.float32],
+        val: float,
+        logp: float,
         src: npt.NDArray[np.float32],
-        full_observation: npt.NDArray[np.float32],
+        full_observation: Dict,
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
-        obs: observation (Usually the one returned from environment for previous step)
-        act: action taken 
-        rew: reward from environment
-        val: state-value from critic
-        logp: log probability from actor
-        src: source coordinates
+        :param obs: (npt.ndarray) observation (Usually the one returned from environment for previous step)
+        :param act: (int) action taken 
+        :param rew: (float) reward from environment
+        :param val: (float) state-value from critic
+        :param logp: (float) log probability from actor
+        :param src: (npt.ndarray) source coordinates
+        :param full_observation: (dict) all agent observations
         """
-        print(obs, '\n')
-        print(act,'\n')
-        print(rew , '\n')
-        print(val ,'\n')
-        print(logp ,'\n')
-        print(src , '\n')
         
         assert self.ptr < self.max_size
         self.obs_buf[self.ptr, :] = obs
@@ -324,7 +318,8 @@ class PPOBuffer:
         self.source_tar[self.ptr] = src
         self.logp_buf[self.ptr] = logp
         
-        self.full_observation_buffer[self.ptr] = full_observation
+        for agent_id, agent_obs in full_observation.items():
+            self.full_observation_buffer[self.ptr][agent_id] = agent_obs
         
         self.ptr += 1
 

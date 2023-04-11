@@ -55,11 +55,11 @@ class ActionChoice(NamedTuple):
     #: An Agent's unique identifier that serves as a hash key. 
     id: int 
     #: A single integer that represents an agent action in the environment. Stored in a single-element numpy array for processing convinience.
-    action: int # size (1)
+    action: Union[float, int] # size (1)
     #: The log of the policy distribution. Taking the gradient of the log probability is more stable than using the actual density.
-    action_logprob: npt.NDArray[np.float32] # size (1)
+    action_logprob: float # size (1)
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
-    state_value: Union[npt.NDArray[np.float32], None] # size(1)
+    state_value: Union[float, None] # size(1)
     #: Coordinates predicted by the location prediction model (PFGRU). TODO: Implement for CNN
     loc_pred: Union[torch.Tensor, None] = None
 
@@ -1299,7 +1299,7 @@ class CNNBase:
     resolution_multiplier: float = field(default=0.01)
     GlobalCritic: Union[Critic, None] = field(default=None)
     no_critic: bool = field(default=False)
-    save_path: Union[str, list] = field(default='.')
+    save_path: str = field(default='.')
    
     # Initialized elsewhere
     #: Policy/Actor network
@@ -1425,9 +1425,12 @@ class CNNBase:
             self.save(checkpoint_path=self.save_path)
             print(repr(err))
 
+        state_value_item: Union[float, None]
         if state_value:
-            state_value = state_value.numpy()            
-        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.numpy(), state_value=state_value)
+            state_value_item = state_value.item()            
+        else:
+            state_value_item = None
+        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value_item)
 
     def get_map_dimensions(self)-> Tuple[int, int]:
         return self.maps.map_dimensions
