@@ -129,6 +129,19 @@ class Test_PPOBuffer:
             
     def test_Init(self, init_parameters):
         _ = PPO.PPOBuffer(**init_parameters)    
+        
+    def test_QuickReset(self, init_parameters):
+        buffer = PPO.PPOBuffer(**init_parameters)    
+        
+        buffer.ptr = 1
+        buffer.path_start_idx = 1
+        buffer.episode_lengths_buffer.append(1)
+        buffer.quick_reset()
+        
+        assert buffer.ptr == 0     
+        assert buffer.path_start_idx == 0                   
+        assert len(buffer.episode_lengths_buffer) == 0
+        
 
     def test_store(self, init_parameters)-> None:
         # Instatiate
@@ -253,8 +266,12 @@ class Test_PPOBuffer:
             )           
 
     def test_store_episode_length(self, init_parameters)-> None:
-        pass
-            
+        buffer = PPO.PPOBuffer(**init_parameters)    
+        assert len(buffer.episode_lengths_buffer) == 0
+        buffer.store_episode_length(7)
+        assert len(buffer.episode_lengths_buffer) == 1
+        assert buffer.episode_lengths_buffer[0] == 7
+        
     def test_finish_path(self, init_parameters)-> None:
         pass
     

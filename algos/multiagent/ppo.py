@@ -307,6 +307,7 @@ class PPOBuffer:
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
+        
         :param obs: (npt.ndarray) observation (Usually the one returned from environment for previous step)
         :param act: (int) action taken 
         :param rew: (float) reward from environment
@@ -331,18 +332,17 @@ class PPOBuffer:
 
     def store_episode_length(self, episode_length: int) -> None:
         """
-        Save episode length at the end of an epoch for later calculations
+        Save episode length at the end of an episode for later calculations
+        
+        :param episode_length: (int) length of that episode, via either success or timeout. Not stored for partial episodes during epoch cutoff.
         """
         self.episode_lengths_buffer.append(episode_length)
             
-    def finish_path(self, last_val: int = 0) -> None:
+    def finish_path(self, last_state_value: int = 0) -> None:
         """
-        Call this at the end of a trajectory, or when one gets cut off
-        by an epoch ending. This looks back in the buffer to where the
-        trajectory started, and uses rewards and value estimates from
-        the whole trajectory to compute advantage estimates with GAE-Lambda,
-        as well as compute the rewards-to-go for each state, to use as
-        the targets for the value function.
+        Call this at the end of a trajectory when max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started, 
+        and uses rewards and value estimates from the whole trajectory to compute advantage estimates with GAE-Lambda, as well as compute the rewards-to-go for each state, 
+        to use as the targets for the value function.
 
         The "last_val" argument should be 0 if the trajectory ended
         because the agent reached a terminal state (found source), and otherwise
@@ -354,8 +354,8 @@ class PPOBuffer:
         """
 
         path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val) # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
-        vals = np.append(self.val_buf[path_slice], last_val) # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
+        rews = np.append(self.rew_buf[path_slice], last_state_value) # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
+        vals = np.append(self.val_buf[path_slice], last_state_value) # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
         
         # the next two lines implement GAE-Lambda advantage calculation
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
@@ -418,15 +418,15 @@ class PPOBuffer:
             ep_form = []
         )     
 
-        # If they're equal then we don't need to do anything
-        # Otherwise we need to add one to make sure that numEps is the correct size
+        # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that numEps is the correct size.
+        # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
         episode_len_Size = (
             number_episodes
             + int(total_episode_length != len(self.obs_buf))
         )
 
-        # If they're equal then we don't need to do anything
-        # Otherwise we need to add one to make sure that numEps is the correct size
+        # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that numEps is the correct size.
+        # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
         epLenSize = (
             numEps
             + int(epLenTotal != len(self.obs_buf))

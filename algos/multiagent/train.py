@@ -357,16 +357,17 @@ class train_PPO:
                                 results = ac.step(standardized_observations, hiddens=hiddens, save_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update
                             else:
                                 results = ac.step(standardized_observations, hiddens=hiddens, save_map=False)  # Ensure next map is not buffered when going to compare to logger for update
-                            value = results.state_value
+                            last_state_value = results.state_value
  
                         if epoch_ended:
                             # Set flag to sample new environment parameters
                             self.env.epoch_end = True 
                     else:
-                        value = 0  # State value 
+                        last_state_value = 0  # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) for use in the finish_path() function
+                        
                     # Finish the trajectory and compute advantages. See function comments for more information                        
                     for id, ac in self.agents.items():
-                        ac.ppo_buffer.finish_path(value)
+                        ac.ppo_buffer.finish_path(last_state_value)
                         
                     if terminal:
                         # only save episode returns and episode length if trajectory finished
