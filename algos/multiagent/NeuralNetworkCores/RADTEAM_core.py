@@ -55,7 +55,7 @@ class ActionChoice(NamedTuple):
     #: An Agent's unique identifier that serves as a hash key. 
     id: int 
     #: A single integer that represents an agent action in the environment. Stored in a single-element numpy array for processing convinience.
-    action: npt.NDArray[np.int32] # size (1)
+    action: int # size (1)
     #: The log of the policy distribution. Taking the gradient of the log probability is more stable than using the actual density.
     action_logprob: npt.NDArray[np.float32] # size (1)
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
@@ -1425,10 +1425,9 @@ class CNNBase:
             self.save(checkpoint_path=self.save_path)
             print(repr(err))
 
-        # TODO remove numpy 
         if state_value:
             state_value = state_value.numpy()            
-        return ActionChoice(id=id, action=action.numpy(), action_logprob=action_logprob.numpy(), state_value=state_value)
+        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.numpy(), state_value=state_value)
 
     def get_map_dimensions(self)-> Tuple[int, int]:
         return self.maps.map_dimensions

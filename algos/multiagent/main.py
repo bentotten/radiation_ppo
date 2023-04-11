@@ -512,11 +512,12 @@ def main() -> None:
             DEBUG=args.DEBUG
         )
         
-        try:
-            # Begin simulation
-            simulation.train()
-        except Exception as err:
-            log_state(err)
+        # try:
+        #     # Begin simulation
+        #     simulation.train()
+        # except Exception as err:
+        #     log_state(err)
+        simulation.train()
             
     elif args.mode == 'evaluate':
         

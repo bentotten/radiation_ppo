@@ -3,20 +3,7 @@ import pytest
 import algos.multiagent.ppo as PPO
 
 import numpy as np
-import torch
 
-# Functions
-# combined_shape
-# discount_cumsum
-
-# Named tuples
-# UpdateResult
-# BpArgs
-# OptimizationStorage
-
-# Classes
-# PPOBuffer
-# AgentPPO
 
 # Test helper functions
 class Test_CombinedShape:    
@@ -127,3 +114,28 @@ class Test_DiscountCumSum:
 
         for result, to_test in zip(manual_gae, advantages):
             assert result == to_test
+            
+
+class Test_PPOBuffer:
+
+    def test_store(self)-> None:
+        
+        obs = [41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.]
+        act = 1
+        rew = -0.46
+        val 
+        logp: npt.NDArray[np.float32],
+        src: npt.NDArray[np.float32],
+
+
+    def store_episode_length(self, episode_length: npt.NDArray) -> None:
+
+            
+    def finish_path(self, last_val: int = 0) -> None:
+
+    def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, Dict]]:
+
+    
+# Classes
+# PPOBuffer
+# AgentPPO

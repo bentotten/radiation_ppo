@@ -198,20 +198,18 @@ class OptimizationStorage:
 @dataclass
 class PPOBuffer:
     """
-        A buffer for storing histories experienced by a PPO agent interacting with the environment, and using Generalized Advantage Estimation (GAE-Lambda) for calculating the 
+        A buffer for storing histories/trajectories experienced by a PPO agent interacting with the environment, and using Generalized Advantage Estimation (GAE-Lambda) for calculating the 
         advantages of state-action pairs. This is left outside of the PPO agent so that A2C architectures can be swapped out as desired.
         
-        :param observation_dimension: (int) Dimensions of observation. For RAD-TEAM and RAD-A2C the observation will be a one dimensional tuple where the first element is the 
+        :param observation_dimension: (int) Dimensions of observation. For RAD-TEAM and RAD-A2C the observation will be a one dimensional array/tuple where the first element is the 
             detected radiation intensity, the second and third elements are the x,y coordinates, and the remaining 8 elements are a reading of how close an agent is to an obstacle. 
             Obstacle sensor readings and x,y coordinates are normalized. 
         :param max_size: Max steps per epoch.
         :param max_episode_length: (int) Maximum steps per episode
         :param number_agents: Number of agents.
         :param episode_lengths: 
-        
-        gamma (float): Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
+        :param gamma: (float) Discount rate for expected return and Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1.)
         :param lam: (float) Exponential weight decay/discount; controls the bias variance trade-off for Generalize Advantage Estimate (GAE) calculations (Always between 0 and 1, close to 1)
-        beta (float): Entropy for loss function, encourages exploring different policies
     """
         
     observation_dimension: int
@@ -233,12 +231,11 @@ class PPOBuffer:
     source_tar: npt.NDArray[np.float32] = field(init=False) # Source location buffer (for moving targets)
     logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
         
-    obs_win: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete?
-    obs_win_std: npt.NDArray[np.float32] = field(init=False) # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+    obs_win: npt.NDArray[np.float32] = field(init=False) # For location prediction TODO find out what its doing
+    obs_win_std: npt.NDArray[np.float32] = field(init=False) # For location prediction TODO find out what its doing
 
     gamma: float = 0.99 # trajectory discount for Generalize Advantage Estimate (GAE) 
     lam: float = 0.90  # exponential mean discount Generalize Advantage Estimate (GAE). Can be thought of like a smoothing parameter.
-    beta: float = 0.005
     
     def __post_init__(self):
         self.ptr = 0
@@ -250,8 +247,8 @@ class PPOBuffer:
         # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
         self.full_observation_buffer= np.zeros(
             combined_shape(self.max_size, (self.number_agents, self.observation_dimension)), dtype=np.float32
-        )        
-           
+        )
+        # TODO delete once full_observation_buffer is done
         self.obs_buf= np.zeros(
             combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
         )
@@ -296,11 +293,12 @@ class PPOBuffer:
     def store(
         self,
         obs: npt.NDArray[np.float32],
-        act: npt.NDArray[np.float32],
-        rew: npt.NDArray[np.float32],
+        act: int,
+        rew: float,
         val: npt.NDArray[np.float32],
         logp: npt.NDArray[np.float32],
         src: npt.NDArray[np.float32],
+        full_observation: npt.NDArray[np.float32],
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -311,7 +309,13 @@ class PPOBuffer:
         logp: log probability from actor
         src: source coordinates
         """
-        #TODO does each value need to be a numpy array?
+        print(obs, '\n')
+        print(act,'\n')
+        print(rew , '\n')
+        print(val ,'\n')
+        print(logp ,'\n')
+        print(src , '\n')
+        
         assert self.ptr < self.max_size
         self.obs_buf[self.ptr, :] = obs
         self.act_buf[self.ptr] = act
@@ -319,6 +323,9 @@ class PPOBuffer:
         self.val_buf[self.ptr] = val
         self.source_tar[self.ptr] = src
         self.logp_buf[self.ptr] = logp
+        
+        self.full_observation_buffer[self.ptr] = full_observation
+        
         self.ptr += 1
 
     def store_episode_length(self, episode_length: npt.NDArray) -> None:
@@ -408,7 +415,7 @@ class PPOBuffer:
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
             adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
             logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # for location prediction, but is never updated
             ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
             ep_form = []
         )     

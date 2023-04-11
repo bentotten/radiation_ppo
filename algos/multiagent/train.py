@@ -264,7 +264,7 @@ class train_PPO:
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                     
                 # Create action list to send to environment
-                agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts} 
+                agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts} 
                 
                 # Ensure no item is above max actions or below 0. Idle action is max action dimension (here 8)
                 for action in agent_action_decisions.values():
@@ -301,6 +301,7 @@ class train_PPO:
                         logp = agent_thoughts[id].action_logprob,
                         src = source_coordinates,
                         #terminal = terminals[id],  # TODO do we want to store terminal flags?
+                        full_observation = observations
                     )
                     
                     self.loggers[id].store(VVals=agent_thoughts[id].state_value)

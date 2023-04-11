@@ -40,7 +40,7 @@ def train_scaffolding():
         eps_clip = 0.2          # clip parameter for PPO
         gamma = 0.99            # discount rate for expected return and Generalize Advantage Estimate (GAE) calculations
         lamda = 0.95            # smoothing parameter for Generalize Advantage Estimate (GAE) calculations
-        beta: float = 0.005     # TODO look up what this is doing
+        beta: float = 0.005     # Obsolete
 
         lr_actor = 0.0003       # learning rate for actor network
         lr_critic = 0.001       # learning rate for critic network
