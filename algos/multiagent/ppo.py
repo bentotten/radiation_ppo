@@ -241,7 +241,7 @@ class PPOBuffer:
         self.path_start_idx = 0     
 
         # TODO finish implementing to get logger out of PPO buffer
-        self.episode_lengths_buffer = []
+        self.episode_lengths_buffer = list()
         
         # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
         self.full_observation_buffer= np.zeros(
@@ -289,6 +289,12 @@ class PPOBuffer:
             print("Device set to : cpu")
         print("============================================================================================")
 
+    def quick_reset(self):
+        """ Resets pointers for existing buffers and creates new epsiode lengths buffer. This avoids having to make a new buffer every time """
+        self.ptr = 0
+        self.path_start_idx = 0
+        self.episode_lengths_buffer = list()
+          
     def store(
         self,
         obs: npt.NDArray[np.float32],
@@ -323,7 +329,7 @@ class PPOBuffer:
         
         self.ptr += 1
 
-    def store_episode_length(self, episode_length: npt.NDArray) -> None:
+    def store_episode_length(self, episode_length: int) -> None:
         """
         Save episode length at the end of an epoch for later calculations
         """
@@ -351,9 +357,6 @@ class PPOBuffer:
         rews = np.append(self.rew_buf[path_slice], last_val) # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
         vals = np.append(self.val_buf[path_slice], last_val) # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
         
-        print(rews)
-        print(vals)
-
         # the next two lines implement GAE-Lambda advantage calculation
         # gamma determines scale of value function, introduces bias regardless of VF accuracy
         # lambda introduces bias when VF is inaccurate
@@ -370,15 +373,8 @@ class PPOBuffer:
         mean zero and std one). Also, resets some pointers in the buffer.
         """
         assert self.ptr == self.max_size  # buffer has to be full before you can get
-        self.ptr, self.path_start_idx = 0, 0
-        # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
-        self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
-        # ret_mean, ret_std = self.ret_buf.mean(), self.ret_buf.std()
-        # self.ret_buf = (self.ret_buf) / ret_std
-        # obs_mean, obs_std = self.obs_buf.mean(), self.obs_buf.std()
-        # self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
-
+                
+        # Get episode lengths
         episode_lengths: npt.NDArray = np.array(self.episode_lengths_buffer) # TODO this needs to be cleared before can be used
         epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         
@@ -391,7 +387,14 @@ class PPOBuffer:
         
         # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
         assert number_episodes > 0
-        assert numEps > 0
+        assert numEps > 0        
+        
+        # the next two lines implement the advantage normalization trick
+        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
+        
+        # Reset pointers and episode lengths buffer
+        self.quick_reset()        
         
         # data = dict(
         #     obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
