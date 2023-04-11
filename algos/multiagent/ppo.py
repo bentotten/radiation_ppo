@@ -378,19 +378,18 @@ class PPOBuffer:
         assert self.ptr == self.max_size  # buffer has to be full before you can get
                 
         # Get episode lengths
-        episode_lengths: npt.NDArray = np.array(self.episode_lengths_buffer) # TODO this needs to be cleared before can be used
-        epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
+        episode_lengths: List[int] = self.episode_lengths_buffer # TODO this needs to be cleared before can be used
+        #epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
         
         number_episodes = len(episode_lengths)
-        numEps = len(epLens)
+        #numEps = len(epLens)
         
-        # TODO clear prior episode length buffer
         total_episode_length = sum(episode_lengths)
-        epLenTotal = sum(epLens)
+        #epLenTotal = sum(epLens)
         
         # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
         assert number_episodes > 0
-        assert numEps > 0        
+        #assert numEps > 0        
         
         # the next two lines implement the advantage normalization trick
         adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
@@ -399,27 +398,28 @@ class PPOBuffer:
         # Reset pointers and episode lengths buffer
         self.quick_reset()        
         
-        # data = dict(
-        #     obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
-        #     act=torch.as_tensor(self.act_buf, dtype=torch.float32),
-        #     ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
-        #     adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
-        #     logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-        #     loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
-        #     ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
-        #     ep_form = []
-        # )           
-        
         data = dict(
             obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
             act=torch.as_tensor(self.act_buf, dtype=torch.float32),
             ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
             adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
             logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # for location prediction, but is never updated
-            ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
+            loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+            ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
             ep_form = []
-        )     
+        )           
+        
+        # Original
+        # data = dict(
+        #     obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
+        #     act=torch.as_tensor(self.act_buf, dtype=torch.float32),
+        #     ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
+        #     adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
+        #     logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
+        #     loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # for location prediction, but is never updated
+        #     ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
+        #     ep_form = []
+        # )     
 
         # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that numEps is the correct size.
         # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
@@ -430,10 +430,10 @@ class PPOBuffer:
 
         # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that numEps is the correct size.
         # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
-        epLenSize = (
-            numEps
-            + int(epLenTotal != len(self.obs_buf))
-        )
+        # epLenSize = (
+        #     numEps
+        #     + int(epLenTotal != len(self.obs_buf))
+        # )
         
         obs_buf = np.hstack(
             (
@@ -446,27 +446,43 @@ class PPOBuffer:
             )
         )
         
-        episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)] # TODO investigate why this does not work for pop operation
-        epForm: List[List[torch.Tensor]] = [[] for _ in range(epLenSize)]
+        episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)] 
+        #epForm: List[List[torch.Tensor]] = [[] for _ in range(epLenSize)]
         
         slice_b: int = 0
         slice_f: int = 0
         jj: int = 0
-        
+
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
-        for ep_i in epLens:
+        for ep_i in episode_lengths:
             slice_f += ep_i
-            epForm[jj].append(
+            episode_form[jj].append(
                 torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
             )
             slice_b += ep_i
             jj += 1
         if slice_f != len(self.obs_buf):
-            epForm[jj].append(
+            episode_form[jj].append(
                 torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
             )
 
-        data["ep_form"] = epForm
+        data["ep_form"] = episode_form
+
+        # original        
+        # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
+        # for ep_i in epLens:
+        #     slice_f += ep_i
+        #     epForm[jj].append(
+        #         torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
+        #     )
+        #     slice_b += ep_i
+        #     jj += 1
+        # if slice_f != len(self.obs_buf):
+        #     epForm[jj].append(
+        #         torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+        #     )
+
+        #data["ep_form"] = epForm
 
         return data
 
@@ -687,7 +703,8 @@ class AgentPPO:
             return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
          
         # Get data from buffers
-        data: Dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
+        #data: Dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
+        data: Dict[str, torch.Tensor] = self.ppo_buffer.get() 
         
         # NOTE: Not using observation tensor for CNN, using internal map buffer     
 

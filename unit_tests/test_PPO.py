@@ -481,7 +481,6 @@ class Test_PPOBuffer:
         for result, to_test in zip(manual_gae, buffer.adv_buf):
             assert result == pytest.approx(to_test)                                                             
         
-    
     def test_get(self, init_parameters)-> None:
         pass
 
