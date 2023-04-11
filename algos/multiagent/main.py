@@ -474,7 +474,6 @@ def main() -> None:
             steps_per_episode=args.steps_per_episode,
             number_of_agents=args.agent_count,
             env_height=env.search_area[2][1],
-            seed=args.seed,        
             actor_critic_args=ac_kwargs,
             actor_critic_architecture=args.net_type,
             minibatch=args.minibatches,

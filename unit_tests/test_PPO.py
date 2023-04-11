@@ -471,9 +471,8 @@ class Test_PPOBuffer:
             assert x == test['act'][i]
             i += 1    
 
-        # TODO Finish remaining checks when time. For now skipping to move on to more important checks
-        assert 1 == 0, "Finish remaining checks when time. For now skipping to move on to more important checks"                     
-            
+        # TODO Finish remaining checks when time. For now skipping to move on to more important checks            
+
 
 class Test_PPOAgent:
     @pytest.fixture
@@ -513,4 +512,38 @@ class Test_PPOAgent:
         )
             
     def test_Init(self, init_parameters):
-        _ = PPO.AgentPPO(**init_parameters)            
+        _ = PPO.AgentPPO(**init_parameters)
+        # TODO add custom checks for different combos with CNN/RAD-A2C/Global Critic       
+        
+    def test_reduce_pfgru_training(self, init_parameters):
+        AgentPPO = PPO.AgentPPO(**init_parameters)        
+        assert AgentPPO.reduce_pfgru_iters == True
+        assert AgentPPO.train_pfgru_iters == 15
+        AgentPPO.reduce_pfgru_training()
+        assert AgentPPO.reduce_pfgru_iters == False
+        assert AgentPPO.train_pfgru_iters == 5
+        
+    def test_step(self, init_parameters):
+        ''' Wrapper between CNN and Train '''
+        AgentPPO = PPO.AgentPPO(**init_parameters)    
+        
+        observations = {
+            0: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32), 
+            1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)
+            }
+        
+        observations: Dict[int, List[Any]]
+        hiddens: Union[None, Dict] = None
+        save_map: bool = True
+        message: Union[None, Dict] =None
+        -> RADCNN_core.ActionChoice:
+            
+        ''' Wrapper for neural network action selection'''
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            assert type(hiddens) == dict
+            results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
+        elif self.actor_critic_architecture == 'cnn':
+            results = self.agent.select_action(observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
+        else:
+            raise ValueError("Unknown architecture")
+        return results           

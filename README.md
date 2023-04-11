@@ -64,9 +64,10 @@ The evaluation portion of this codebase has been set up to work with [Ray Cluste
 - Unit tests
 - Fix reward scheme to only use one agent reward for team-mode 
 - Make critic only take combined agent locations map and only update once per epoch instead of once per agent for Team mode
+- Move maps buffer into PPO buffer class
 
 ## Desired Patches
 
-- Move maps buffer into PPO buffer class
 - Switch to leaky ReLU
 - Add PFGRU and new map
+- [done] Get logger out of PPO

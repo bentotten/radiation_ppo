@@ -15,12 +15,10 @@ from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Di
 import scipy.signal # type: ignore
 
 try:
-    import NeuralNetworkCores.FF_core as RADFF_core # type: ignore 
     import NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore  
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from epoch_logger import EpochLogger # type: ignore
 except ModuleNotFoundError:
-    import algos.multiagent.NeuralNetworkCores.FF_core as RADFF_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from algos.multiagent.epoch_logger import EpochLogger 
@@ -528,7 +526,7 @@ class AgentPPO:
     env_height: float
     actor_critic_args: Dict[str, Any]
     actor_critic_architecture: str = field(default="cnn")    
-    seed: int = field(default= 0)
+    #seed: int = field(default= None)
     minibatch: int = field(default=1)    
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
@@ -545,7 +543,7 @@ class AgentPPO:
     lam: float = field(default= 0.9)
     
     # Initialized elsewhere
-    agent: Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic, RADFF_core.PPO] = field(init=False)
+    agent: Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic] = field(init=False)
 
     def __post_init__(self):
         ''' Initialize Agent's neural network architecture'''
@@ -608,15 +606,13 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, standardized_observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, save_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
+    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, save_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
         ''' Wrapper for neural network action selection'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
-            results = self.agent.step(standardized_observations[self.id], hidden=hiddens[self.id]) # type: ignore
+            results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
         elif self.actor_critic_architecture == 'cnn':
-            results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
-        elif self.actor_critic_architecture == 'ff':
-            results = self.agent.select_action(standardized_observations, self.id, save_map=save_map)
+            results = self.agent.select_action(observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
         else:
             raise ValueError("Unknown architecture")
         return results         
