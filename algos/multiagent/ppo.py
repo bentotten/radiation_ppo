@@ -369,35 +369,30 @@ class PPOBuffer:
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1] # Remove last non-step element
 
-    def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, Dict]]:
+    def get(self) -> Dict[str, object]:
         """
-        Call this at the end of an epoch to get all of the data from
-        the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
+        Call this at the end of an epoch to get all of the data from buffers. Advantages are normalized/shifted to have mean zero and std one). 
+        Buffer pointers and episode_lengths are reset to start over.
         """
-        assert self.ptr == self.max_size  # buffer has to be full before you can get
+        # Make sure buffers are full
+        assert self.ptr == self.max_size 
                 
         # Get episode lengths
         episode_lengths: List[int] = self.episode_lengths_buffer # TODO this needs to be cleared before can be used
-        #epLens: List[int] = logger.epoch_dict["EpLen"]  # TODO add to a buffer instead of pulling from logger
-        
         number_episodes = len(episode_lengths)
-        #numEps = len(epLens)
-        
         total_episode_length = sum(episode_lengths)
-        #epLenTotal = sum(epLens)
         
-        # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
-        assert number_episodes > 0
-        #assert numEps > 0        
+        assert number_episodes > 0 # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
         
         # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = self.adv_buf.mean(), self.adv_buf.std()
+        adv_mean = self.adv_buf.mean()
+        adv_std = self.adv_buf.std()
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
         
         # Reset pointers and episode lengths buffer
         self.quick_reset()        
         
+        # Convert to tensors
         data = dict(
             obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
             act=torch.as_tensor(self.act_buf, dtype=torch.float32),
@@ -408,33 +403,15 @@ class PPOBuffer:
             ep_len=torch.as_tensor(total_episode_length, dtype=torch.float32),
             ep_form = []
         )           
-        
-        # Original
-        # data = dict(
-        #     obs=torch.as_tensor(self.obs_buf, dtype=torch.float32),
-        #     act=torch.as_tensor(self.act_buf, dtype=torch.float32),
-        #     ret=torch.as_tensor(self.ret_buf, dtype=torch.float32),
-        #     adv=torch.as_tensor(self.adv_buf, dtype=torch.float32),
-        #     logp=torch.as_tensor(self.logp_buf, dtype=torch.float32),
-        #     loc_pred=torch.as_tensor(self.obs_win_std, dtype=torch.float32), # for location prediction, but is never updated
-        #     ep_len=torch.as_tensor(epLenTotal, dtype=torch.float32),
-        #     ep_form = []
-        # )     
 
-        # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that numEps is the correct size.
+        # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that number_episodes is the correct size.
         # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
         episode_len_Size = (
             number_episodes
             + int(total_episode_length != len(self.obs_buf))
         )
-
-        # If they're equal then we don't need to do anything. Otherwise we need to add one to make sure that numEps is the correct size.
-        # This can happen when an episode is cutoff by an epoch stop, thus meaning the number of complete episodes is short by 1.
-        # epLenSize = (
-        #     numEps
-        #     + int(epLenTotal != len(self.obs_buf))
-        # )
         
+        # Stack all tensors into one tensor
         obs_buf = np.hstack(
             (
                 self.obs_buf,
@@ -446,14 +423,13 @@ class PPOBuffer:
             )
         )
         
+        # Save in a giant tensor
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)] 
-        #epForm: List[List[torch.Tensor]] = [[] for _ in range(epLenSize)]
         
+        # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this        
         slice_b: int = 0
         slice_f: int = 0
         jj: int = 0
-
-        # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         for ep_i in episode_lengths:
             slice_f += ep_i
             episode_form[jj].append(
@@ -467,22 +443,6 @@ class PPOBuffer:
             )
 
         data["ep_form"] = episode_form
-
-        # original        
-        # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
-        # for ep_i in epLens:
-        #     slice_f += ep_i
-        #     epForm[jj].append(
-        #         torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
-        #     )
-        #     slice_b += ep_i
-        #     jj += 1
-        # if slice_f != len(self.obs_buf):
-        #     epForm[jj].append(
-        #         torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
-        #     )
-
-        #data["ep_form"] = epForm
 
         return data
 
@@ -967,7 +927,7 @@ class AgentPPO:
         # Initial values and compatability
         args: BpArgs = self.bp_args
         ep_form = data["ep_form"]
-        source_loc_idx = 15
+        source_loc_idx = 15 # src_tar is location estimate
         o_idx = 3
         
         # Put into training mode        
@@ -984,7 +944,7 @@ class AgentPPO:
                 src_tar: torch.Tensor = ep[0][:, source_loc_idx:].clone()
                 src_tar[:, :2] = src_tar[:, :2] / args.area_scale
                 obs_t = torch.as_tensor(ep[0][:, :o_idx], dtype=torch.float32)
-                loc_pred = torch.empty_like(src_tar)
+                loc_pred = torch.empty_like(src_tar) # src_tar is location estimate
                 particle_pred = torch.empty(
                     (sl, self.agent.model.num_particles, src_tar.shape[1]) 
                 )

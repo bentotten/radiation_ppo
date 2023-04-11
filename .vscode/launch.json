@@ -70,7 +70,7 @@
         // "--agent-count",
         // "2",
         "--steps-per-epoch",
-        "30",
+        "20",
         "--steps-per-episode",
         "10",
         // "--epochs",
