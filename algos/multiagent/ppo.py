@@ -338,18 +338,16 @@ class PPOBuffer:
         """
         self.episode_lengths_buffer.append(episode_length)
             
-    def finish_path(self, last_state_value: int = 0) -> None:
+    def GAE_discount_cumsum_and_rewardsToGo(self, last_state_value: float = 0.0) -> None:
         """
-        Call this at the end of a trajectory when max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started, 
+        Call this at the end of a trajectory when an episode has ended or the max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started, 
         and uses rewards and value estimates from the whole trajectory to compute advantage estimates with GAE-Lambda, as well as compute the rewards-to-go for each state, 
-        to use as the targets for the value function.
+        to use as the targets for the value function. The last state value allows us to bootstrap the reward-to-go calculation to account for timesteps beyond the arbitrary episode horizon 
+        (or epoch cutoff).
 
-        The "last_val" argument should be 0 if the trajectory ended
-        because the agent reached a terminal state (found source), and otherwise
-        should be V(s_T), the value function estimated for the last state.
-        This allows us to bootstrap the reward-to-go calculation to account
-        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
-        
+        :param last_state_value: (float) last state value encountered. Should be 0 if the trajectory ended because the agent reached a terminal state (found source), and otherwise should 
+            be V(s_T), the value function estimated state-value for the last state.
+
         Note: Nice description of GAE choices: https://github.com/openai/spinningup/issues/349
         """
 
