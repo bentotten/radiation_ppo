@@ -343,7 +343,10 @@ class PPOBuffer:
         Call this at the end of a trajectory when an episode has ended or the max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started, 
         and uses rewards and value estimates from the whole trajectory to compute advantage estimates with GAE-Lambda, as well as compute the rewards-to-go for each state, 
         to use as the targets for the value function. The last state value allows us to bootstrap the reward-to-go calculation to account for timesteps beyond the arbitrary episode horizon 
-        (or epoch cutoff).
+        (or epoch cutoff). Updates the advantage buffer and the return buffer.
+        
+        Advantage: roughly how advantageous it is to be in a particular state (see: https://arxiv.org/abs/1506.02438)
+        Rewards to go: Instead of the expected return, the sum of the discounted rewards from the time t to the end of the episode.
 
         :param last_state_value: (float) last state value encountered. Should be 0 if the trajectory ended because the agent reached a terminal state (found source), and otherwise should 
             be V(s_T), the value function estimated state-value for the last state.
@@ -351,19 +354,23 @@ class PPOBuffer:
         Note: Nice description of GAE choices: https://github.com/openai/spinningup/issues/349
         """
 
-        path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_state_value) # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
-        vals = np.append(self.val_buf[path_slice], last_state_value) # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
+        # Choose only relevant section of buffers
+        path_slice: slice = slice(self.path_start_idx, self.ptr)        
+        rews: npt.NDArray[np.float64] = np.append(self.rew_buf[path_slice], last_state_value) # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
+        vals: npt.NDArray[np.float64] = np.append(self.val_buf[path_slice], last_state_value) # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
         
-        # the next two lines implement GAE-Lambda advantage calculation
-        # gamma determines scale of value function, introduces bias regardless of VF accuracy
+        # GAE-Lambda advantage calculation. Gamma determines scale of value function, introduces bias regardless of VF accuracy (similar to discount) and
         # lambda introduces bias when VF is inaccurate
-        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        gae = discount_cumsum(deltas, self.gamma * self.lam)
-        self.adv_buf[path_slice] = gae
+        deltas: npt.NDArray[np.float64] = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
+        GAE = discount_cumsum(deltas, self.gamma * self.lam)
+        self.adv_buf[path_slice] = GAE
 
         # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = discount_cumsum(rews, self.gamma)[:-1] # Remove last non-step element
+        r2g = discount_cumsum(rews, self.gamma)
+        
+        # TODO follow up on https://github.com/openai/spinningup/issues/388 and see if this is supposed to be different than regular "rewards to go"
+        r2g_test = discount_cumsum(self.rew_buf[path_slice], self.gamma)
+        self.ret_buf[path_slice] = r2g[:-1] # Remove last non-step element
 
     def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, Dict]]:
         """

@@ -229,7 +229,7 @@ class train_PPO:
         
         # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
-        #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode - there is a finish_path() function that addresses this.
+        #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode.
         for epoch in range(self.total_epochs):
             # Reset hidden layers and sets Actor into "eval" mode. For CNN, resets maps
             hiddens: Dict[int, Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]] = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
@@ -363,7 +363,7 @@ class train_PPO:
                             # Set flag to sample new environment parameters
                             self.env.epoch_end = True 
                     else:
-                        last_state_value = 0  # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) for use in the finish_path() function
+                        last_state_value = 0  # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) for use in the GAE() function
                         
                     # Finish the trajectory and compute advantages. See function comments for more information                        
                     for id, ac in self.agents.items():
