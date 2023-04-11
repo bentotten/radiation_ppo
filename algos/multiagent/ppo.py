@@ -342,8 +342,8 @@ class PPOBuffer:
         """
         Call this at the end of a trajectory when an episode has ended or the max steps per epoch has been reached. This looks back in the buffer to where the history/trajectory started, 
         and uses rewards and value estimates from the whole trajectory to compute advantage estimates with GAE-Lambda, as well as compute the rewards-to-go for each state, 
-        to use as the targets for the value function. The last state value allows us to bootstrap the reward-to-go calculation to account for timesteps beyond the arbitrary episode horizon 
-        (or epoch cutoff). Updates the advantage buffer and the return buffer.
+        to use as the targets for the value function. The last state value allows us to estimate the next reward and include it. 
+        Updates the advantage buffer and the return buffer.
         
         Advantage: roughly how advantageous it is to be in a particular state (see: https://arxiv.org/abs/1506.02438)
         Rewards to go: Instead of the expected return, the sum of the discounted rewards from the time t to the end of the episode.
@@ -367,9 +367,6 @@ class PPOBuffer:
 
         # the next line computes rewards-to-go, to be targets for the value function
         r2g = discount_cumsum(rews, self.gamma)
-        
-        # TODO follow up on https://github.com/openai/spinningup/issues/388 and see if this is supposed to be different than regular "rewards to go"
-        r2g_test = discount_cumsum(self.rew_buf[path_slice], self.gamma)
         self.ret_buf[path_slice] = r2g[:-1] # Remove last non-step element
 
     def get(self, logger=None) -> Dict[str, Union[torch.Tensor, List, Dict]]:

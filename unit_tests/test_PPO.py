@@ -270,8 +270,8 @@ class Test_PPOBuffer:
         assert len(buffer.episode_lengths_buffer) == 1
         assert buffer.episode_lengths_buffer[0] == 7
         
-    def test_GAE_advantage_and_rewardsToGO(self)-> None:        
-        def generalized_advantage_estimate(gamma, lamb, done, rewards, values):
+    def test_GAE_advantage_and_rewardsToGO_hardcoded(self)-> None:        
+        def generalized_advantage_estimate(gamma, lamb, done, rewards, values, last_val):
             """
             gamma: trajectory discount (scalar)
             lamda: exponential mean discount (scalar)
@@ -323,55 +323,130 @@ class Test_PPOBuffer:
                 discounted_reward = rew + discounted_reward * gamma
                 batch_rtgs.insert(0, discounted_reward)
                     
-            return batch_rtgs
+            return batch_rtgs     
 
-        def rewards_to_go2(rewards: np.array, gamma: float) -> np.array:
-            """
-                Calculates the sequence of discounted rewards-to-go.
-                Args:
-                    rewards: the sequence of observed rewards
-                    gamma: the discount factor
-                Returns:
-                    discounted_rewards: the sequence of the rewards-to-go
-            """
-            discounted_rewards = np.empty_like(rewards, dtype=np.float)
-            for i in range(rewards.shape[0]):
-                gammas = np.full(shape=(rewards[i:].shape[0]), fill_value=gamma)
-                discounted_gammas = np.power(gammas, np.arange(rewards[i:].shape[0]))
-                discounted_reward = np.sum(rewards[i:] * discounted_gammas)
-                discounted_rewards[i] = discounted_reward
-            return discounted_rewards
+        # Manual test variables                
+        test = dict(
+            gamma = 0.99,
+            lamb = 0.90,
+            done = np.array([False, False, False, False, False, False, False, False, False, False]),
+            rewards = np.array([-0.46, -0.48, -0.46, -0.45, -0.45, -0.47, -0.48, -0.48, -0.48, -0.49]),
+            values = np.array([-0.26629043, -0.26634163, -0.26718464, -0.26631153, -0.26637784, -0.26601458, -0.26657045, -0.2666973, -0.26680088, -0.26717135]),
+            last_val  = -0.26717135
+        )     
         
-        def rewards_to_go3(rews):
-            n = len(rews)
-            rtgs = np.zeros_like(rews)
-            for i in reversed(range(n)):
-                rtgs[i] = rews[i] + (rtgs[i+1] if i+1 < n else 0)
-            return rtgs            
-
+        manual_gae = generalized_advantage_estimate(**test)[:-1] # Remove last non-step element                
+        rewards = np.append(test['rewards'], test['last_val']).tolist()
+        manual_rewardsToGo = rewards_to_go(batch_rews=rewards, gamma=test['gamma'])[:-1] # Remove last non-step element   
+                        
+        # setup PPO buffer
         init_parameters = dict(
             observation_dimension = 11,
-            max_size = 3,
+            max_size = 10,
             max_episode_length = 2,
             number_agents = 2
         )
-                                    
-        buffer = PPO.PPOBuffer(**init_parameters)
-          
-        # Manual test variables
-        gamma = 0.99
-        lamb = 0.90
-        done = np.asarray([False, False])
-        values = np.asarray([-0.4, -0.4, 0.3])
-        rewards =[-1, -1, -1]
         
-        # Manually setup buffer
+        buffer = PPO.PPOBuffer(**init_parameters)
+                       
+        buffer.rew_buf = test['rewards']
+        buffer.val_buf = test['values']
+        buffer.ptr = 10
+             
+        buffer.GAE_advantage_and_rewardsToGO(last_state_value=test['last_val'])
+        
+        for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
+            assert result == pytest.approx(to_test)         
+            
+        for result, to_test in zip(manual_gae, buffer.adv_buf):
+            assert result == pytest.approx(to_test)    
+
+    def test_GAE_advantage_and_rewardsToGO_with_storage(self)-> None:        
+        def generalized_advantage_estimate(gamma, lamb, done, rewards, values, last_val):
+            """
+            gamma: trajectory discount (scalar)
+            lamda: exponential mean discount (scalar)
+            values: value function results for each step
+            rewards: rewards for each step
+            done: flag for end of episode (ensures advantage only calculated for single epsiode, when multiple episodes are present)
+            
+            Thank you to https://nn.labml.ai/rl/ppo/gae.html
+            """
+            batch_size = done.shape[0]
+
+            advantages = np.zeros(batch_size + 1)
+            
+            last_advantage = 0
+            last_value = values[-1]
+
+            for t in reversed(range(batch_size)):
+                # Make mask to filter out values by episode
+                mask = 1.0 - done[t] # convert bools into variable to multiply by
+                
+                # Apply terminal mask to values and advantages 
+                last_value = last_value * mask
+                last_advantage = last_advantage * mask
+                
+                # Calculate deltas
+                delta = rewards[t] + gamma * last_value - values[t]
+
+                # Get last advantage and add to proper element in advantages array
+                last_advantage = delta + gamma * lamb * last_advantage                
+                advantages[t] = last_advantage
+                
+                # Get new last value
+                last_value = values[t]
+                
+            return advantages
+
+        def rewards_to_go(batch_rews, gamma):
+            ''' 
+            Calculate the rewards to go. Gamma is the discount factor.
+            Thank you to https://medium.com/swlh/coding-ppo-from-scratch-with-pytorch-part-2-4-f9d8b8aa938a
+            '''
+            # The rewards-to-go (rtg) per episode per batch to return and the shape will be (num timesteps per episode).
+            batch_rtgs = [] 
+            
+            # Iterate through each episode backwards to maintain same order in batch_rtgs
+            discounted_reward = 0 # The discounted reward so far
+            
+            for rew in reversed(batch_rews):
+                discounted_reward = rew + discounted_reward * gamma
+                batch_rtgs.insert(0, discounted_reward)
+                    
+            return batch_rtgs     
+
+        # Manual test variables                
+        test = dict(
+            gamma = 0.99,
+            lamb = 0.90,
+            done = np.array([False, False, False]),
+            rewards = np.array([-0.46, -0.48, -0.46]),
+            values = np.array([-0.26629043, -0.26634163, -0.26718464]),
+            last_val  = -0.26718464
+        )     
+        
+        manual_gae = generalized_advantage_estimate(**test)[:-1] # Remove last non-step element                
+        rewards = np.append(test['rewards'], test['last_val']).tolist()
+        manual_rewardsToGo = rewards_to_go(batch_rews=rewards, gamma=test['gamma'])[:-1] # Remove last non-step element   
+                        
+        # setup PPO buffer
+        init_parameters = dict(
+            observation_dimension = 11,
+            max_size = 10,
+            max_episode_length = 2,
+            number_agents = 2
+        )
+        
+        buffer = PPO.PPOBuffer(**init_parameters)
+            
+        # Prime buffer
         # 1st step: 
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
             act=0,
-            rew=rewards[0],
-            val=values[0],
+            rew=test['rewards'][0],
+            val=test['values'][0],
             logp=0,
             src=np.zeros((1,2), dtype=np.float32),
             full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
@@ -380,8 +455,8 @@ class Test_PPOBuffer:
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
             act=0,
-            rew=rewards[1],
-            val=values[1],
+            rew=test['rewards'][1],
+            val=test['values'][1],
             logp=0,
             src=np.zeros((1,2), dtype=np.float32),
             full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
@@ -390,39 +465,21 @@ class Test_PPOBuffer:
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
             act=0,
-            rew=rewards[2],
-            val=values[2],
+            rew=test['rewards'][2],
+            val=test['values'][2],
             logp=0,
             src=np.zeros((1,2), dtype=np.float32),
             full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
-        )                     
-             
-        # Get GAE and r2g
-        manual_gae = generalized_advantage_estimate(gamma=gamma, lamb=lamb, done=done, rewards= np.asarray(rewards), values=values)     
-        manual_rewardsToGo = rewards_to_go(batch_rews=rewards, gamma=gamma)
-        manual_rewardsToGo2 = rewards_to_go2(rewards=np.asarray(rewards), gamma=gamma)
-        manual_rewardsToGo3 = rewards_to_go3(rews=rewards)
+        )               
+              
+              
+        buffer.GAE_advantage_and_rewardsToGO(last_state_value=test['last_val'])
         
-        buffer.GAE_advantage_and_rewardsToGO(last_state_value=values[-1])
-
-        for result, to_test in zip(manual_rewardsToGo, manual_rewardsToGo2):
-            assert result == pytest.approx(to_test) 
-            
         for result, to_test in zip(manual_rewardsToGo, buffer.ret_buf):
             assert result == pytest.approx(to_test)         
             
         for result, to_test in zip(manual_gae, buffer.adv_buf):
-            assert result == pytest.approx(to_test)        
-                            
-        # Input: vector x,
-        #     [x0,
-        #     x1,
-        #     x2]
-
-        # Output:
-        #     [x0 + discount * x1 + discount^2 * x2,
-        #     x1 + discount * x2,
-        #     x2]                                 
+            assert result == pytest.approx(to_test)                                                             
         
     
     def test_get(self, init_parameters)-> None:
