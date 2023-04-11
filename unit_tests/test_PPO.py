@@ -122,7 +122,7 @@ class Test_PPOBuffer:
         ''' Set up initialization parameters needed to test discount_cumsum '''
         return dict(
             observation_dimension = 11,
-            max_size = 3,
+            max_size = 2,
             max_episode_length = 2,
             number_agents = 2
         )
@@ -131,6 +131,7 @@ class Test_PPOBuffer:
         _ = PPO.PPOBuffer(**init_parameters)    
 
     def test_store(self, init_parameters)-> None:
+        # Instatiate
         buffer = PPO.PPOBuffer(**init_parameters)    
         
         # Set up step results
@@ -155,22 +156,22 @@ class Test_PPOBuffer:
         )
         
         # Check stored correctly
-        assert buffer.obs_buf.shape == (3,11)
+        assert buffer.obs_buf.shape == (2,11)
         assert np.array_equal(buffer.obs_buf[0], obs)
         
-        assert buffer.act_buf.shape == (3,)
+        assert buffer.act_buf.shape == (2,)
         assert buffer.act_buf[0] == act
         
-        assert buffer.rew_buf.shape == (3,)
+        assert buffer.rew_buf.shape == (2,)
         assert buffer.rew_buf[0] == pytest.approx(rew)
         
-        assert buffer.val_buf.shape == (3,)
+        assert buffer.val_buf.shape == (2,)
         assert buffer.val_buf[0] == pytest.approx(val)
         
-        assert buffer.source_tar.shape == (3,2)
+        assert buffer.source_tar.shape == (2,2)
         assert np.array_equal(buffer.source_tar[0], src)      
         
-        assert buffer.logp_buf.shape == (3,)
+        assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[0] == pytest.approx(logp)
         
         for agent_id, agent_obs in full_obs.items():
@@ -203,22 +204,22 @@ class Test_PPOBuffer:
         )
         
         # Check stored correctly
-        assert buffer.obs_buf.shape == (3,11)
+        assert buffer.obs_buf.shape == (2,11)
         assert np.array_equal(buffer.obs_buf[1], obs)
         
-        assert buffer.act_buf.shape == (3,)
+        assert buffer.act_buf.shape == (2,)
         assert buffer.act_buf[1] == act
         
-        assert buffer.rew_buf.shape == (3,)
+        assert buffer.rew_buf.shape == (2,)
         assert buffer.rew_buf[1] == pytest.approx(rew)
         
-        assert buffer.val_buf.shape == (3,)
+        assert buffer.val_buf.shape == (2,)
         assert buffer.val_buf[1] == pytest.approx(val)
         
-        assert buffer.source_tar.shape == (3,2)
+        assert buffer.source_tar.shape == (2,2)
         assert np.array_equal(buffer.source_tar[1], src)      
         
-        assert buffer.logp_buf.shape == (3,)
+        assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[1] == pytest.approx(logp)
         
         for agent_id, agent_obs in full_obs.items():
@@ -237,7 +238,19 @@ class Test_PPOBuffer:
                 assert np.array_equal(buffer.full_observation_buffer[i][id], test)        
 
         # Check pointer updated
-        assert buffer.ptr == 2        
+        assert buffer.ptr == 2
+        
+        # Check failure when ptr exceeds max_size
+        with pytest.raises(AssertionError):
+            buffer.store(
+                obs=obs,
+                act=act,
+                rew=rew,
+                val=val,
+                logp=logp,
+                src=src,
+                full_observation=full_obs
+            )           
 
     def test_store_episode_length(self, init_parameters)-> None:
         pass
