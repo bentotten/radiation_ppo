@@ -746,8 +746,15 @@ class AgentPPO:
                 
                 # Get indexes of episodes that will be sampled
                 sample_indexes = sample(self, data=data)
+                
+                # Get mapstack [NEW! Needs testing!]
+                mapstacks = self.generate_mapstacks()
+                # TODO SAVE TERMINALS SO KNOW IF NEED TO RESET MAPS!         
+                #TODO make seperate mapstack for critic that only has one location map!
+                
+                
                 #actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes)
+                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=mapstacks)
                 
                 # Check Actor KL Divergence
                 if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
@@ -801,7 +808,7 @@ class AgentPPO:
                 VarExplain=0 # TODO what is this?
             )        
     
-    def compute_batched_losses_pi(self, sample, data, minibatch = None):
+    def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
         
         # TODO make more concise 
@@ -816,7 +823,7 @@ class AgentPPO:
             # Reset existing episode maps
             self.reset_neural_nets()     
             self.agent.clear_maps()                      
-            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index)
+            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index, mapstack=mapstacks_buffer[index])
             
             pi_loss_list.append(single_pi_l)
             kl_list.append(single_pi_info['kl'])
@@ -832,7 +839,7 @@ class AgentPPO:
         }
         return results
 
-    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int):
+    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int, map_stack: torch.Tensor):
         ''' 
             Compute loss for actor network. Loss is the difference between the probability of taking the action according to the current policy
             and the probability of taking the action according to the old policy, multiplied by the advantage of the action.
@@ -858,9 +865,7 @@ class AgentPPO:
         # NOTE: Not using observation tensor, using internal map buffer
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
         
-        # Get mapstack [NEW! Needs testing!]
-        map_stack = self.agent.get_map_stack(state_observation=self.ppo_buffer.full_observation_buffer[index], id=self.id)
-        #TODO make seperate mapstack for critic that only has one location map!
+        map_stack = self.agent.get_map_stack(state_observation=map_stack, id=self.id)
 
         # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
@@ -1144,6 +1149,9 @@ class AgentPPO:
             term,
             (self.env_height * loc - (src_tar)).square().mean().sqrt(),
         )  # type: ignore
+
+    def generate_mapstacks():
+        
 
     def get_map_dimensions(self):
         return self.agent.get_map_dimensions()
