@@ -930,7 +930,7 @@ class Critic(nn.Module):
         :param batches: (int) Number of observation mapstacks to be processed - each step in the environment yields one mapstack. Defaults to 1.
         :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5.
     '''    
-    def __init__(self, map_dim, batches: int=1, map_count: int=5):
+    def __init__(self, map_dim, batches: int=1, map_count: int=4):
         super(Critic, self).__init__()    
             
         # TODO better to send one location map for all agents through or two separate maps?
