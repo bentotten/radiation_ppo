@@ -456,7 +456,6 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()    
         
-        
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.

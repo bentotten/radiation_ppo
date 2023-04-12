@@ -476,67 +476,31 @@ class Test_MapBuffer:
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
         
         # Test normal first update
-        maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=[])
+        maps._update_current_agent_location_map(current_coordinates=(0, 1))
         assert maps.location_map[0][1] == 1.0
         flat = np.delete(maps.location_map.ravel(), 1)
-        assert flat.max() == 0.0
-        
-        # Test normal second update
-        maps._update_current_agent_location_map(current_coordinates=(0, 0), last_coordinates=(0,1))
-        assert maps.location_map[0][1] == 0.0
-        assert maps.location_map[0][0] == 1.0
-        flat = np.delete(maps.location_map.ravel(), 0)
-        assert flat.max() == 0.0
-        
-        # Test invalid updates
-        with pytest.raises(AssertionError):
-            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=[])  # No last coordinate passed
-            
-        with pytest.raises(AssertionError):
-            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=(0,2))  # Last coordinate passed to wrong location         
+        assert flat.max() == 0.0 
             
         with pytest.raises(AssertionError):
             maps.location_map[2][2] = 2
-            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=(0,0))  # Maximum value exceeded      
+            maps._update_current_agent_location_map(current_coordinates=(0, 1))  # Maximum value exceeded      
     
     def test_update_other_agent_locations_map(self, init_parameters):
         ''' Test other agent locations map update '''
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
         
         # Test normal first update
-        maps._update_other_agent_locations_map(current_coordinates=(0, 1), last_coordinates=[])
+        maps._update_other_agent_locations_map(current_coordinates=(0, 1))
         assert maps.others_locations_map[0][1] == 1.0
         flat = np.delete(maps.others_locations_map.ravel(), 1)
         assert flat.max() == 0.0
         
-        maps._update_other_agent_locations_map(current_coordinates=(0, 2), last_coordinates=[])
+        maps._update_other_agent_locations_map(current_coordinates=(0, 2))
         assert maps.others_locations_map[0][2] == 1.0
         flat = maps.others_locations_map.ravel()
         flat_t1 = np.delete(flat, 2)
         flat_t2 = np.delete(flat_t1, 1)
         assert flat_t2.max() == 0.0
-        
-        # Test normal second update
-        maps._update_other_agent_locations_map(current_coordinates=(0, 0), last_coordinates=(0,1))
-        assert maps.others_locations_map[0][1] == 0.0
-        assert maps.others_locations_map[0][0] == 1.0
-        assert maps.others_locations_map[0][2] == 1.0
-        flat = maps.others_locations_map.ravel()
-        flat_t1 = np.delete(flat, 2)
-        flat_t2 = np.delete(flat_t1, 0)
-        assert flat_t2.max() == 0.0
-        
-        maps._update_other_agent_locations_map(current_coordinates=(0, 3), last_coordinates=(0,2))
-        assert maps.others_locations_map[0][2] == 0.0
-        assert maps.others_locations_map[0][3] == 1.0
-        assert maps.others_locations_map[0][0] == 1.0
-        flat = maps.others_locations_map.ravel()
-        flat_t1 = np.delete(flat, 3)
-        flat_t2 = np.delete(flat_t1, 0)
-        assert flat_t2.max() == 0.0        
-            
-        with pytest.raises(AssertionError):
-            maps._update_other_agent_locations_map(current_coordinates=(0, 1), last_coordinates=(0,7))  # Last coordinate passed to wrong location         
 
     def test_update_readings_map(self, init_parameters)-> None:
         ''' test method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation. '''
@@ -600,7 +564,6 @@ class Test_MapBuffer:
         assert maps.visit_counts_map[0][3] == 1
         assert maps.visit_counts_shadow[(0,3)] == (2 * init_parameters['number_of_agents'] * init_parameters['steps_per_episode'])
         
-        
     def test_update_obstacle_map(self, init_parameters)-> None:
         ''' Test method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle '''
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
@@ -610,13 +573,127 @@ class Test_MapBuffer:
         coordinates_2 = (0, 0)
         
         maps._update_obstacle_map(single_observation=single_observation, coordinates=coordinates)
-        assert maps.obstacles_map[0][1] == pytest.approx(0.95)
+        assert maps.obstacles_map[0][1] == pytest.approx(0.1)
         
         maps._update_obstacle_map(single_observation=single_observation, coordinates=coordinates_2)
-        assert maps.obstacles_map[0][1] == pytest.approx(0.95)
-        assert maps.obstacles_map[0][0] == pytest.approx(0.95)
+        assert maps.obstacles_map[0][1] == pytest.approx(0.1)
+        assert maps.obstacles_map[0][0] == pytest.approx(0.1)
         
+    def test_observation_to_map(self, init_parameters) -> None:
+        ''' Note: Actual math is tested in individual map tests. This checks that proper coordinate was updated '''
+        
+        init_parameters['number_of_agents'] = 3
+        
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        
+        ## Test first update   
+        step1 = maps._deflate_coordinates((0, 1))
+        step2 = maps._deflate_coordinates((0, 2))
+        
+        observations = {
+            0: np.array([1000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32), 
+            1: np.array([1000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32),
+            2: np.array([1000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
+            }     
+            
+        mapstack = maps.observation_to_map(observation=observations, id=0)
+        
+        # Test Locations map
+        assert maps.location_map[0][1] == 1.0
+        assert mapstack[0][0][1] == 1.0        
+        flat = np.delete(maps.location_map.ravel(), 1)
+        assert flat.max() == 0.0
+        flat2 = np.delete(mapstack[0].ravel(), 1)
+        assert flat2.max() == 0.0     
+        
+        # Test Other locations map
+        assert maps.others_locations_map[0][1] == 1.0
+        assert mapstack[1][0][1] == 1.0        
+        assert maps.others_locations_map[0][2] == 1.0
+        assert mapstack[1][0][2] == 1.0
+        flat = maps.others_locations_map.ravel()
+        flat_t1 = np.delete(flat, 1)
+        flat_t2 = np.delete(flat_t1, 1)
+        assert flat_t2.max() == 0.0                 
 
+        # Test Readings map registered - First reading is always 0
+        assert maps.readings_map.max() == 0.0 
+        assert mapstack[2].max() == 0.0
+        
+        # Test Visits count
+        assert maps.visit_counts_map[0][1] > 0.0
+        assert mapstack[3][0][1] > 0.0
+        assert mapstack[3][0][1] == maps.visit_counts_map[0][1]     
+        assert maps.visit_counts_map[0][2] > 0.0
+        assert mapstack[3][0][2] > 0.0
+        assert mapstack[3][0][2] == maps.visit_counts_map[0][2]         
+        assert maps.visit_counts_map[0][1] > maps.visit_counts_map[0][2]
+        
+        # Test Obstacle Map
+        assert maps.obstacles_map[0][1] > 0.0
+        assert mapstack[4][0][1] > 0.0
+        assert maps.obstacles_map[0][2] > 0.0
+        assert mapstack[4][0][2] > 0.0
+                
+        ## Test second update
+        step1 = maps._deflate_coordinates((0, 3))
+        step2 = maps._deflate_coordinates((0, 4))
+        
+        observations = {
+            0: np.array([1000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32), 
+            1: np.array([1000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32),
+            2: np.array([1000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
+            }  
+
+        mapstack = maps.observation_to_map(observation=observations, id=0)
+
+        # Test Locations map
+        assert maps.location_map[0][1] == 0.0
+        assert mapstack[0][0][1] == 0.0        
+        assert maps.location_map[0][3] == 1.0
+        assert mapstack[0][0][3] == 1.0    
+        
+        # Test Other locations map
+        assert maps.others_locations_map[0][1] == 0.0
+        assert mapstack[1][0][1] == 0.0        
+        assert maps.others_locations_map[0][2] == 0.0
+        assert mapstack[1][0][2] == 0.0     
+        assert maps.others_locations_map[0][3] == 1.0
+        assert mapstack[1][0][3] == 1.0        
+        assert maps.others_locations_map[0][4] == 1.0
+        assert mapstack[1][0][4] == 1.0                     
+
+        # Test Readings map registered - Actual math tested in individual unit test
+        assert maps.readings_map[0][1] > 0.0
+        assert mapstack[2][0][1] > 0.0       
+        assert maps.readings_map[0][2] > 0.0
+        assert mapstack[2][0][2] > 0.0     
+        assert maps.readings_map[0][3] > 0.0
+        assert mapstack[2][0][3] > 0.0     
+        assert maps.readings_map[0][4] > 0.0
+        assert mapstack[2][0][4] > 0.0     
+        
+        # Test Visits count
+        assert maps.visit_counts_map[0][1] > 0.0
+        assert mapstack[3][0][1] > 0.0       
+        assert maps.visit_counts_map[0][2] > 0.0
+        assert mapstack[3][0][2] > 0.0     
+        assert maps.visit_counts_map[0][3] > 0.0
+        assert mapstack[3][0][3] > 0.0     
+        assert maps.visit_counts_map[0][4] > 0.0
+        assert mapstack[3][0][4] > 0.0     
+        
+        # Test Obstacle Map
+        assert maps.obstacles_map[0][1] > 0.0
+        assert mapstack[4][0][1] > 0.0       
+        assert maps.obstacles_map[0][2] > 0.0
+        assert mapstack[4][0][2] > 0.0     
+        assert maps.obstacles_map[0][3] > 0.0
+        assert mapstack[4][0][3] > 0.0     
+        assert maps.obstacles_map[0][4] > 0.0
+        assert mapstack[4][0][4] > 0.0      
+            
+                 
 class Test_Actor:
     @pytest.fixture
     def init_parameters(self)-> dict:
