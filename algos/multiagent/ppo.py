@@ -814,7 +814,8 @@ class AgentPPO:
         # Get sampled returns from actor and critic
         for index in sample:
             # Reset existing episode maps
-            self.reset_neural_nets()                           
+            self.reset_neural_nets()     
+            self.agent.clear_maps()                      
             single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index)
             
             pi_loss_list.append(single_pi_l)

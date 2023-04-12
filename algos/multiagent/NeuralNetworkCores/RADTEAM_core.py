@@ -384,7 +384,7 @@ class MapsBuffer:
     #:  number of agents.
     base: int = field(init=False) 
         
-    # Maps
+    # Blank Maps
     #: Number of maps
     map_count: int = field(init=False, default=5)
     #: Location Map: a 2D matrix showing the individual agent's location.
@@ -397,9 +397,22 @@ class MapsBuffer:
     obstacles_map: Map = field(init=False) 
     #: Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
     visit_counts_map: Map = field(init=False) 
+
+    
+    # Sparse Matrices - so that maps can be made out-of-order without jacking up values
+    #: Location Matrix: tracks the individual agent's location.
+    location_matrix: Dict = field(default_factory=lambda: dict())     
+    #: Other Locations Matrix: tracks the number of agents located in each grid element (excluding current agent).    
+    others_locations_matrix: Dict = field(default_factory=lambda: dict())     
+    #: Readings Matrix:  tracks the last estimated reading in each grid square - unvisited squares are given a reading of 0.
+    readings_matrix: Dict = field(default_factory=lambda: dict())     
+    #: Obstacles Matrix:  tracks how far from an obstacle each agent was when they detected it
+    obstacles_matrix: Dict = field(default_factory=lambda: dict())     
+    #: Visit Counts Matrix:  tracks the number of visits to each grid square from all agents combined.
+    visit_counts_matrix: Dict = field(default_factory=lambda: dict())     
     #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization to reduce computational complexity and python floating 
     #:  point precision errors, it is "cheaper" to calculate the log on the fly with a second sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
-    visit_counts_shadow: Dict = field(default_factory=lambda: dict()) 
+    visit_counts_shadow: Dict = field(default_factory=lambda: dict())     
     
     # Buffers
     #: Data preprocessing tools for standardization, normalization, and estimating values in order to input into a observation map.
@@ -418,24 +431,45 @@ class MapsBuffer:
         self.y_limit_scaled: int = self.map_dimensions[1]
         
         # Initialize maps and buffer
-        self.reset()
+        self.full_reset()
 
-    def reset(self)-> None:
-        ''' Method to reset maps AND reset buffers. Often called at the end of an Epoch when updates have been applied and its time for new observations
+    def full_reset(self)-> None:
+        ''' Method to fully reinstatiate maps AND reset matrices. For a faster map reset, call clear_maps().
         '''
         # TODO delete this after moving observation buffer to PPO.
         del self.observation_buffer[:]
-        self.clear_maps()        
+        self.reset_maps()            
+        self.clear_matrices()
+        
+    def reset(self)-> None:
+        ''' Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()
+        '''
+        # TODO delete this after moving observation buffer to PPO.
+        del self.observation_buffer[:]
+        self._clear_maps
+        self.clear_matrices()
 
-    def clear_maps(self)-> None:
-        ''' Method to clear and reset maps. Often called at the end of an episode to reset the maps for a new starting location and source location'''
+    def clear_matrices(self)-> None:
+        ''' Method to clear and reset map matrices and standardization tools. Often called at the end of an episode to reset the maps for a new starting location and source location'''
+        self.location_matrix.clear()
+        self.others_locations_matrix.clear()
+        self.readings_matrix.clear()
+        self.obstacles_matrix.clear()
+        self.visit_counts_matrix.clear()
+            
+        self.visit_counts_shadow.clear()
+        self.tools.reset()    
+        
+    def reset_maps(self)-> None:
+        ''' Fully reinstatiate map matrixes and reset tools. '''
         self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
         self.visit_counts_shadow.clear()
-        self.tools.reset()                
+        self.clear_matrices()
+        self.tools.reset()            
         
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
@@ -445,6 +479,10 @@ class MapsBuffer:
         :param id: (int) Current Agent's ID, used to differentiate between the agent location map and the other agents map.
         :return: Returns a tuple of five 2d map arrays.
         '''
+        # Clear prior values stored in maps for a fresh mapstack. This allows maps to be made out-of-sync with agent execution - important for updates! 
+        # NOTE: If storing mapstacks elsewhere, be sure to make a deep copy! 
+        self._clear_maps()
+        
         # Add intensity readings to readings buffer for estimates
         for obs in observation.values():
             key: Tuple[int, int] = self._inflate_coordinates(obs)
@@ -454,13 +492,17 @@ class MapsBuffer:
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None  
+            #inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None  
             
             # Update Locations maps
             if id == agent_id:
-                self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                #self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                self.location_matrix['coordinates'] = inflated_agent_coordinates
+                self._update_current_agent_location_map(current_coordinates=self.location_matrix['coordinates'])
             else:            
-                self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                #self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                self.others_locations_matrix[id] = inflated_agent_coordinates
+                self._update_current_agent_location_map(current_coordinates=self.others_locations_matrix[id])     
                      
             # Readings and Visits counts maps
             self._update_readings_map(coordinates=inflated_agent_coordinates)
@@ -476,6 +518,28 @@ class MapsBuffer:
         
         return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
 
+    def _clear_maps(self)-> None:
+        ''' Clear values stored in maps from coordinates stored in sparse matrices '''             
+        for i in self.location_matrix:
+            self.location_map[i] = 0 
+        assert (self.location_map.max() == 0 and self.location_map.min() == 0)
+        
+        for i in self.others_locations_matrix:
+            self.others_locations_map[i] = 0    
+        assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)    
+                
+        for i in self.readings_matrix:
+            self.readings_map[i] = 0    
+        assert (self.readings_map.max() == 0 and self.readings_map.min() == 0)    
+            
+        for i in self.obstacles_matrix:
+            self.obstacles_map[i] = 0
+        assert (self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0)    
+            
+        for i in self.visit_counts_matrix:
+            self.visit_counts_map[i] = 0      
+        assert (self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0)    
+                              
     def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
         ''' 
             Method to take a single observation state, extracts the coordinates, then inflates them to the resolution accuracy specified during initialization. Also works with tuple of deflated coordinates.
@@ -502,7 +566,7 @@ class MapsBuffer:
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: (Tuple[int, int]) deflated coordinates
         '''
-        # TODO it would be more convinient for processing to have element 0 and 1 be the x,y coordinates and radiation reading by element 2
+        # TODO it would be more convinient for processing to have element 0 and 1 be the x,y coordinates and radiation reading be element 2
         # Calculate current agent inflated location        
         result: Point
         if isinstance(single_observation, np.ndarray):
@@ -513,7 +577,7 @@ class MapsBuffer:
             raise ValueError("Unsupported type for observation parameter")
         return result         
         
-    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int])-> None:
         ''' 
             Method to update the current agents location observation map. If prior location exists, this is reset to zero.
             
@@ -521,16 +585,16 @@ class MapsBuffer:
             :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent. Note: These must be ints.
             :return: None
         '''
-        if last_coordinates:
-            self.location_map[last_coordinates[0]][last_coordinates[1]] -= 1 
-            assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
-        else:
-            assert self.location_map.max() == 0.0, "Location exists on map however no last coordinates buffer passed for processing."
+        # if last_coordinates:
+        #     self.location_map[last_coordinates[0]][last_coordinates[1]] -= 1 
+        #     assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
+        # else:
+        #     assert self.location_map.max() == 0.0, "Location exists on map however no last coordinates buffer passed for processing."
         self.location_map[current_coordinates[0]][current_coordinates[1]] = 1
         
         assert self.location_map.max() == 1, "Location was updated twice for single agent"
 
-    def _update_other_agent_locations_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+    def _update_other_agent_locations_map(self, current_coordinates: Tuple[int, int])-> None:
         ''' 
             Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
             
@@ -539,12 +603,13 @@ class MapsBuffer:
             :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent to be processed. Note: These must be ints.
             :return: None
         '''
-        if last_coordinates:
-            self.others_locations_map[last_coordinates[0]][last_coordinates[1]] -= 1 
-            # In case agents are at same location, usually the start-point, just ensure was not negative.
-            assert self.others_locations_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
-        else:
-            assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."            
+        # if last_coordinates:
+        #     self.others_locations_map[last_coordinates[0]][last_coordinates[1]] -= 1 
+        #     # In case agents are at same location, usually the start-point, just ensure was not negative.
+        #     assert self.others_locations_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
+        # else:
+        #     assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."  
+                  
         self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location             
 
     def _update_readings_map(self, coordinates: Tuple[int, int], key: Union[Tuple[int, int], None] = None)-> None:
@@ -570,8 +635,12 @@ class MapsBuffer:
         # Normalize radiation reading and save to map
         normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())
         
-        # Save to map
-        self.readings_map[coordinates[0]][coordinates[1]]  = normalized_reading
+        # Save to  matrix
+        self.readings_matrix[coordinates] = normalized_reading
+        
+        # Fill in map
+        for coords, reading in self.readings_matrix.items():
+            self.readings_map[coords[0]][coords[1]]  = reading
 
     def _update_visits_count_map(self, coordinates: Tuple[int, int])-> None:
         ''' 
@@ -590,15 +659,21 @@ class MapsBuffer:
             self.visit_counts_shadow[coordinates] = 2
 
         if SIMPLE_NORMALIZATION:
-            self.visit_counts_map[coordinates[0]][coordinates[1]] = self.tools.normalizer.normalize(current_value=current, max=self.base)
+            normalized_value = self.tools.normalizer.normalize(current_value=current, max=self.base)
         else: 
-            self.visit_counts_map[coordinates[0]][coordinates[1]] = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
+            normalized_value = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
+        
+        # Save to  matrix
+        self.visit_counts_matrix[coordinates] = normalized_value
+        
+        # Fill in map
+        for coords, value in self.visit_counts_matrix.items():
+            self.visit_counts_map[coords[0]][coords[1]] = value        
         
         # Sanity warning
         if self.visit_counts_map[coordinates[0]][coordinates[1]] == 1.0: warnings.warn("Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error")
-        if self.visit_counts_map[coordinates[0]][coordinates[1]] > 1.0: raise Exception(f"Visit count is normalized greater than 1: {self.visit_counts_map[coordinates[0]][coordinates[1]]}")
+        if self.visit_counts_map.max() > 1.0: raise Exception(f"Visit count max is normalized greater than 1: {self.visit_counts_map.max()}")
         
-
     def _update_obstacle_map(self, coordinates: Tuple[int, int], single_observation: np.ndarray)-> None:
         ''' 
             Method to update the obstacle detection observation map. Renders headmap of Agent distance from obstacle. Using two parameters removes unnecessary reinflation step.
@@ -607,12 +682,11 @@ class MapsBuffer:
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: None
         '''
-        min = 1
+        
         for detection in single_observation[self.obstacle_state_offset::]:
             if detection != 0:
-                if detection < min: 
-                    min = detection
-                self.obstacles_map[coordinates[0]][coordinates[1]] = 1.0 - min # Heatmap indicates higher number for closer to obstacle
+                self.obstacles_matrix[coordinates] = max(detection, self.obstacles_matrix[coordinates])
+                self.obstacles_map[coordinates[0]][coordinates[1]] = self.obstacles_matrix[coordinates]
 
 
 class Actor(nn.Module):
@@ -1510,8 +1584,8 @@ class CNNBase:
         self.model.load_model(checkpoint_path=checkpoint_path)  
         
     def clear_maps(self)-> None:
-        ''' Clear all maps for new episode'''
-        self.maps.clear_maps()
+        ''' Clear all map matrices for new episode'''
+        self.maps.clear_matrices()
             
     def reset(self)-> None:
         ''' Reset entire maps buffer '''
