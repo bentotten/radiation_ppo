@@ -293,8 +293,8 @@ def create_parser() -> argparse.ArgumentParser:
         "--resolution-multiplier", type=float, default=0.01, help="Indicate degree of accuracy a heatmap should be downsized to. A value of 1 is full accuracy - not recommended for most training environments (see documentation)"
     )  
     parser.add_argument(
-        "--global-critic", type=bool, default=True, help="Indicate if each agent should have their own critic or a global."
-    )      
+        "--global-critic", action=argparse.BooleanOptionalAction, default=True, help="Indicate if each agent should have their own critic or a global."
+    )    
                   
     # Hyperparameters and PPO parameters
     parser.add_argument(

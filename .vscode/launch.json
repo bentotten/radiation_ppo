@@ -87,12 +87,14 @@
         // "True", // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE
         // "--exp-name",
         // "TEAM-RAD",
-        // "--net-type",
-        // "cnn",
+        "--net-type",
+        "rnn",
         // "--DEBUG",
         // "True",
         // "--save-freq",
         // "1"
+        "--no-global-critic",
+        //"False"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

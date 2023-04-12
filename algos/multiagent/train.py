@@ -127,6 +127,8 @@ class train_PPO:
     GlobalCriticOptimizer: Union[torch.optim.Optimizer, None] = field(default=None)
     
     def __post_init__(self)-> None:  
+        if self.actor_critic_architecture != 'cnn' and (self.global_critic_flag or self.GlobalCritic or self.GlobalCriticOptimizer):
+            raise ValueError("Global critic not supported in RAD-A2C")
         # Set Pytorch random seed
         if self.seed:
             torch.manual_seed(self.seed)
@@ -178,7 +180,7 @@ class train_PPO:
             if self.global_critic_flag:
                 assert self.agents[i].agent.critic is self.GlobalCritic
                 assert self.agents[i].GlobalCriticOptimizer is self.GlobalCriticOptimizer
-            else:
+            elif self.actor_critic_architecture == 'cnn':
                 assert self.agents[i].agent.critic is not self.GlobalCritic
                 if i > 0:
                     assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
@@ -260,7 +262,7 @@ class train_PPO:
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
                 for id, ac in self.agents.items():
-                    agent_thoughts[id] = ac.step(standardized_observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
+                    agent_thoughts[id] = ac.step(observations=standardized_observations, hiddens = hiddens, save_map = True, message=infos)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                     
                 # Create action list to send to environment
