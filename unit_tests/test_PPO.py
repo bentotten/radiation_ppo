@@ -627,7 +627,7 @@ class Test_PPOAgent:
             'grid_bounds': (1, 1), 
             'resolution_multiplier': 0.01, 
             'GlobalCritic': None, 
-            'save_path': ['../../models/train/test/2023-04-11-16:34:26', '2023-04-11-16:34:26_test_agents1_s2']
+            'save_path': ['.', 'unit_test']
             }
                       
         return dict(
@@ -667,18 +667,18 @@ class Test_PPOAgent:
         # Test CNN
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        step = AgentPPO.step(observations=observations, hiddens=hiddens, save_map=save_map, message=message)
+        step = AgentPPO.step(observations=observations, hiddens=hiddens, store_map=save_map, message=message)
         
         # Test RAD-A2c
         init_parameters['actor_critic_architecture'] = 'rnn'
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        step = AgentPPO.step(observations=observations, hiddens=hiddens, save_map=save_map, message=message)
+        step = AgentPPO.step(observations=observations, hiddens=hiddens, store_map=save_map, message=message)
         
         # Test invalid architecture 
         init_parameters['actor_critic_architecture'] = 'foo'
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        step = AgentPPO.step(observations=observations, hiddens=hiddens, save_map=save_map, message=message)        
+        step = AgentPPO.step(observations=observations, hiddens=hiddens, store_map=save_map, message=message)        
 
         #-> RADCNN_core.ActionChoice:

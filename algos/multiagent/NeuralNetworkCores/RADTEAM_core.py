@@ -1380,7 +1380,7 @@ class CNNBase:
         else:
             raise Warning('Invalid mode set for Agent. Agent remains in their original training mode')
                      
-    def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, save_map=True) -> ActionChoice:
+    def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, store_map=True) -> ActionChoice:
         ''' 
             Method to take a multi-agent observation and convert it to maps and store to a buffer. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
@@ -1391,7 +1391,7 @@ class CNNBase:
         try:
             # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
             with torch.no_grad():
-                if save_map:     
+                if store_map:     
                     # TODO Maps are not matching between agents, needs check 
                     (
                         location_map,

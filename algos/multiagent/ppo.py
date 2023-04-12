@@ -606,13 +606,13 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, save_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
+    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, store_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
         ''' Wrapper for neural network action selection'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
             results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
         elif self.actor_critic_architecture == 'cnn':
-            results = self.agent.select_action(observations, self.id, save_map=save_map)  # TODO add in hidden layer shenanagins for PFGRU use
+            results = self.agent.select_action(observations, self.id, store_map=store_map)  # TODO add in hidden layer shenanagins for PFGRU use
         else:
             raise ValueError("Unknown architecture")
         return results         
