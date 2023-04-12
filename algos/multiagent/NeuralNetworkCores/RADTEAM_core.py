@@ -434,18 +434,11 @@ class MapsBuffer:
         self.full_reset()
 
     def full_reset(self)-> None:
-        ''' Method to fully reinstatiate maps AND reset matrices. For a faster map reset, call clear_maps().
-        '''
-        # TODO delete this after moving observation buffer to PPO.
-        del self.observation_buffer[:]
+        ''' Method to fully reinstatiate maps AND reset matrices. For a faster map reset, call clear_maps(). '''
         self._reset_maps()            
         
     def reset(self)-> None:
-        ''' 
-        Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()
-        '''
-        # TODO delete this function after moving observation buffer to PPO.
-        del self.observation_buffer[:]
+        ''' Obsolete method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset() '''
         self.clear_matrices()
 
     def clear_matrices(self)-> None:
