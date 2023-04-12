@@ -480,14 +480,15 @@ class MapsBuffer:
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
             
             # Update Locations maps
-            self._update_combined_agent_locations_map(current_coordinates=self.others_locations_matrix[agent_id])
             if id == agent_id:
                 self.location_matrix['coordinates'] = inflated_agent_coordinates
                 self._update_current_agent_location_map(current_coordinates=self.location_matrix['coordinates'])
+                self._update_combined_agent_locations_map(current_coordinates=self.location_matrix['coordinates'])
             else:            
                 self.others_locations_matrix[agent_id] = inflated_agent_coordinates
                 self._update_other_agent_locations_map(current_coordinates=self.others_locations_matrix[agent_id])     
-                     
+                self._update_combined_agent_locations_map(current_coordinates=self.others_locations_matrix[agent_id])
+                
             # Readings and Visits counts maps
             self._update_readings_map(coordinates=inflated_agent_coordinates)
             self._update_visits_count_map(coordinates=inflated_agent_coordinates)
@@ -499,7 +500,7 @@ class MapsBuffer:
             # Update last coordinates
             self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))          
         
-        return MapStack((self.combined_location_map, self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
+        return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map, self.combined_location_map))
 
     def _clear_maps(self)-> None:
         ''' Clear values stored in maps from coordinates stored in sparse matrices '''
@@ -1459,12 +1460,12 @@ class CNNBase:
         with torch.no_grad():
             # TODO Maps are not matching between agents, needs check 
             (
-                combo_location_map,
                 location_map,
                 others_locations_map,
                 readings_map,
                 visit_counts_map,
-                obstacles_map
+                obstacles_map,
+                combo_location_map                
             ) = self.maps.observation_to_map(state_observation, id)
             
             # Convert map to tensor

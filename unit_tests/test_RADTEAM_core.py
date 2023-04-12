@@ -501,6 +501,23 @@ class Test_MapBuffer:
         flat_t1 = np.delete(flat, 2)
         flat_t2 = np.delete(flat_t1, 1)
         assert flat_t2.max() == 0.0
+        
+    def test_update_combined_agent_locations_map(self, init_parameters):
+        ''' Test other agent locations map update '''
+        maps = RADTEAM_core.MapsBuffer(**init_parameters)
+        
+        # Test normal first update
+        maps._update_combined_agent_locations_map(current_coordinates=(0, 1))
+        assert maps.combined_location_map[0][1] == 1.0
+        flat = np.delete(maps.combined_location_map.ravel(), 1)
+        assert flat.max() == 0.0
+        
+        maps._update_combined_agent_locations_map(current_coordinates=(0, 2))
+        assert maps.combined_location_map[0][2] == 1.0
+        flat = maps.combined_location_map.ravel()
+        flat_t1 = np.delete(flat, 2)
+        flat_t2 = np.delete(flat_t1, 1)
+        assert flat_t2.max() == 0.0        
 
     def test_update_readings_map(self, init_parameters)-> None:
         ''' test method to update the radiation intensity observation map. If prior location exists, this is overwritten with the latest estimation. '''
@@ -596,7 +613,7 @@ class Test_MapBuffer:
             2: np.array([1000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
             }     
             
-        mapstack = maps.observation_to_map(observation=observations, id=0)
+        mapstack = maps.observation_to_map(observation=observations, id=0)      
         
         # Test Locations map
         assert maps.location_map[0][1] == 1.0
@@ -634,6 +651,16 @@ class Test_MapBuffer:
         assert mapstack[4][0][1] > 0.0
         assert maps.obstacles_map[0][2] > 0.0
         assert mapstack[4][0][2] > 0.0
+        
+        # Test combo locations map
+        assert maps.combined_location_map[0][1] == 2.0
+        assert mapstack[5][0][1] == 2.0        
+        assert maps.combined_location_map[0][2] == 1.0
+        assert mapstack[5][0][2] == 1.0
+        flat = maps.combined_location_map.ravel()
+        flat_t1 = np.delete(flat, 1)
+        flat_t2 = np.delete(flat_t1, 1)
+        assert flat_t2.max() == 0.0               
                 
         ## Test second update
         step1 = maps._deflate_coordinates((0, 3))
@@ -687,7 +714,21 @@ class Test_MapBuffer:
         assert maps.obstacles_map[0][3] > 0.0
         assert mapstack[4][0][3] > 0.0     
         assert maps.obstacles_map[0][4] > 0.0
-        assert mapstack[4][0][4] > 0.0      
+        assert mapstack[4][0][4] > 0.0 
+        
+        # Test combo locations map
+        assert maps.combined_location_map[0][1] == 0.0
+        assert mapstack[5][0][1] == 0.0           
+        assert maps.combined_location_map[0][2] == 0.0
+        assert mapstack[5][0][2] == 0.0     
+        assert maps.combined_location_map[0][3] == 2.0
+        assert mapstack[5][0][3] == 2.0                
+        assert maps.combined_location_map[0][4] == 1.0
+        assert mapstack[5][0][4] == 1.0              
+           
+
+        
+            
             
                  
 class Test_Actor:
