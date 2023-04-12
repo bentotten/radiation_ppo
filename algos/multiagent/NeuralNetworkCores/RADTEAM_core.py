@@ -25,7 +25,7 @@ Point = NewType("Point", Tuple[float, float])
 #: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
 Map = NewType("Map", npt.NDArray[np.float32])
 #: [New Type] Mapstack - a Tuple of all existing maps.
-MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map])
+MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map, Map])
 #: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. Type: Dict[str, Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
@@ -387,6 +387,8 @@ class MapsBuffer:
     # Blank Maps
     #: Number of maps
     map_count: int = field(init=False, default=5)
+    # Combined Location Map: a 2D matrix showing all agent locations. Used for the critic
+    combined_location_map: Map = field(init=False) 
     #: Location Map: a 2D matrix showing the individual agent's location.
     location_map: Map = field(init=False) 
     #: Map of Other Locations: a grid showing the number of agents located in each grid element (excluding current agent).    
@@ -455,7 +457,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()    
         
-    def observation_to_map_actor(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
+    def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
         
@@ -476,15 +478,13 @@ class MapsBuffer:
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            #inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None  
             
             # Update Locations maps
+            self._update_combined_agent_locations_map(current_coordinates=self.others_locations_matrix[agent_id])
             if id == agent_id:
-                #self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
                 self.location_matrix['coordinates'] = inflated_agent_coordinates
                 self._update_current_agent_location_map(current_coordinates=self.location_matrix['coordinates'])
             else:            
-                #self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
                 self.others_locations_matrix[agent_id] = inflated_agent_coordinates
                 self._update_other_agent_locations_map(current_coordinates=self.others_locations_matrix[agent_id])     
                      
@@ -497,13 +497,18 @@ class MapsBuffer:
                 self._update_obstacle_map(coordinates=inflated_agent_coordinates, single_observation=observation[agent_id])
                 
             # Update last coordinates
-            self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))
-                        
+            self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))          
         
-        return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
+        return MapStack((self.combined_location_map, self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map))
 
     def _clear_maps(self)-> None:
-        ''' Clear values stored in maps from coordinates stored in sparse matrices '''             
+        ''' Clear values stored in maps from coordinates stored in sparse matrices '''
+        for k, v in self.location_matrix.items():
+            self.combined_location_map[v] = 0 
+        for k, v in self.others_locations_matrix.items():
+            self.combined_location_map[v] = 0 
+        assert (self.combined_location_map.max() == 0 and self.combined_location_map.min() == 0)
+                             
         for k, v in self.location_matrix.items():
             self.location_map[v] = 0 
         assert (self.location_map.max() == 0 and self.location_map.min() == 0)
@@ -526,6 +531,7 @@ class MapsBuffer:
         
     def _reset_maps(self)-> None:
         ''' Fully reinstatiate map matrixes and reset tools. '''
+        self.combined_location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))         
         self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
@@ -570,6 +576,17 @@ class MapsBuffer:
         else:
             raise ValueError("Unsupported type for observation parameter")
         return result         
+
+    def _update_combined_agent_locations_map(self, current_coordinates: Tuple[int, int])-> None:
+        ''' 
+            Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
+            
+            :param id: (int) ID of current agent being processed
+            :param current_coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
+            :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent to be processed. Note: These must be ints.
+            :return: None
+        '''   
+        self.combined_location_map[current_coordinates[0]][current_coordinates[1]] += 1        
         
     def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int])-> None:
         ''' 
@@ -579,13 +596,7 @@ class MapsBuffer:
             :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent. Note: These must be ints.
             :return: None
         '''
-        # if last_coordinates:
-        #     self.location_map[last_coordinates[0]][last_coordinates[1]] -= 1 
-        #     assert self.location_map[last_coordinates[0]][last_coordinates[1]] > -1, "location_map grid coordinate reset where agent was not present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
-        # else:
-        #     assert self.location_map.max() == 0.0, "Location exists on map however no last coordinates buffer passed for processing."
         self.location_map[current_coordinates[0]][current_coordinates[1]] = 1
-        
         assert self.location_map.max() == 1, "Location was updated twice for single agent"
 
     def _update_other_agent_locations_map(self, current_coordinates: Tuple[int, int])-> None:
@@ -596,14 +607,7 @@ class MapsBuffer:
             :param current_coordinates: (Tuple[int, int]) Inflated current location of agent to be processed
             :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent to be processed. Note: These must be ints.
             :return: None
-        '''
-        # if last_coordinates:
-        #     self.others_locations_map[last_coordinates[0]][last_coordinates[1]] -= 1 
-        #     # In case agents are at same location, usually the start-point, just ensure was not negative.
-        #     assert self.others_locations_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
-        # else:
-        #     assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."  
-                  
+        '''     
         self.others_locations_map[current_coordinates[0]][current_coordinates[1]] += 1  # Initial agents begin at same location             
 
     def _update_readings_map(self, coordinates: Tuple[int, int], key: Union[Tuple[int, int], None] = None)-> None:
@@ -1455,22 +1459,28 @@ class CNNBase:
         with torch.no_grad():
             # TODO Maps are not matching between agents, needs check 
             (
+                combo_location_map,
                 location_map,
                 others_locations_map,
                 readings_map,
                 visit_counts_map,
                 obstacles_map
-            ) = self.maps.observation_to_map_actor(state_observation, id)
+            ) = self.maps.observation_to_map(state_observation, id)
             
             # Convert map to tensor
-            map_stack: torch.Tensor = torch.stack(
+            actor_map_stack: torch.Tensor = torch.stack(
                 [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
             )
             
+            critic_map_stack: torch.Tensor = torch.stack(
+                [torch.tensor(combo_location_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
+            )            
+            
         # Add single batch tensor dimension for action selection
-        batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0)      
+        batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)      
+        batched_critic_mapstack: torch.Tensor = torch.unsqueeze(critic_map_stack, dim=0)      
         
-        return batched_map_stack   
+        return batched_actor_mapstack, batched_critic_mapstack
                      
     def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, store_map=True) -> ActionChoice:
         ''' 
@@ -1482,12 +1492,13 @@ class CNNBase:
         '''
         #try:
         with torch.no_grad():
-            batched_map_stack = self.get_map_stack(state_observation=state_observation, id=id)
+            batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(state_observation=state_observation, id=id)
             # Get actions and values                          
-            action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
+            action, action_logprob  = self.pi.act(batched_actor_mapstack) # Choose action
             
             #TODO make seperate mapstack for critic that only has one location map!
-            state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
+            state_value: Union[torch.Tensor, None] = self.critic.forward(batched_critic_mapstack)  # size(1)
+            
         # except Exception as err:
         #     ''' If exception, save current model, dump the local variables to a file, and print exception'''
         #     print("Exception encountered, saving model...")

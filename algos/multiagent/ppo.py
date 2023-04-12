@@ -725,8 +725,7 @@ class AgentPPO:
             self.agent.set_mode(mode='train')
             
             # Get mapstack [NEW! Needs testing!]
-            mapstacks = self.generate_mapstacks()
-            #TODO make seperate mapstack for critic that only has one location map!              
+            actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
                 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             for k_epoch in range(self.train_pi_iters):
@@ -737,7 +736,7 @@ class AgentPPO:
                 sample_indexes = sample(self, data=data)
                 
                 #actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=mapstacks)
+                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
                 
                 # Check Actor KL Divergence
                 if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
@@ -754,7 +753,7 @@ class AgentPPO:
             if not self.GlobalCriticOptimizer or self.id == 0:       
                 for _ in range(self.train_v_iters):
                     self.agent_optimizer.critic_optimizer.zero_grad()
-                    critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=mapstacks)
+                    critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
                     critic_loss_results['critic_loss'].backward()
                     self.agent_optimizer.critic_optimizer.step()
                 
@@ -1122,7 +1121,8 @@ class AgentPPO:
 
     def generate_mapstacks(self):
         ''' Generate a list of inflated maps from buffer '''
-        maps_buffer = list()
+        actor_maps_buffer = list()
+        critic_maps_buffer = list()
         
         # Clear existing maps
         self.agent.reset()
@@ -1130,13 +1130,16 @@ class AgentPPO:
         # Convert observations to maps
         for step in self.ppo_buffer.full_observation_buffer:
             observation = {key: value for key, value in step.items() if key != 'terminal'}
-            maps_buffer.append(self.agent.get_map_stack(state_observation=observation, id=self.id))
+            batched_actor_mapstack, batched_critic_mapstack = self.agent.get_map_stack(state_observation=observation, id=self.id)
+            
+            actor_maps_buffer.append(batched_actor_mapstack)
+            critic_maps_buffer.append(batched_critic_mapstack)
             
             # If next observation is a fresh episode, clear maps
             if step['terminal']:
                 self.agent.reset()
     
-        return maps_buffer
+        return actor_maps_buffer, critic_maps_buffer
 
     def get_map_dimensions(self):
         return self.agent.get_map_dimensions()
