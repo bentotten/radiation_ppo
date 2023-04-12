@@ -450,7 +450,11 @@ class MapsBuffer:
         self.clear_matrices()
 
     def clear_matrices(self)-> None:
-        ''' Method to clear and reset map matrices and standardization tools. Often called at the end of an episode to reset the maps for a new starting location and source location'''
+        ''' 
+        Method to clear and reset map matrices and standardization tools. Also clears maps. 
+        Often called at the end of an episode to reset the maps for a new starting location and source location
+        '''
+        self._clear_maps()
         self.location_matrix.clear()
         self.others_locations_matrix.clear()
         self.readings_matrix.clear()
@@ -520,24 +524,24 @@ class MapsBuffer:
 
     def _clear_maps(self)-> None:
         ''' Clear values stored in maps from coordinates stored in sparse matrices '''             
-        for i in self.location_matrix:
-            self.location_map[i] = 0 
+        for k, v in self.location_matrix.items():
+            self.location_map[v] = 0 
         assert (self.location_map.max() == 0 and self.location_map.min() == 0)
         
-        for i in self.others_locations_matrix:
-            self.others_locations_map[i] = 0    
+        for k, v in self.others_locations_matrix.items():
+            self.others_locations_map[v] = 0    
         assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)    
                 
-        for i in self.readings_matrix:
-            self.readings_map[i] = 0    
+        for k, v in self.readings_matrix.items():
+            self.readings_map[k] = 0    
         assert (self.readings_map.max() == 0 and self.readings_map.min() == 0)    
             
-        for i in self.obstacles_matrix:
-            self.obstacles_map[i] = 0
+        for k, v in self.obstacles_matrix.items():
+            self.obstacles_map[k] = 0
         assert (self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0)    
             
-        for i in self.visit_counts_matrix:
-            self.visit_counts_map[i] = 0      
+        for k, v in self.visit_counts_matrix.items():
+            self.visit_counts_map[k] = 0      
         assert (self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0)    
                               
     def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
@@ -685,7 +689,7 @@ class MapsBuffer:
         
         for detection in single_observation[self.obstacle_state_offset::]:
             if detection != 0:
-                self.obstacles_matrix[coordinates] = max(detection, self.obstacles_matrix[coordinates])
+                self.obstacles_matrix[coordinates] = max(detection, self.obstacles_matrix[coordinates]) if (coordinates in self.obstacles_matrix.keys()) else detection
                 self.obstacles_map[coordinates[0]][coordinates[1]] = self.obstacles_matrix[coordinates]
 
 
@@ -1483,7 +1487,7 @@ class CNNBase:
             :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
             :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         '''
-        try:
+        #try:
             # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
             # with torch.no_grad():
             #     if store_map:     
@@ -1513,22 +1517,22 @@ class CNNBase:
                     
             #     # Add single batch tensor dimension for action selection
             #     batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
-            with torch.no_grad():
-                batched_map_stack = self.get_map_stack(state_observation=state_observation, id=id)
-                # Get actions and values                          
-                action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
-                
-                #TODO make seperate mapstack for critic that only has one location map!
-                state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
-        except Exception as err:
-            ''' If exception, save current model, dump the local variables to a file, and print exception'''
-            print("Exception encountered, saving model...")
-            if path.exists(self.save_path):
-                self.save(checkpoint_path=self.save_path)
-            else:
-                self.save(checkpoint_path='./rad_team_error_log.log')
+        with torch.no_grad():
+            batched_map_stack = self.get_map_stack(state_observation=state_observation, id=id)
+            # Get actions and values                          
+            action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
+            
+            #TODO make seperate mapstack for critic that only has one location map!
+            state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
+        # except Exception as err:
+        #     ''' If exception, save current model, dump the local variables to a file, and print exception'''
+        #     print("Exception encountered, saving model...")
+        #     if path.exists(self.save_path):
+        #         self.save(checkpoint_path=self.save_path)
+        #     else:
+        #         self.save(checkpoint_path='./rad_team_error_log.log')
                         
-            print(repr(err))
+        #     print(repr(err))
 
         state_value_item: Union[float, None]
         if state_value:
