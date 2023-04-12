@@ -486,8 +486,8 @@ class MapsBuffer:
                 self._update_current_agent_location_map(current_coordinates=self.location_matrix['coordinates'])
             else:            
                 #self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
-                self.others_locations_matrix[id] = inflated_agent_coordinates
-                self._update_other_agent_locations_map(current_coordinates=self.others_locations_matrix[id])     
+                self.others_locations_matrix[agent_id] = inflated_agent_coordinates
+                self._update_other_agent_locations_map(current_coordinates=self.others_locations_matrix[agent_id])     
                      
             # Readings and Visits counts maps
             self._update_readings_map(coordinates=inflated_agent_coordinates)
@@ -677,6 +677,9 @@ class MapsBuffer:
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: None
         '''
+        # Fill in map
+        for coords, value in self.obstacles_matrix.items():
+            self.obstacles_map[coords[0]][coords[1]] = value
         
         for detection in single_observation[self.obstacle_state_offset::]:
             if detection != 0:

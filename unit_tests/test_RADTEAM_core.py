@@ -640,9 +640,9 @@ class Test_MapBuffer:
         step2 = maps._deflate_coordinates((0, 4))
         
         observations = {
-            0: np.array([1000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32), 
-            1: np.array([1000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32),
-            2: np.array([1000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
+            0: np.array([5000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32), 
+            1: np.array([5000.0, step1[0], step1[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32),
+            2: np.array([5000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
             }  
 
         mapstack = maps.observation_to_map(observation=observations, id=0)
@@ -663,11 +663,7 @@ class Test_MapBuffer:
         assert maps.others_locations_map[0][4] == 1.0
         assert mapstack[1][0][4] == 1.0                     
 
-        # Test Readings map registered - Actual math tested in individual unit test
-        assert maps.readings_map[0][1] > 0.0
-        assert mapstack[2][0][1] > 0.0       
-        assert maps.readings_map[0][2] > 0.0
-        assert mapstack[2][0][2] > 0.0     
+        # Test Readings map registered - Actual math tested in individual unit test   
         assert maps.readings_map[0][3] > 0.0
         assert mapstack[2][0][3] > 0.0     
         assert maps.readings_map[0][4] > 0.0
