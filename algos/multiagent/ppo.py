@@ -222,7 +222,7 @@ class PPOBuffer:
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
-    full_observation_buffer: List[Dict[int, npt.NDArray[np.float32]]] = field(init=False) # For each timestep, stores every agents observation
+    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(init=False) # For each timestep, stores every agents observation
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
     act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
     adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
@@ -246,7 +246,12 @@ class PPOBuffer:
         self.episode_lengths_buffer = list()
         
         # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
-        self.full_observation_buffer= [{id: np.zeros((self.observation_dimension,)) for id in range(self.number_agents)} for _ in range(self.max_size)]
+        self.full_observation_buffer = list()
+        for i in range(self.max_size):
+            self.full_observation_buffer.append({})
+            for id in range(self.number_agents):
+                self.full_observation_buffer[i][id] = np.zeros((self.observation_dimension,))
+                self.full_observation_buffer[i]['terminal'] = None
 
         # TODO delete once full_observation_buffer is done
         self.obs_buf= np.zeros(
@@ -305,6 +310,7 @@ class PPOBuffer:
         logp: float,
         src: npt.NDArray[np.float32],
         full_observation: Dict,
+        terminal: bool
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -316,6 +322,7 @@ class PPOBuffer:
         :param logp: (float) log probability from actor
         :param src: (npt.ndarray) source coordinates
         :param full_observation: (dict) all agent observations
+        :param terminal: (bool) episode resets next step or not
         """
         
         assert self.ptr < self.max_size
@@ -328,6 +335,7 @@ class PPOBuffer:
         
         for agent_id, agent_obs in full_observation.items():
             self.full_observation_buffer[self.ptr][agent_id] = agent_obs
+            self.full_observation_buffer[self.ptr]['terminal'] = terminal
         
         self.ptr += 1
 
@@ -1151,7 +1159,7 @@ class AgentPPO:
         )  # type: ignore
 
     def generate_mapstacks():
-        
+        pass
 
     def get_map_dimensions(self):
         return self.agent.get_map_dimensions()

@@ -184,7 +184,7 @@ class train_PPO:
                 assert self.agents[i].agent.critic is not self.GlobalCritic
                 if i > 0:
                     assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
-                    assert self.agents[i].GlobalCriticOptimizer is not self.GlobalCriticOptimizer                
+                    assert not self.agents[i].GlobalCriticOptimizer and not self.GlobalCriticOptimizer                
                 
                       
     def train(self)-> None:
@@ -284,6 +284,28 @@ class train_PPO:
                     for id in self.agents:
                         episode_return[id] += np.array(rewards['team_reward'], dtype="float32").item() # TODO if saving team reward, no need to keep duplicates for each agent
                 steps_in_episode += 1    
+                
+                
+               # Tally up ending conditions
+                # TODO move this to seperate function
+                # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
+                terminal_reached_flag = False
+                for id in terminal_counter:
+                    if terminals[id] == True and not timeout:
+                        terminal_counter[id] += 1   
+                        terminal_reached_flag = True             
+                # Check if some agents went out of bounds
+                for id in infos:
+                    if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
+                        out_of_bounds_count[id] += 1
+                                    
+                # Stopping conditions for episode
+                timeout: bool = steps_in_episode == self.steps_per_episode
+                terminal: bool = terminal_reached_flag or timeout
+                epoch_ended: bool = steps_in_epoch == self.steps_per_epoch - 1
+                episode_reset_next_step: bool = terminal or epoch_ended
+                ############################################################################################################
+                
 
                 ############################################################################################################
 
@@ -302,7 +324,7 @@ class train_PPO:
                         val = agent_thoughts[id].state_value,
                         logp = agent_thoughts[id].action_logprob,
                         src = source_coordinates,
-                        #terminal = terminals[id],  # TODO do we want to store terminal flags?
+                        terminal = episode_reset_next_step,
                         full_observation = observations
                     )
                     
@@ -317,25 +339,6 @@ class train_PPO:
                 # Update obs (critical!)
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation'
                 observations = next_observations
-
-                # Tally up ending conditions
-                # TODO move this to seperate function
-                # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
-                terminal_reached_flag = False
-                for id in terminal_counter:
-                    if terminals[id] == True and not timeout:
-                        terminal_counter[id] += 1   
-                        terminal_reached_flag = True             
-                # Check if some agents went out of bounds
-                for id in infos:
-                    if 'out_of_bounds' in infos[id] and infos[id]['out_of_bounds'] == True:
-                        out_of_bounds_count[id] += 1
-                                    
-                # Stopping conditions for episode
-                timeout: bool = steps_in_episode == self.steps_per_episode
-                terminal: bool = terminal_reached_flag or timeout
-                epoch_ended: bool = steps_in_epoch == self.steps_per_epoch - 1
-                ############################################################################################################
 
                 if terminal or epoch_ended:
                     if epoch_ended and not (terminal):
