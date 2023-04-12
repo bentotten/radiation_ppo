@@ -666,11 +666,8 @@ class AgentPPO:
             return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
          
         # Get data from buffers
-        #data: Dict[str, torch.Tensor] = self.ppo_buffer.get(logger)
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get() 
         
-        # NOTE: Not using observation tensor for CNN, using internal map buffer     
-
         # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
         # TODO get this working for CNN
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':

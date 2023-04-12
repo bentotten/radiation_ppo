@@ -376,7 +376,7 @@ class Test_MapBuffer:
             intensity: np.floating = observation[0]
             maps.tools.readings.update(key=key, value=float(intensity))        
         
-        _ = maps.observation_to_map(id=0, observation=test_observation)
+        _ = maps.observation_to_map_actor(id=0, observation=test_observation)
         
         assert maps.tools.reset_flag == 1
         
@@ -398,7 +398,7 @@ class Test_MapBuffer:
         assert maps.tools.reset_flag == 2
         
         # Test end-of-epoch reset, where matrices are cleared but not reinstatiated
-        _ = maps.observation_to_map(id=0, observation=test_observation)
+        _ = maps.observation_to_map_actor(id=0, observation=test_observation)
         
         start_time = time.time()           
         maps.reset()
@@ -421,7 +421,7 @@ class Test_MapBuffer:
         # Test end-of-episode matrix clear, where matrices are cleared. Should be nearly identical to reset(), but without resetting observation buffer
         # TODO remove once observation buffer is moved to PPO
         # Test end-of-epoch reset, where matrices are cleared but not reinstatiated
-        _ = maps.observation_to_map(id=0, observation=test_observation)
+        _ = maps.observation_to_map_actor(id=0, observation=test_observation)
         
         start_time = time.time()           
         maps.clear_matrices()
@@ -596,7 +596,7 @@ class Test_MapBuffer:
             2: np.array([1000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
             }     
             
-        mapstack = maps.observation_to_map(observation=observations, id=0)
+        mapstack = maps.observation_to_map_actor(observation=observations, id=0)
         
         # Test Locations map
         assert maps.location_map[0][1] == 1.0
@@ -645,7 +645,7 @@ class Test_MapBuffer:
             2: np.array([5000.0, step2[0], step2[1], 0., 0., 0., 0.1, 0., 0., 0., 0.], dtype=np.float32)            
             }  
 
-        mapstack = maps.observation_to_map(observation=observations, id=0)
+        mapstack = maps.observation_to_map_actor(observation=observations, id=0)
 
         # Test Locations map
         assert maps.location_map[0][1] == 0.0

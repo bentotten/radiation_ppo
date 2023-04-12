@@ -455,7 +455,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()    
         
-    def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
+    def observation_to_map_actor(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
         
@@ -1460,7 +1460,7 @@ class CNNBase:
                 readings_map,
                 visit_counts_map,
                 obstacles_map
-            ) = self.maps.observation_to_map(state_observation, id)
+            ) = self.maps.observation_to_map_actor(state_observation, id)
             
             # Convert map to tensor
             map_stack: torch.Tensor = torch.stack(

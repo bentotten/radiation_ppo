@@ -93,7 +93,7 @@
         // "True",
         // "--save-freq",
         // "1"
-        "--no-global-critic",
+        // "--no-global-critic",
         //"False"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
