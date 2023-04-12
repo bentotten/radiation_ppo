@@ -484,10 +484,8 @@ class train_PPO:
 
             # Perform PPO update!
             for id, ac in self.agents.items():
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                # TODO ENSURE GLOBAL CRITIC IS ONLY UPDATED ONCE
+                # Note: Global critic is updated by first agent within update_agent
                 update_results = ac.update_agent(self.loggers[id])
-                # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                 
                 # Store results
                 # TODO some of these are getting updated within the update_agent function

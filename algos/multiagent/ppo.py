@@ -129,7 +129,7 @@ class UpdateResult(NamedTuple):
     Entropy: npt.NDArray[np.float32]
     ClipFrac: npt.NDArray[np.float32]
     LocLoss: torch.Tensor
-    VarExplain: int #TODO what is this and can it be removed?
+    VarExplain: int #TODO what is this?
 
 
 class BpArgs(NamedTuple):
@@ -727,79 +727,46 @@ class AgentPPO:
             # Put agents in train mode
             self.agent.set_mode(mode='train')
             
-            # TODO incorporate maps into PPO buffer and avoid this entire process
-            # TODO save and then rerender heatmaps to avoid massive overhead
-            # Match observation type to data and seperate map stacks from observation key for processing
-            # map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
-            # map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
-            # assert len(self.agent.maps.observation_buffer) == data['obs'].shape[0]
-                        
-            # Check that maps match observations (round due to floating point precision in python)
-            # for _, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
-            #     assert torch.equal(data_obs, map_obs)            
-            
-            # instead of pulling from observation buffer directly, going to convert observations back into a map  while processing            
-            
-            # Reset gradients 
-            # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-            # TODO ENSURE GLOBAL CRITIC IS ONLY UPDATED ONCE            
-            self.agent_optimizer.pi_optimizer.zero_grad()
-            self.agent_optimizer.critic_optimizer.zero_grad()
+            # Get mapstack [NEW! Needs testing!]
+            mapstacks = self.generate_mapstacks()
+            #TODO make seperate mapstack for critic that only has one location map!              
                 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             for k_epoch in range(self.train_pi_iters):
                 # Reset gradients 
                 self.agent_optimizer.pi_optimizer.zero_grad()
-                self.agent_optimizer.critic_optimizer.zero_grad()                 
                 
                 # Get indexes of episodes that will be sampled
                 sample_indexes = sample(self, data=data)
-                
-                # Get mapstack [NEW! Needs testing!]
-                mapstacks = self.generate_mapstacks()
-                # TODO SAVE TERMINALS SO KNOW IF NEED TO RESET MAPS!         
-                #TODO make seperate mapstack for critic that only has one location map!
-                
                 
                 #actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
                 actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=mapstacks)
                 
                 # Check Actor KL Divergence
                 if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
-                    actor_loss_results['pi_loss'].backward() # TODO do we need to add entropy/lambda to this?
+                    actor_loss_results['pi_loss'].backward()
                     self.agent_optimizer.pi_optimizer.step() 
                 else:
-                    break  # Skip remaining training
-                            
-                # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
-                self.agent.reset()                      
-                
-                # TODO Pull out for global critic
-                self.agent_optimizer.critic_optimizer.zero_grad()
-                #critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=mapstacks)
-                critic_loss_results['critic_loss'].backward()
-                self.agent_optimizer.critic_optimizer.step()
-                      
-            # # Value function learning
-            # for _ in range(self.train_v_iters):
-            #     self.agent_optimizer.critic_optimizer.zero_grad()
-            #     critic_loss_results = self.compute_batched_losses_critic(self)
-            #     critic_loss_results['critic_loss'].backward()
-            #     self.agent_optimizer.critic_optimizer.step()
-        
+                    break  # Skip remaining training               
+
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
-            self.agent_optimizer.critic_scheduler.step()            
+
+            # If local critic, do Value function learning here
+            # For global critic, only first agent performs the update
+            if not self.GlobalCriticOptimizer or self.id == 0:       
+                for _ in range(self.train_v_iters):
+                    self.agent_optimizer.critic_optimizer.zero_grad()
+                    critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=mapstacks)
+                    critic_loss_results['critic_loss'].backward()
+                    self.agent_optimizer.critic_optimizer.step()
+                
+                # Reduce learning rate
+                self.agent_optimizer.critic_scheduler.step()  
             
             # TODO Uncomment after implementing PFGRU
-            #self.agent_optimizer.pfgru_scheduler.step()
-            if self.agent.maps.location_map.max() !=0.0 or self.agent.maps.readings_map.max() !=0.0 or self.agent.maps.visit_counts_map.max() !=0.0:
-                raise ValueError("Maps did not reset")   
+            #self.agent_optimizer.pfgru_scheduler.step() 
         
-            # TODO add map buffer to PPO buffer and make this happen in get() function. Also rename get() to indicate buffers are reset
-            self.agent.reset() 
-            
             # Take agents out of train mode
             self.agent.set_mode(mode='eval')                           
             
@@ -814,8 +781,8 @@ class AgentPPO:
                 ClipFrac=actor_loss_results["clip_fraction"],
                 LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
                 VarExplain=0 # TODO what is this?
-            )        
-    
+            )          
+                    
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
         
@@ -831,7 +798,7 @@ class AgentPPO:
             # Reset existing episode maps
             self.reset_neural_nets()     
             self.agent.clear_maps()                      
-            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index, mapstack=mapstacks_buffer[index])
+            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index, map_stack=mapstacks_buffer[index])
             
             pi_loss_list.append(single_pi_l)
             kl_list.append(single_pi_info['kl'])
@@ -847,7 +814,7 @@ class AgentPPO:
         }
         return results
 
-    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int, map_stack: torch.Tensor):
+    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int, map_stack: List[torch.Tensor]):
         ''' 
             Compute loss for actor network. Loss is the difference between the probability of taking the action according to the current policy
             and the probability of taking the action according to the old policy, multiplied by the advantage of the action.
@@ -1171,7 +1138,8 @@ class AgentPPO:
             # If next observation is a fresh episode, clear maps
             if step['terminal']:
                 self.agent.reset()
-        pass
+    
+        return maps_buffer
 
     def get_map_dimensions(self):
         return self.agent.get_map_dimensions()
