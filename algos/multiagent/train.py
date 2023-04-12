@@ -488,18 +488,32 @@ class train_PPO:
                 update_results = ac.update_agent(self.loggers[id])
                 
                 # Store results
-                # TODO some of these are getting updated within the update_agent function
-                self.loggers[id].store(
-                    stop_iteration=update_results.stop_iteration,
-                    loss_policy=update_results.loss_policy,
-                    loss_critic=update_results.loss_critic,
-                    loss_predictor=update_results.loss_predictor,
-                    kl_divergence=update_results.kl_divergence,
-                    Entropy=update_results.Entropy,
-                    ClipFrac=update_results.ClipFrac,
-                    LocLoss=update_results.LocLoss,
-                    VarExplain=update_results.VarExplain, # TODO what is this?
-                )            
+                if self.global_critic_flag:
+                    if id == 0:
+                        loss_critic = update_results.loss_critic
+                    self.loggers[id].store(
+                        stop_iteration=update_results.stop_iteration,
+                        loss_policy=update_results.loss_policy,
+                        loss_critic=loss_critic,
+                        loss_predictor=update_results.loss_predictor,
+                        kl_divergence=update_results.kl_divergence,
+                        Entropy=update_results.Entropy,
+                        ClipFrac=update_results.ClipFrac,
+                        LocLoss=update_results.LocLoss,
+                        VarExplain=update_results.VarExplain, # TODO what is this?
+                    )       
+                else:
+                    self.loggers[id].store(
+                        stop_iteration=update_results.stop_iteration,
+                        loss_policy=update_results.loss_policy,
+                        loss_critic=update_results.loss_critic,
+                        loss_predictor=update_results.loss_predictor,
+                        kl_divergence=update_results.kl_divergence,
+                        Entropy=update_results.Entropy,
+                        ClipFrac=update_results.ClipFrac,
+                        LocLoss=update_results.LocLoss,
+                        VarExplain=update_results.VarExplain, # TODO what is this?
+                    )                                     
             
             if not terminal:
                 pass            

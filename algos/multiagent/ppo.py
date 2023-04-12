@@ -748,6 +748,10 @@ class AgentPPO:
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
 
+            # TODO Uncomment after implementing PFGRU
+            #self.agent_optimizer.pfgru_scheduler.step() 
+            # Reduce pfgru learning rate
+
             # If local critic, do Value function learning here
             # For global critic, only first agent performs the update
             if not self.GlobalCriticOptimizer or self.id == 0:       
@@ -759,25 +763,36 @@ class AgentPPO:
                 
                 # Reduce learning rate
                 self.agent_optimizer.critic_scheduler.step()  
-            
-            # TODO Uncomment after implementing PFGRU
-            #self.agent_optimizer.pfgru_scheduler.step() 
-        
+                
+                update_results = UpdateResult(
+                    stop_iteration=k_epoch,  
+                    loss_policy=actor_loss_results['pi_loss'].item(),
+                    loss_critic=critic_loss_results['critic_loss'].item(),
+                    loss_predictor=model_losses.item(),  # TODO implement when PFGRU is working for CNN
+                    kl_divergence=actor_loss_results["kl"],
+                    Entropy=actor_loss_results["entropy"],
+                    ClipFrac=actor_loss_results["clip_fraction"],
+                    LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
+                    VarExplain=0 # TODO what is this?
+                )                          
+            else:
+                update_results = UpdateResult(
+                    stop_iteration=k_epoch,  
+                    loss_policy=actor_loss_results['pi_loss'].item(),
+                    loss_critic=None,
+                    loss_predictor=model_losses.item(),  # TODO implement when PFGRU is working for CNN
+                    kl_divergence=actor_loss_results["kl"],
+                    Entropy=actor_loss_results["entropy"],
+                    ClipFrac=actor_loss_results["clip_fraction"],
+                    LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
+                    VarExplain=0 # TODO what is this?
+                )                          
+
             # Take agents out of train mode
             self.agent.set_mode(mode='eval')                           
             
             # Log changes from update
-            return UpdateResult(
-                stop_iteration=k_epoch,  
-                loss_policy=actor_loss_results['pi_loss'].item(),
-                loss_critic=critic_loss_results['critic_loss'].item(),
-                loss_predictor=model_losses.item(),  # TODO implement when PFGRU is working for CNN
-                kl_divergence=actor_loss_results["kl"],
-                Entropy=actor_loss_results["entropy"],
-                ClipFrac=actor_loss_results["clip_fraction"],
-                LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-                VarExplain=0 # TODO what is this?
-            )          
+            return update_results
                     
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
