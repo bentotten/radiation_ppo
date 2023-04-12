@@ -5,6 +5,7 @@ import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADTEAM_core
 import numpy as np
 import torch
 import warnings
+import time
    
 class Test_IntensityEstimator:    
     def test_Update(self)-> None:
@@ -368,6 +369,7 @@ class Test_MapBuffer:
         baseline = RADTEAM_core.MapsBuffer(**init_parameters)
         baseline_list = [a for a in dir(baseline) if not a.startswith('__') and not callable(getattr(baseline, a))]
 
+        # Setup
         test_observation: dict = {0: np.array([1500, 0.5, 0.5, 0.0, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]), 1: np.array([1000, 0.6, 0.6, 0.0, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9])}
         for observation in test_observation.values():
             key =(observation[1], observation[2])
@@ -378,7 +380,10 @@ class Test_MapBuffer:
         
         assert maps.tools.reset_flag == 1
         
-        maps.reset()
+        # Test full reset
+        start_time = time.time()           
+        maps.full_reset()
+        full_reset_time = time.time() - start_time
         
         # Immediate members
         for baseline_att, map_att in zip(baseline_list, [a for a in dir(maps) if not a.startswith('__') and not callable(getattr(maps, a))]):
@@ -390,8 +395,51 @@ class Test_MapBuffer:
                 else:
                     assert getattr(maps, map_att) == getattr(baseline, baseline_att)
             
-        # Stored class objects
         assert maps.tools.reset_flag == 2
+        
+        # Test end-of-epoch reset, where matrices are cleared but not reinstatiated
+        _ = maps.observation_to_map(id=0, observation=test_observation)
+        
+        start_time = time.time()           
+        maps.reset()
+        reset_time = time.time() - start_time        
+        
+        assert (full_reset_time + 0.01) > reset_time
+        
+        # Immediate members
+        for baseline_att, map_att in zip(baseline_list, [a for a in dir(maps) if not a.startswith('__') and not callable(getattr(maps, a))]):
+            test = type(getattr(maps, map_att))
+            if test is not RADTEAM_core.ConversionTools:
+                if test == np.ndarray:
+                    assert getattr(maps, map_att).max() == getattr(baseline, baseline_att).max()
+                    assert getattr(maps, map_att).min() == getattr(baseline, baseline_att).min()                
+                else:
+                    assert getattr(maps, map_att) == getattr(baseline, baseline_att)
+            
+        assert maps.tools.reset_flag == 3        
+        
+        # Test end-of-episode matrix clear, where matrices are cleared. Should be nearly identical to reset(), but without resetting observation buffer
+        # TODO remove once observation buffer is moved to PPO
+        # Test end-of-epoch reset, where matrices are cleared but not reinstatiated
+        _ = maps.observation_to_map(id=0, observation=test_observation)
+        
+        start_time = time.time()           
+        maps.reset()
+        reset_time = time.time() - start_time        
+        
+        assert (full_reset_time + 0.01) > reset_time
+        
+        # Immediate members
+        for baseline_att, map_att in zip(baseline_list, [a for a in dir(maps) if not a.startswith('__') and not callable(getattr(maps, a))]):
+            test = type(getattr(maps, map_att))
+            if test is not RADTEAM_core.ConversionTools:
+                if test == np.ndarray:
+                    assert getattr(maps, map_att).max() == getattr(baseline, baseline_att).max()
+                    assert getattr(maps, map_att).min() == getattr(baseline, baseline_att).min()                
+                else:
+                    assert getattr(maps, map_att) == getattr(baseline, baseline_att)
+            
+        assert maps.tools.reset_flag == 4               
                 
     def test_clear_maps(self, init_parameters)-> None:
         ''' Reset and clear all maps without clearing the observation buffer '''

@@ -438,14 +438,14 @@ class MapsBuffer:
         '''
         # TODO delete this after moving observation buffer to PPO.
         del self.observation_buffer[:]
-        self.reset_maps()            
+        self._reset_maps()            
         
     def reset(self)-> None:
-        ''' Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()
+        ''' 
+        Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()
         '''
-        # TODO delete this after moving observation buffer to PPO.
+        # TODO delete this function after moving observation buffer to PPO.
         del self.observation_buffer[:]
-        self._clear_maps
         self.clear_matrices()
 
     def clear_matrices(self)-> None:
@@ -463,15 +463,6 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()    
         
-    def reset_maps(self)-> None:
-        ''' Fully reinstatiate map matrixes and reset tools. '''
-        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
-        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
-        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
-        self.visit_counts_shadow.clear()
-        self.clear_matrices()
         
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
@@ -504,7 +495,7 @@ class MapsBuffer:
             else:            
                 #self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
                 self.others_locations_matrix[id] = inflated_agent_coordinates
-                self._update_current_agent_location_map(current_coordinates=self.others_locations_matrix[id])     
+                self._update_other_agent_locations_map(current_coordinates=self.others_locations_matrix[id])     
                      
             # Readings and Visits counts maps
             self._update_readings_map(coordinates=inflated_agent_coordinates)
@@ -540,7 +531,17 @@ class MapsBuffer:
             
         for k, v in self.visit_counts_matrix.items():
             self.visit_counts_map[k] = 0      
-        assert (self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0)    
+        assert (self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0) 
+        
+    def _reset_maps(self)-> None:
+        ''' Fully reinstatiate map matrixes and reset tools. '''
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
+        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
+        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.visit_counts_shadow.clear()
+        self.clear_matrices()           
                               
     def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
         ''' 
