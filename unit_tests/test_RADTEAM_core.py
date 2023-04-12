@@ -418,9 +418,7 @@ class Test_MapBuffer:
             
         assert maps.tools.reset_flag == 3        
         
-        # Test end-of-episode matrix clear, where matrices are cleared. Should be nearly identical to reset(), but without resetting observation buffer
-        # TODO remove once observation buffer is moved to PPO
-        # Test end-of-epoch reset, where matrices are cleared but not reinstatiated
+        # Test end-of-episode matrix clear, where matrices are cleared. Should be nearly identical to reset()
         _ = maps.observation_to_map(id=0, observation=test_observation)
         
         start_time = time.time()           
@@ -557,19 +555,19 @@ class Test_MapBuffer:
         
         # Test normal update
         maps._update_visits_count_map(coordinates=(0, 1))
-        assert maps.visit_counts_map[0][1] == pytest.approx(0.11227263)
+        assert maps.visit_counts_map[0][1] == pytest.approx(0.11212191)
         assert maps.visit_counts_shadow[(0,1)] == 2
         
         maps._update_visits_count_map(coordinates=(0, 2))
-        assert maps.visit_counts_map[0][1] == pytest.approx(0.11227263)
+        assert maps.visit_counts_map[0][1] == pytest.approx(0.11212191)
         assert maps.visit_counts_shadow[(0,1)] == 2        
-        assert maps.visit_counts_map[0][2] == pytest.approx(0.11227263)
+        assert maps.visit_counts_map[0][2] == pytest.approx(0.11212191)
         assert maps.visit_counts_shadow[(0,2)] == 2
         
         maps._update_visits_count_map(coordinates=(0, 2))
-        assert maps.visit_counts_map[0][1] == pytest.approx(0.11227263)
+        assert maps.visit_counts_map[0][1] == pytest.approx(0.11212191)
         assert maps.visit_counts_shadow[(0,1)] == 2        
-        assert maps.visit_counts_map[0][2] == pytest.approx(0.22454526)
+        assert maps.visit_counts_map[0][2] == pytest.approx(0.22424382)
         assert maps.visit_counts_shadow[(0,2)] == 4
                 
         # Test will never go above one for max steps in same location
@@ -578,7 +576,7 @@ class Test_MapBuffer:
             
         with warnings.catch_warnings():        
             maps._update_visits_count_map(coordinates=(0, 3))
-        assert maps.visit_counts_map[0][3] == 1
+        assert maps.visit_counts_map[0][3] == pytest.approx(0.99865758) # NOTE: Will not be exactly one, as entire base needs to be offset by 1 step for reward bootstrapping
         assert maps.visit_counts_shadow[(0,3)] == (2 * init_parameters['number_of_agents'] * init_parameters['steps_per_episode'])
         
     def test_update_obstacle_map(self, init_parameters)-> None:
@@ -727,10 +725,6 @@ class Test_MapBuffer:
         assert mapstack[5][0][4] == 1.0              
            
 
-        
-            
-            
-                 
 class Test_Actor:
     @pytest.fixture
     def init_parameters(self)-> dict:
