@@ -439,7 +439,6 @@ class MapsBuffer:
         # TODO delete this after moving observation buffer to PPO.
         del self.observation_buffer[:]
         self.reset_maps()            
-        self.clear_matrices()
         
     def reset(self)-> None:
         ''' Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset()
@@ -473,7 +472,6 @@ class MapsBuffer:
         self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
         self.visit_counts_shadow.clear()
         self.clear_matrices()
-        self.tools.reset()            
         
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
