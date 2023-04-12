@@ -1379,6 +1379,27 @@ class CNNBase:
             
         else:
             raise Warning('Invalid mode set for Agent. Agent remains in their original training mode')
+
+    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int):
+        with torch.no_grad():
+            # TODO Maps are not matching between agents, needs check 
+            (
+                location_map,
+                others_locations_map,
+                readings_map,
+                visit_counts_map,
+                obstacles_map
+            ) = self.maps.observation_to_map(state_observation, id)
+            
+            # Convert map to tensor
+            map_stack: torch.Tensor = torch.stack(
+                [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
+            )
+            
+        # Add single batch tensor dimension for action selection
+        batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0)      
+        
+        return batched_map_stack   
                      
     def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, store_map=True) -> ActionChoice:
         ''' 
@@ -1390,39 +1411,49 @@ class CNNBase:
         '''
         try:
             # If a new observation to be added to maps and buffer, else pull from buffer to avoid overwriting visits count and resampling stale intensity observation.
+            # with torch.no_grad():
+            #     if store_map:     
+            #         # TODO Maps are not matching between agents, needs check 
+            #         (
+            #             location_map,
+            #             others_locations_map,
+            #             readings_map,
+            #             visit_counts_map,
+            #             obstacles_map
+            #         ) = self.maps.observation_to_map(state_observation, id)
+                    
+            #         # Convert map to tensor
+            #         map_stack: torch.Tensor = torch.stack(
+            #             [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
+            #         )
+                    
+            #         # TODO Move to PPO buffer
+            #         self.maps.observation_buffer.append([state_observation[self.id], map_stack]) 
+            #     else:
+            #         with torch.no_grad():
+            #             # TODO Move to PPO buffer           
+            #             if len(self.maps.observation_buffer) > 0:
+            #                 map_stack = self.maps.observation_buffer[-1][1]
+            #             else:
+            #                 raise Exception("Called 'step' with 'store map' set to false, however no stored observations exist")
+                    
+            #     # Add single batch tensor dimension for action selection
+            #     batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
             with torch.no_grad():
-                if store_map:     
-                    # TODO Maps are not matching between agents, needs check 
-                    (
-                        location_map,
-                        others_locations_map,
-                        readings_map,
-                        visit_counts_map,
-                        obstacles_map
-                    ) = self.maps.observation_to_map(state_observation, id)
-                    
-                    # Convert map to tensor
-                    map_stack: torch.Tensor = torch.stack(
-                        [torch.tensor(location_map), torch.tensor(others_locations_map), torch.tensor(readings_map), torch.tensor(visit_counts_map),  torch.tensor(obstacles_map)]
-                    )
-                    
-                    # TODO Move to PPO buffer
-                    self.maps.observation_buffer.append([state_observation[self.id], map_stack]) 
-                else:
-                    with torch.no_grad():
-                        # TODO Move to PPO buffer                    
-                        map_stack = self.maps.observation_buffer[-1][1]
-                    
-                # Add single batch tensor dimension for action selection
-                batched_map_stack: torch.Tensor = torch.unsqueeze(map_stack, dim=0) 
-                
+                batched_map_stack = self.get_map_stack(state_observation=state_observation, id=id)
                 # Get actions and values                          
                 action, action_logprob  = self.pi.act(batched_map_stack) # Choose action
+                
+                #TODO make seperate mapstack for critic that only has one location map!
                 state_value: Union[torch.Tensor, None] = self.critic.forward(batched_map_stack)  # size(1)
         except Exception as err:
             ''' If exception, save current model, dump the local variables to a file, and print exception'''
             print("Exception encountered, saving model...")
-            self.save(checkpoint_path=self.save_path)
+            if path.exists(self.save_path):
+                self.save(checkpoint_path=self.save_path)
+            else:
+                self.save(checkpoint_path='./rad_team_error_log.log')
+                        
             print(repr(err))
 
         state_value_item: Union[float, None]

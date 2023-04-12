@@ -355,10 +355,7 @@ class train_PPO:
                                 for id in self.agents:
                                     standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
                         for id, ac in self.agents.items():
-                            if self.actor_critic_architecture == 'uniform':
-                                results = ac.step(standardized_observations, hiddens=hiddens, store_map=False, messages=infos)  # Ensure next map is not buffered when going to compare to logger for update
-                            else:
-                                results = ac.step(standardized_observations, hiddens=hiddens, store_map=False)  # Ensure next map is not buffered when going to compare to logger for update
+                            results = ac.step(standardized_observations, hiddens=hiddens, store_map=False)  # Ensure next map is not buffered when going to compare to logger for update
                             last_state_value = results.state_value
  
                         if epoch_ended:

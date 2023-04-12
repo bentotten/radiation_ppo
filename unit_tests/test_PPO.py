@@ -644,6 +644,17 @@ class Test_PPOAgent:
             
     def test_Init(self, init_parameters):
         _ = PPO.AgentPPO(**init_parameters)
+        
+        rad_a2c_kwargs={
+            'obs_dim': init_parameters['observation_space'], 'act_dim': init_parameters['actor_critic_args']['action_space'],'hidden_sizes_pol': [[32]], 'hidden_sizes_val': [[32]], 'hidden_sizes_rec': [24], 
+            'hidden': [[24]], 'net_type': 'rnn', 'batch_s': 1, 'seed': 0, 'pad_dim': 2
+            }
+        
+        init_parameters['actor_critic_args'] = rad_a2c_kwargs
+        init_parameters['actor_critic_architecture'] = 'rnn'
+        
+        
+        _ = PPO.AgentPPO(**init_parameters)            
         # TODO add custom checks for different combos with CNN/RAD-A2C/Global Critic       
         
     def test_reduce_pfgru_training(self, init_parameters):

@@ -612,7 +612,13 @@ class AgentPPO:
             assert type(hiddens) == dict
             results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
         elif self.actor_critic_architecture == 'cnn':
-            results = self.agent.select_action(observations, self.id, store_map=store_map)  # TODO add in hidden layer shenanagins for PFGRU use
+            # Remove this after reinflating Maps in PPO buffer
+            if store_map:
+                results = self.agent.select_action(observations, self.id, store_map=store_map)  # TODO add in hidden layer shenanagins for PFGRU use
+            else:
+                results = self.agent.select_action(observations, self.id, store_map=store_map)
+                # Ensure next map is not buffered when going to compare to logger for update. 
+                
         else:
             raise ValueError("Unknown architecture")
         return results         
@@ -717,13 +723,15 @@ class AgentPPO:
             # TODO incorporate maps into PPO buffer and avoid this entire process
             # TODO save and then rerender heatmaps to avoid massive overhead
             # Match observation type to data and seperate map stacks from observation key for processing
-            map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
-            map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
-            assert len(self.agent.maps.observation_buffer) == data['obs'].shape[0]
-            
+            # map_buffer_observations =  [torch.as_tensor(item[0], dtype=torch.float32) for item in self.agent.maps.observation_buffer]
+            # map_buffer_maps =  [item[1] for item in self.agent.maps.observation_buffer]  
+            # assert len(self.agent.maps.observation_buffer) == data['obs'].shape[0]
+                        
             # Check that maps match observations (round due to floating point precision in python)
-            for _, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
-                assert torch.equal(data_obs, map_obs)            
+            # for _, (data_obs, map_obs) in enumerate(zip(data['obs'], map_buffer_observations)):
+            #     assert torch.equal(data_obs, map_obs)            
+            
+            # instead of pulling from observation buffer directly, going to convert observations back into a map  while processing            
             
             # Reset gradients 
             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -739,7 +747,8 @@ class AgentPPO:
                 
                 # Get indexes of episodes that will be sampled
                 sample_indexes = sample(self, data=data)
-                actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
+                #actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
+                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes)
                 
                 # Check Actor KL Divergence
                 if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
@@ -753,7 +762,8 @@ class AgentPPO:
                 
                 # TODO Pull out for global critic
                 self.agent_optimizer.critic_optimizer.zero_grad()
-                critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
+                #critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
+                critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes)
                 critic_loss_results['critic_loss'].backward()
                 self.agent_optimizer.critic_optimizer.step()
                       
@@ -792,7 +802,7 @@ class AgentPPO:
                 VarExplain=0 # TODO what is this?
             )        
     
-    def compute_batched_losses_pi(self, sample, data, map_buffer_maps, minibatch = None):
+    def compute_batched_losses_pi(self, sample, data, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
         
         # TODO make more concise 
@@ -806,7 +816,7 @@ class AgentPPO:
         for index in sample:
             # Reset existing episode maps
             self.reset_neural_nets()                           
-            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, map_stack=map_buffer_maps[index], index=index)
+            single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index)
             
             pi_loss_list.append(single_pi_l)
             kl_list.append(single_pi_info['kl'])
@@ -822,7 +832,7 @@ class AgentPPO:
         }
         return results
 
-    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int, map_stack: torch.Tensor):
+    def compute_loss_pi(self, data: Dict[str, Union[torch.Tensor, List]], index: int):
         ''' 
             Compute loss for actor network. Loss is the difference between the probability of taking the action according to the current policy
             and the probability of taking the action according to the old policy, multiplied by the advantage of the action.
@@ -843,11 +853,14 @@ class AgentPPO:
                 * loc_pred: (tensor) batch of predicted location by PFGRU.
                 * ep_len: (tensor[int]) single dimension int of length of episode.
                 * ep_form: (tensor) Episode form (TODO)
-            :param map_stacks: (tensor) Either a single observations worth of maps, or a batch of maps
             :param index: (int) If doing a single observation at a time, index for data[]
         '''
         # NOTE: Not using observation tensor, using internal map buffer
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+        
+        # Get mapstack [NEW! Needs testing!]
+        map_stack = self.agent.get_map_stack(state_observation=self.ppo_buffer.full_observation_buffer[index][self.id])
+        #TODO make seperate mapstack for critic that only has one location map!
 
         # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
