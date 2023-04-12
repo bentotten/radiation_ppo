@@ -222,7 +222,7 @@ class PPOBuffer:
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
-    full_observation_buffer: npt.NDArray[np.float32] = field(init=False) # Full Observation buffer with observations from every agent
+    full_observation_buffer: List[Dict[int, npt.NDArray[np.float32]]] = field(init=False) # For each timestep, stores every agents observation
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
     act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
     adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
@@ -246,9 +246,8 @@ class PPOBuffer:
         self.episode_lengths_buffer = list()
         
         # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
-        self.full_observation_buffer= np.zeros(
-            combined_shape(self.max_size, (self.number_agents, self.observation_dimension)), dtype=np.float32
-        )
+        self.full_observation_buffer= [{id: np.zeros((self.observation_dimension,)) for id in range(self.number_agents)} for _ in range(self.max_size)]
+
         # TODO delete once full_observation_buffer is done
         self.obs_buf= np.zeros(
             combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
@@ -859,7 +858,7 @@ class AgentPPO:
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
         
         # Get mapstack [NEW! Needs testing!]
-        map_stack = self.agent.get_map_stack(state_observation=self.ppo_buffer.full_observation_buffer[index][self.id])
+        map_stack = self.agent.get_map_stack(state_observation=self.ppo_buffer.full_observation_buffer[index], id=self.id)
         #TODO make seperate mapstack for critic that only has one location map!
 
         # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
