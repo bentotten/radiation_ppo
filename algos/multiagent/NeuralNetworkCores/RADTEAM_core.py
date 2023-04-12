@@ -329,7 +329,7 @@ class MapsBuffer:
     ''' Handles all maps operations. Holds the locations maps, readings map, visit counts maps, and obstacles map. 
         Additionally holds toolbox to convert observations into normalized/standardized values and updates maps with these values.
         
-        5 maps: 
+        6 maps: 
         
         * Location Map: a 2D matrix showing the individual agent's location.
         
@@ -386,7 +386,7 @@ class MapsBuffer:
         
     # Blank Maps
     #: Number of maps
-    map_count: int = field(init=False, default=5)
+    map_count: int = field(init=False, default=6)
     # Combined Location Map: a 2D matrix showing all agent locations. Used for the critic
     combined_location_map: Map = field(init=False) 
     #: Location Map: a 2D matrix showing the individual agent's location.
@@ -752,7 +752,7 @@ class Actor(nn.Module):
             nn.ReLU(),
             nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
             nn.ReLU(),
-            nn.Linear(in_features=16, out_features=action_dim), # output tensor with shape (5)
+            nn.Linear(in_features=16, out_features=action_dim), # output tensor with shape (8)
             nn.Softmax(dim=0)  # Put in range [0,1]
         )
         
@@ -919,7 +919,7 @@ class Critic(nn.Module):
         
         This Critic expects the input tensor shape: (batch size, number of channels, height of grid, width of grid) where
         *. batch size: How many mapstacks (default 1)
-        *. number of channels: Number of input maps in each stack (default 5)
+        *. number of channels: Number of input maps in each stack (default 4)
         *. Height: Map height (from map_dim)
         *. Width: Map width (from map_dim)
         
@@ -929,7 +929,7 @@ class Critic(nn.Module):
         :param map_dim: (Tuple[int, int]) Map dimensions (discrete). This is the scaled height and width that each observation map will be. NOTE: dimensions must be equal to each other,
             discrete, and real.
         :param batches: (int) Number of observation mapstacks to be processed - each step in the environment yields one mapstack. Defaults to 1.
-        :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 5.
+        :param map_count: (int) Number of observation maps in a single mapstack. Defaults to 4.
     '''    
     def __init__(self, map_dim, batches: int=1, map_count: int=4):
         super(Critic, self).__init__()    
@@ -937,6 +937,7 @@ class Critic(nn.Module):
         # TODO better to send one location map for all agents through or two separate maps?
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
+        self.map_count = map_count
         channels: int = map_count
         pool_output: int = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
 
@@ -968,8 +969,6 @@ class Critic(nn.Module):
                     nn.Linear(in_features=32, out_features=16), # output tensor with shape (16)
                     nn.ReLU(),
                     nn.Linear(in_features=16, out_features=1), # output tensor with shape (1)
-                    #nn.ReLU(),
-                    #nn.Tanh(), #TODO should output layer go through an activation?
                 )
 
     def _test(self, state_map_stack)-> None: 
@@ -1046,9 +1045,10 @@ class EmptyCritic():
         This is an empty critic object that simulates a critic for compatibility during evaluation runs in order to avoid the volume of conditional statements required otherwise.
     '''
     
-    def __init__(self, map_dim: Union[int, None] = None, batches: int=1, map_count: int=5):
+    def __init__(self, map_dim: Union[int, None] = None, batches: int=1, map_count: int=4):
         super(EmptyCritic, self).__init__()
         self.training: bool = False
+        self.map_count = map_count
         return 
         
     def _test(self, state_map_stack)-> None: 
@@ -1479,7 +1479,7 @@ class CNNBase:
             
         # Add single batch tensor dimension for action selection
         batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)      
-        batched_critic_mapstack: torch.Tensor = torch.unsqueeze(critic_map_stack, dim=0)      
+        batched_critic_mapstack: torch.Tensor = torch.unsqueeze(critic_map_stack, dim=0)   
         
         return batched_actor_mapstack, batched_critic_mapstack
                      
@@ -1493,10 +1493,11 @@ class CNNBase:
         '''
         #try:
         with torch.no_grad():
-            batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(state_observation=state_observation, id=id)
+            batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(state_observation=state_observation, id=id)          
+                
             # Get actions and values                          
             action, action_logprob  = self.pi.act(batched_actor_mapstack) # Choose action
-            
+                        
             #TODO make seperate mapstack for critic that only has one location map!
             state_value: Union[torch.Tensor, None] = self.critic.forward(batched_critic_mapstack)  # size(1)
             
@@ -1520,8 +1521,9 @@ class CNNBase:
     def get_map_dimensions(self)-> Tuple[int, int]:
         return self.maps.map_dimensions
     
-    def get_map_count(self)-> int:
-        return self.maps.map_count
+    def get_critic_map_count(self)-> int:
+        ''' total maps. NOTE: Actor takes one less than this and critic takes two less. '''
+        return self.critic.map_count
     
     def get_batch_size(self)-> int:
         return self.pi.batches
