@@ -340,7 +340,7 @@ class train_PPO:
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation'
                 observations = next_observations
 
-                if terminal or epoch_ended:
+                if episode_reset_next_step:
                     if epoch_ended and not (terminal):
                         print(
                             f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.",
@@ -348,24 +348,26 @@ class train_PPO:
                         )
 
                     if timeout or epoch_ended:
+                        # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics 
+                        # ^ In english, this means use the state-value to estimate the next reward, as state-value is just a prediction of such.                                  
                         if self.actor_critic_architecture == 'cnn':
                             # TODO add back in for PFGRU
                             standardized_observations = observations
                         else:
-                            # if trajectory didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics                            
                             standardized_observations = {id: observations[id] for id in self.agents}
-                            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':    
-                                for id in self.agents:
-                                    standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
+                            for id in self.agents:
+                                standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
                         for id, ac in self.agents.items():
                             results = ac.step(standardized_observations, hiddens=hiddens, store_map=False)  # Ensure next map is not buffered when going to compare to logger for update
                             last_state_value = results.state_value
  
                         if epoch_ended:
-                            # Set flag to sample new environment parameters
+                            # Set flag to reset/sample new environment parameters
                             self.env.epoch_end = True 
                     else:
-                        last_state_value = 0  # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) for use in the GAE() function
+                        # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout)
+                        # for use in the GAE() function                        
+                        last_state_value = 0  
                         
                     # Finish the trajectory and compute advantages. See function comments for more information                        
                     for id, ac in self.agents.items():
@@ -434,11 +436,12 @@ class train_PPO:
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                         for id in self.agents:
                             self.stat_buffers[id].reset()
-                         
+                                               
                     # If not at the end of an epoch, reset hidden layers for incoming new episode    
                     if timeout and not epoch_ended: # not env.epoch_end:
-                        for id, ac in self.agents.items():                        
-                            hiddens[id] = ac.reset_neural_nets()
+                        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                               
+                            for id, ac in self.agents.items():                        
+                                hiddens[id] = ac.reset_neural_nets()
                     # Else log epoch results                    
                     else:
                         for id in self.agents:
@@ -454,9 +457,11 @@ class train_PPO:
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}
                     steps_in_episode = 0
+                    
                     # Reset maps for new episode
                     if self.actor_critic_architecture == 'cnn':
-                        _ = ac.reset_neural_nets()
+                        for id, ac in self.agents.items():                        
+                            _ = ac.reset_neural_nets()    
 
                     # Update stat buffers for all agent observations for later observation normalization
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            

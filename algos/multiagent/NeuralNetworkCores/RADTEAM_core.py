@@ -422,7 +422,7 @@ class MapsBuffer:
 
     def __post_init__(self)-> None:
         # Set logrithmic base for visits counts normalization
-        self.base = self.steps_per_episode * self.number_of_agents
+        self.base = (self.steps_per_episode * self.number_of_agents) + 1 # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
         
         # Calculate map x and y bounds for observation maps
         
@@ -438,7 +438,7 @@ class MapsBuffer:
         self._reset_maps()            
         
     def reset(self)-> None:
-        ''' Obsolete method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset() '''
+        ''' Obsolete method to clear maps and reset matrices. Replaced with clear_matrices(). If seeing errors in maps, try a full reset with full_reset() '''
         self.clear_matrices()
 
     def clear_matrices(self)-> None:

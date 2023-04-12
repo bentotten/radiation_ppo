@@ -381,7 +381,7 @@ class PPOBuffer:
     def get(self) -> Dict[str, object]:
         """
         Call this at the end of an epoch to get all of the data from buffers. Advantages are normalized/shifted to have mean zero and std one). 
-        Buffer pointers and episode_lengths are reset to start over.
+        Buffer pointers and episode_lengths are reset to start over. NOTE: full observations are not stored here, they need to be converted to mapstacks.
         """
         # Make sure buffers are full
         assert self.ptr == self.max_size 
@@ -777,7 +777,7 @@ class AgentPPO:
                 # TODO Pull out for global critic
                 self.agent_optimizer.critic_optimizer.zero_grad()
                 #critic_loss_results = self.compute_batched_losses_critic(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes)
+                critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=mapstacks)
                 critic_loss_results['critic_loss'].backward()
                 self.agent_optimizer.critic_optimizer.step()
                       
@@ -873,8 +873,6 @@ class AgentPPO:
         # NOTE: Not using observation tensor, using internal map buffer
         obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
         
-        map_stack = self.agent.get_map_stack(state_observation=map_stack, id=self.id)
-
         # Get action probabilities and entropy for an state's mapstack and action, then put the action probabilities on the CPU (if on the GPU)
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
@@ -1158,7 +1156,21 @@ class AgentPPO:
             (self.env_height * loc - (src_tar)).square().mean().sqrt(),
         )  # type: ignore
 
-    def generate_mapstacks():
+    def generate_mapstacks(self):
+        ''' Generate a list of inflated maps from buffer '''
+        maps_buffer = list()
+        
+        # Clear existing maps
+        self.agent.reset()
+        
+        # Convert observations to maps
+        for step in self.ppo_buffer.full_observation_buffer:
+            observation = {key: value for key, value in step.items() if key != 'terminal'}
+            maps_buffer.append(self.agent.get_map_stack(state_observation=observation, id=self.id))
+            
+            # If next observation is a fresh episode, clear maps
+            if step['terminal']:
+                self.agent.reset()
         pass
 
     def get_map_dimensions(self):
