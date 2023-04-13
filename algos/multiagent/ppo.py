@@ -25,6 +25,8 @@ except ModuleNotFoundError:
 except: 
     raise Exception
 
+# If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements, but greatly slows down training.
+PRIO_MEMORY = False
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
@@ -128,7 +130,7 @@ class UpdateResult(NamedTuple):
     kl_divergence: npt.NDArray[np.float32]
     Entropy: npt.NDArray[np.float32]
     ClipFrac: npt.NDArray[np.float32]
-    LocLoss: torch.Tensor
+    LocLoss: Union[Torch.Tensor, None]
     VarExplain: int #TODO what is this?
 
 
@@ -222,7 +224,9 @@ class PPOBuffer:
     path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
-    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(init=False) # For each timestep, stores every agents observation
+    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(init=False) # In memory-priority mode, for each timestep, stores every agents observation
+    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(init=False) # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
+    
     obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
     act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
     adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
@@ -242,16 +246,25 @@ class PPOBuffer:
         self.ptr = 0
         self.path_start_idx = 0     
 
-        # TODO finish implementing to get logger out of PPO buffer
         self.episode_lengths_buffer = list()
         
-        # TODO finish implementing to get mapstack buffer out of CNN and replace obs_buf
-        self.full_observation_buffer = list()
-        for i in range(self.max_size):
-            self.full_observation_buffer.append({})
-            for id in range(self.number_agents):
-                self.full_observation_buffer[i][id] = np.zeros((self.observation_dimension,))
-                self.full_observation_buffer[i]['terminal'] = None
+        if PRIO_MEMORY:
+            self.full_observation_buffer = list()
+            for i in range(self.max_size):
+                self.full_observation_buffer.append({})
+                for id in range(self.number_agents):
+                    self.full_observation_buffer[i][id] = np.zeros((self.observation_dimension,))
+                    self.full_observation_buffer[i]['terminal'] = None
+            
+            self.heatmap_buffer = None
+        else:
+            self.heatmap_buffer = dict()
+            self.heatmap_buffer['actor'] = list()
+            self.heatmap_buffer['critic'] = list()
+            for i in range(self.max_size):
+                self.heatmap_buffer['actor'].append(None) # For actor
+                self.heatmap_buffer['critic'].append(None)  # For critic
+            self.full_observation_buffer = None            
 
         # TODO delete once full_observation_buffer is done
         self.obs_buf= np.zeros(
@@ -309,7 +322,8 @@ class PPOBuffer:
         val: float,
         logp: float,
         src: npt.NDArray[np.float32],
-        full_observation: Dict,
+        full_observation: Dict[int, npt.NDArray],
+        heatmap_stacks: RADCNN_core.HeatMaps,
         terminal: bool
     ) -> None:
         """
@@ -333,9 +347,13 @@ class PPOBuffer:
         self.source_tar[self.ptr] = src
         self.logp_buf[self.ptr] = logp
         
-        for agent_id, agent_obs in full_observation.items():
-            self.full_observation_buffer[self.ptr][agent_id] = agent_obs
-            self.full_observation_buffer[self.ptr]['terminal'] = terminal
+        if PRIO_MEMORY:
+            for agent_id, agent_obs in full_observation.items():
+                self.full_observation_buffer[self.ptr][agent_id] = agent_obs
+                self.full_observation_buffer[self.ptr]['terminal'] = terminal
+        else:
+            self.heatmap_buffer['actor'][self.ptr] = heatmap_stacks.actor
+            self.heatmap_buffer['critic'][self.ptr] = heatmap_stacks.critic
         
         self.ptr += 1
 
@@ -613,22 +631,17 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, store_map: bool = True, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
+    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
         ''' Wrapper for neural network action selection'''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
             results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
         elif self.actor_critic_architecture == 'cnn':
-            # Remove this after reinflating Maps in PPO buffer
-            if store_map:
-                results = self.agent.select_action(observations, self.id, store_map=store_map)  # TODO add in hidden layer shenanagins for PFGRU use
-            else:
-                results = self.agent.select_action(observations, self.id, store_map=store_map)
-                # Ensure next map is not buffered when going to compare to logger for update. 
+            results, heatmaps = self.agent.select_action(observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
                 
         else:
             raise ValueError("Unknown architecture")
-        return results         
+        return results, heatmaps         
     
     def reset_neural_nets(self, batch_size: int = 1) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
         ''' Reset the neural networks at the end of an episode'''
@@ -682,7 +695,7 @@ class AgentPPO:
         # Length of data ep_form
         min_iterations = len(data["ep_form"])
         kk = 0
-        term = False
+        term = False        
 
         # RADPPO trains both actor and critic in same function/train_pi_iters, while TEAM-RAD needs to enable a global critic so iterates inside update_a2c() instead
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
@@ -724,8 +737,12 @@ class AgentPPO:
             # Put agents in train mode
             self.agent.set_mode(mode='train')
             
-            # Get mapstack [NEW! Needs testing!]
-            actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
+            if PRIO_MEMORY:
+                # Get mapstack 
+                actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
+            else:
+                actor_maps_buffer = self.ppo_buffer.heatmap_buffer['actor']
+                critic_maps_buffer = self.ppo_buffer.heatmap_buffer['critic']
                 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             for k_epoch in range(self.train_pi_iters):
@@ -752,6 +769,8 @@ class AgentPPO:
             #self.agent_optimizer.pfgru_scheduler.step() 
             # Reduce pfgru learning rate
 
+            results: UpdateResult
+
             # If local critic, do Value function learning here
             # For global critic, only first agent performs the update
             if not self.GlobalCriticOptimizer or self.id == 0:       
@@ -764,7 +783,7 @@ class AgentPPO:
                 # Reduce learning rate
                 self.agent_optimizer.critic_scheduler.step()  
                 
-                update_results = UpdateResult(
+                results = UpdateResult(
                     stop_iteration=k_epoch,  
                     loss_policy=actor_loss_results['pi_loss'].item(),
                     loss_critic=critic_loss_results['critic_loss'].item(),
@@ -776,7 +795,7 @@ class AgentPPO:
                     VarExplain=0 # TODO what is this?
                 )                          
             else:
-                update_results = UpdateResult(
+                results = UpdateResult(
                     stop_iteration=k_epoch,  
                     loss_policy=actor_loss_results['pi_loss'].item(),
                     loss_critic=None,
@@ -792,7 +811,7 @@ class AgentPPO:
             self.agent.set_mode(mode='eval')                           
             
             # Log changes from update
-            return update_results
+            return results
                     
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''

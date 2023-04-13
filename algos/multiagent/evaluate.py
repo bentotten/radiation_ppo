@@ -260,7 +260,7 @@ class EpisodeRunner:
             # Get Agent choices
             agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
             for id, agent in self.agents.items():
-                agent_thoughts[id] = agent.select_action(id=id, state_observation=observations, store_map = True)    
+                agent_thoughts[id], _ = agent.select_action(id=id, state_observation=observations, store_map = True)    
                 
             # Create action list to send to environment
             agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts}  

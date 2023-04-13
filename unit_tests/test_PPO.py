@@ -678,18 +678,18 @@ class Test_PPOAgent:
         # Test CNN
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        step = AgentPPO.step(observations=observations, hiddens=hiddens, store_map=save_map, message=message)
+        step = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
         
         # Test RAD-A2c
         init_parameters['actor_critic_architecture'] = 'rnn'
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        step = AgentPPO.step(observations=observations, hiddens=hiddens, store_map=save_map, message=message)
+        step = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
         
         # Test invalid architecture 
         init_parameters['actor_critic_architecture'] = 'foo'
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        step = AgentPPO.step(observations=observations, hiddens=hiddens, store_map=save_map, message=message)        
+        step = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)        
 
         #-> RADCNN_core.ActionChoice:

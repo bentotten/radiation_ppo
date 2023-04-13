@@ -66,6 +66,11 @@ class ActionChoice(NamedTuple):
     # For compatibility with RAD-PPO
     #: Hidden state (for compatibility with RAD-PPO)
     hiddens: Union[torch.Tensor, None] = None
+    
+class HeatMaps(NamedTuple):
+    ''' Named Tuple - Stores actor and critic heatmaps for a step'''
+    actor: torch.Tensor
+    critic: torch.Tensor
 
 
 @dataclass
@@ -1483,7 +1488,7 @@ class CNNBase:
         
         return batched_actor_mapstack, batched_critic_mapstack
                      
-    def select_action(self, state_observation: Dict[int, npt.NDArray], id: int, store_map=True) -> ActionChoice:
+    def select_action(self, state_observation: Dict[int, npt.NDArray], id: int) -> Tuple[ActionChoice, HeatMaps]:
         ''' 
             Method to take a multi-agent observation and convert it to maps and store to a buffer. Then uses the actor network to select an 
             action (and returns action logprobabilities) and the critic network to calculate state-value. 
@@ -1498,7 +1503,6 @@ class CNNBase:
             # Get actions and values                          
             action, action_logprob  = self.pi.act(batched_actor_mapstack) # Choose action
                         
-            #TODO make seperate mapstack for critic that only has one location map!
             state_value: Union[torch.Tensor, None] = self.critic.forward(batched_critic_mapstack)  # size(1)
             
         # except Exception as err:
@@ -1516,7 +1520,7 @@ class CNNBase:
             state_value_item = state_value.item()            
         else:
             state_value_item = None
-        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value_item)
+        return ActionChoice(id=id, action=action.item(), action_logprob=action_logprob.item(), state_value=state_value_item), HeatMaps(batched_actor_mapstack, batched_critic_mapstack)
 
     def get_map_dimensions(self)-> Tuple[int, int]:
         return self.maps.map_dimensions

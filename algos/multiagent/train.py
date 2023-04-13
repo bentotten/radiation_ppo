@@ -262,7 +262,7 @@ class train_PPO:
                 # Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
                 for id, ac in self.agents.items():
-                    agent_thoughts[id] = ac.step(observations=standardized_observations, hiddens = hiddens, store_map = True, message=infos)
+                    agent_thoughts[id], heatmaps = ac.step(observations=standardized_observations, hiddens = hiddens, message=infos)
                     #action, value, logprob, hiddens[self.id], out_prediction = ac.step
                     
                 # Create action list to send to environment
@@ -325,6 +325,7 @@ class train_PPO:
                         logp = agent_thoughts[id].action_logprob,
                         src = source_coordinates,
                         terminal = episode_reset_next_step,
+                        heatmap_stacks= heatmaps,
                         full_observation = observations
                     )
                     
@@ -358,7 +359,7 @@ class train_PPO:
                             for id in self.agents:
                                 standardized_observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
                         for id, ac in self.agents.items():
-                            results = ac.step(standardized_observations, hiddens=hiddens, store_map=False)  # Ensure next map is not buffered when going to compare to logger for update
+                            results, _ = ac.step(standardized_observations, hiddens=hiddens)  # get prediction of next reward to bootstrap with.
                             last_state_value = results.state_value
  
                         if epoch_ended:
