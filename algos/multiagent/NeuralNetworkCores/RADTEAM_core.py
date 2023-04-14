@@ -403,19 +403,8 @@ class MapsBuffer:
     #: Obstacles Map: a grid of how far from an obstacle each agent was when they detected it
     obstacles_map: Map = field(init=False) 
     #: Visit Counts Map: a grid of the number of visits to each grid square from all agents combined.
-    visit_counts_map: Map = field(init=False) 
-
-    # Sparse Matrices - so that maps can be made out-of-order without jacking up values
-    #: Location Matrix: tracks the individual agent's location.
-    location_matrix: Dict = field(default_factory=lambda: dict())     
-    #: Other Locations Matrix: tracks the number of agents located in each grid element (excluding current agent).    
-    others_locations_matrix: Dict = field(default_factory=lambda: dict())     
-    #: Readings Matrix:  tracks the last estimated reading in each grid square - unvisited squares are given a reading of 0.
-    readings_matrix: Dict = field(default_factory=lambda: dict())     
-    #: Obstacles Matrix:  tracks how far from an obstacle each agent was when they detected it
-    obstacles_matrix: Dict = field(default_factory=lambda: dict())     
-    #: Visit Counts Matrix:  tracks the number of visits to each grid square from all agents combined.
-    visit_counts_matrix: Dict = field(default_factory=lambda: dict())     
+    visit_counts_map: Map = field(init=False)  
+    
     #: Shadow hashtable for visits counts map, increments a counter every time that location is visited. This is used during logrithmic normalization to reduce computational complexity and python floating 
     #:  point precision errors, it is "cheaper" to calculate the log on the fly with a second sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
     visit_counts_shadow: Dict = field(default_factory=lambda: dict())     
@@ -628,11 +617,7 @@ class MapsBuffer:
             normalized_value = self.tools.normalizer.normalize_incremental_logscale(current_value=current, base=self.base, increment_value=2)
         
         # Save to  matrix
-        self.visit_counts_matrix[coordinates] = normalized_value
-        
-        # Fill in map
-        for coords, value in self.visit_counts_matrix.items():
-            self.visit_counts_map[coords[0]][coords[1]] = value        
+        self.visit_counts_map[coordinates[0]][coordinates[1]] = normalized_value
         
         # Sanity warning
         if self.visit_counts_map[coordinates[0]][coordinates[1]] == 1.0: warnings.warn("Visit count is normalized to 1; either all Agents did not move entire episode or there is a normalization error")
@@ -647,13 +632,9 @@ class MapsBuffer:
             :return: None
         '''
         # Fill in map
-        for coords, value in self.obstacles_matrix.items():
-            self.obstacles_map[coords[0]][coords[1]] = value
-        
         for detection in single_observation[self.obstacle_state_offset::]:
             if detection != 0:
-                self.obstacles_matrix[coordinates] = max(detection, self.obstacles_matrix[coordinates]) if (coordinates in self.obstacles_matrix.keys()) else detection
-                self.obstacles_map[coordinates[0]][coordinates[1]] = self.obstacles_matrix[coordinates]
+                self.obstacles_map[coordinates[0]][coordinates[1]] = detection
 
 
 class Actor(nn.Module):
