@@ -417,27 +417,6 @@ class Test_MapBuffer:
                     assert getattr(maps, map_att) == getattr(baseline, baseline_att)
             
         assert maps.tools.reset_flag == 3        
-        
-        # Test end-of-episode matrix clear, where matrices are cleared. Should be nearly identical to reset()
-        _ = maps.observation_to_map(id=0, observation=test_observation)
-        
-        start_time = time.time()           
-        maps.clear_matrices()
-        reset_time = time.time() - start_time        
-        
-        assert (full_reset_time + 0.001) > reset_time
-        
-        # Immediate members
-        for baseline_att, map_att in zip(baseline_list, [a for a in dir(maps) if not a.startswith('__') and not callable(getattr(maps, a))]):
-            test = type(getattr(maps, map_att))
-            if test is not RADTEAM_core.ConversionTools:
-                if test == np.ndarray:
-                    assert getattr(maps, map_att).max() == getattr(baseline, baseline_att).max()
-                    assert getattr(maps, map_att).min() == getattr(baseline, baseline_att).min()                
-                else:
-                    assert getattr(maps, map_att) == getattr(baseline, baseline_att)
-            
-        assert maps.tools.reset_flag == 4                               
                  
     def test_inflate_coordinates(self, init_parameters)-> None:
         ''' Test coordinate inflation for both observation and point '''
@@ -474,26 +453,26 @@ class Test_MapBuffer:
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
         
         # Test normal first update
-        maps._update_current_agent_location_map(current_coordinates=(0, 1))
+        maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=None)
         assert maps.location_map[0][1] == 1.0
         flat = np.delete(maps.location_map.ravel(), 1)
         assert flat.max() == 0.0 
             
         with pytest.raises(AssertionError):
             maps.location_map[2][2] = 2
-            maps._update_current_agent_location_map(current_coordinates=(0, 1))  # Maximum value exceeded      
+            maps._update_current_agent_location_map(current_coordinates=(0, 1), last_coordinates=(0, 1))  # Maximum value exceeded      
     
     def test_update_other_agent_locations_map(self, init_parameters):
         ''' Test other agent locations map update '''
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
         
         # Test normal first update
-        maps._update_other_agent_locations_map(current_coordinates=(0, 1))
+        maps._update_other_agent_locations_map(current_coordinates=(0, 1), last_coordinates=None)
         assert maps.others_locations_map[0][1] == 1.0
         flat = np.delete(maps.others_locations_map.ravel(), 1)
         assert flat.max() == 0.0
         
-        maps._update_other_agent_locations_map(current_coordinates=(0, 2))
+        maps._update_other_agent_locations_map(current_coordinates=(0, 2), last_coordinates=(0, 1))
         assert maps.others_locations_map[0][2] == 1.0
         flat = maps.others_locations_map.ravel()
         flat_t1 = np.delete(flat, 2)
@@ -505,12 +484,12 @@ class Test_MapBuffer:
         maps = RADTEAM_core.MapsBuffer(**init_parameters)
         
         # Test normal first update
-        maps._update_combined_agent_locations_map(current_coordinates=(0, 1))
+        maps._update_combined_agent_locations_map(current_coordinates=(0, 1), last_coordinates=None)
         assert maps.combined_location_map[0][1] == 1.0
         flat = np.delete(maps.combined_location_map.ravel(), 1)
         assert flat.max() == 0.0
         
-        maps._update_combined_agent_locations_map(current_coordinates=(0, 2))
+        maps._update_combined_agent_locations_map(current_coordinates=(0, 2), last_coordinates=(0, 1))
         assert maps.combined_location_map[0][2] == 1.0
         flat = maps.combined_location_map.ravel()
         flat_t1 = np.delete(flat, 2)

@@ -372,11 +372,11 @@ class MapsBuffer:
     observation_dimension: int  
     steps_per_episode: int # 
     number_of_agents: int # Used for normalizing visists count in visits map
-    resolution_multiplier: float
             
     # Option Parameters
     grid_bounds: Tuple = field(default_factory= lambda: (1,1)) 
     resolution_accuracy: float = field(default=22.0) 
+    resolution_multiplier: float = field(default=0.01)   # If wrong, may just be slow for map resets 
     offset: float = field(default=0.22727272727272727) 
     obstacle_state_offset: int = field(default=3)     
     
@@ -435,13 +435,22 @@ class MapsBuffer:
         self.reset()         
         
     def reset(self)-> None:
-        ''' Obsolete method to clear maps and reset matrices. Replaced with clear_matrices(). If seeing errors in maps, try a full reset with full_reset() '''
+        ''' Method to clear maps and reset matrices. If seeing errors in maps, try a full reset with full_reset() '''
         
         self._clear_maps()
         
         self.locations_matrix.clear()
         self.visit_counts_shadow.clear()        
         self.tools.reset() 
+        
+    def full_reset(self)-> None:
+        ''' Obsolete method to reinitialize maps and reset matrices. Slower than reset()'''
+        
+        self._reset_maps()
+        
+        self.locations_matrix.clear()
+        self.visit_counts_shadow.clear()        
+        self.tools.reset()         
 
     def observation_to_map(self, observation: Dict[int, np.ndarray], id: int) -> MapStack:  
         '''
