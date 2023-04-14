@@ -429,6 +429,8 @@ class MapsBuffer:
         
     def reset(self)-> None:
         ''' Obsolete method to clear maps and reset matrices. Replaced with clear_matrices(). If seeing errors in maps, try a full reset with full_reset() '''
+        # TODO slow
+        self.combined_location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))         
         self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
         self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
         self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
@@ -456,7 +458,7 @@ class MapsBuffer:
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys()            
+            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None
             
             # Update Locations maps
             if id == agent_id:
@@ -526,11 +528,11 @@ class MapsBuffer:
             :return: None
         '''           
         if last_coordinates:
-            self.others_locations_map[last_coordinates[0]][last_coordinates[1]] -= 1 
+            self.combined_location_map[last_coordinates[0]][last_coordinates[1]] -= 1 
             # In case agents are at same location, usually the start-point, just ensure was not negative.
-            assert self.others_locations_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
+            assert self.combined_location_map[last_coordinates[0]][last_coordinates[1]] > -1, "Location map grid coordinate reset where agent was not present"
         else:
-            assert self.others_locations_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."              
+            assert self.combined_location_map.max() < self.number_of_agents, "Location exists on map however no last coordinates buffer passed for processing."              
             
         self.combined_location_map[current_coordinates[0]][current_coordinates[1]] += 1                  
         
