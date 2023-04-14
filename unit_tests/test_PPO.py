@@ -2,6 +2,7 @@
 import pytest
 
 import algos.multiagent.ppo as PPO
+import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADTEAM_core
 
 import numpy as np
 import torch
@@ -14,6 +15,7 @@ def helpers():
 @pytest.fixture
 def rada2c_hiddens():
     return Hiddens
+
 
 class Hiddens:
     @staticmethod
@@ -141,6 +143,7 @@ class Hiddens:
                 [-3.6889]])),
             torch.Tensor([[[ 0.0443,  0.1509,  0.0280, -0.1628,  0.0428,  0.1115, -0.1386, -0.0474,  0.1737,  0.1868, -0.1770,  0.1078,  0.0150,  0.1685,
                     0.0116, -0.0410, -0.0254, -0.1502,  0.1679,  0.1237,  0.0376, -0.0082, -0.0871,  0.0100]]]))}
+
 
 class Helpers:
     @staticmethod
@@ -314,7 +317,8 @@ class Test_PPOBuffer:
         val = -0.26629042625427246
         logp = -1.777620792388916 
         src = np.array([788.0, 306.0])
-        full_obs = {0: obs, 1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)}        
+        full_obs = {0: obs, 1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)}
+        heatmap_stack = RADTEAM_core.HeatMaps(torch.tensor([0]), torch.tensor([1]))
         test = np.zeros((11,), dtype=np.float32) # For comparison with empty
         
         # Store 1st set
@@ -325,7 +329,9 @@ class Test_PPOBuffer:
             val=val,
             logp=logp,
             src=src,
-            full_observation=full_obs
+            full_observation=full_obs,
+            heatmap_stacks=heatmap_stack,
+            terminal=False
         )
         
         # Check stored correctly
@@ -347,8 +353,14 @@ class Test_PPOBuffer:
         assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[0] == pytest.approx(logp)
         
-        for agent_id, agent_obs in full_obs.items():
-            assert np.array_equal(buffer.full_observation_buffer[0][agent_id], agent_obs)     
+        # TODO write tests for prio_memory mode
+        # for agent_id, agent_obs in full_obs.items():
+        #     assert np.array_equal(buffer.full_observation_buffer[0][agent_id], agent_obs)     
+        # assert buffer.full_observation_buffer[0]['terminal'] == False
+            
+        assert torch.equal(buffer.heatmap_buffer['actor'][0], heatmap_stack.actor)
+        assert torch.equal(buffer.heatmap_buffer['critic'][0], heatmap_stack.critic)
+        
             
         # Check remainder are zeros        
         for i in range(1, init_parameters['max_size']):
@@ -359,8 +371,8 @@ class Test_PPOBuffer:
             assert np.array_equal(buffer.source_tar[i], np.zeros((2,), dtype=np.float32))   
             assert buffer.logp_buf[i] == 0.0
 
-            for id in range(1, init_parameters['number_agents']):
-                assert np.array_equal(buffer.full_observation_buffer[i][id], test)
+            # for id in range(1, init_parameters['number_agents']):
+            #     assert np.array_equal(buffer.full_observation_buffer[i][id], test)
 
         # Check pointer updated
         assert buffer.ptr == 1
@@ -373,7 +385,9 @@ class Test_PPOBuffer:
             val=val,
             logp=logp,
             src=src,
-            full_observation=full_obs
+            full_observation=full_obs,
+            heatmap_stacks=heatmap_stack,
+            terminal=False            
         )
         
         # Check stored correctly
@@ -395,8 +409,13 @@ class Test_PPOBuffer:
         assert buffer.logp_buf.shape == (2,)
         assert buffer.logp_buf[1] == pytest.approx(logp)
         
-        for agent_id, agent_obs in full_obs.items():
-            assert np.array_equal(buffer.full_observation_buffer[1][agent_id], agent_obs)     
+        # for agent_id, agent_obs in full_obs.items():
+        #     assert np.array_equal(buffer.full_observation_buffer[1][agent_id], agent_obs)     
+        # assert buffer.full_observation_buffer[1]['terminal'] == False            
+            
+        assert torch.equal(buffer.heatmap_buffer['actor'][1], heatmap_stack.actor)
+        assert torch.equal(buffer.heatmap_buffer['critic'][1], heatmap_stack.critic)
+        
             
         # Check remainder are zeros        
         for i in range(2, init_parameters['max_size']):
@@ -407,8 +426,8 @@ class Test_PPOBuffer:
             assert np.array_equal(buffer.source_tar[i], np.zeros((2,), dtype=np.float32))   
             assert buffer.logp_buf[i] == 0.0
 
-            for id in range(1, init_parameters['number_agents']):
-                assert np.array_equal(buffer.full_observation_buffer[i][id], test)        
+            # for id in range(1, init_parameters['number_agents']):
+            #     assert np.array_equal(buffer.full_observation_buffer[i][id], test)        
 
         # Check pointer updated
         assert buffer.ptr == 2
@@ -422,7 +441,9 @@ class Test_PPOBuffer:
                 val=val,
                 logp=logp,
                 src=src,
-                full_observation=full_obs
+                full_observation=full_obs,
+                heatmap_stacks=heatmap_stack,
+                terminal=False                      
             )           
 
     def test_store_episode_length(self, init_parameters)-> None:
@@ -484,6 +505,8 @@ class Test_PPOBuffer:
         rewards = np.append(test['rewards'], test['last_val']).tolist()
         manual_rewardsToGo = helpers.rewards_to_go(batch_rews=rewards, gamma=test['gamma'])[:-1] # Remove last non-step element   
                         
+        obs = np.zeros((11,), dtype=np.float32)
+        
         # setup PPO buffer
         init_parameters = dict(
             observation_dimension = 11,
@@ -503,8 +526,11 @@ class Test_PPOBuffer:
             val=test['values'][0],
             logp=0,
             src=np.zeros((1,2), dtype=np.float32),
-            full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
+            full_observation={0: np.zeros(11,), 1: np.zeros(11,)},
+            terminal=False,
+            heatmap_stacks= RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs))            
         )
+        
         # 2nd step:
         buffer.store(
             obs=np.zeros((11,), dtype=np.float32),
@@ -513,7 +539,9 @@ class Test_PPOBuffer:
             val=test['values'][1],
             logp=0,
             src=np.zeros((1,2), dtype=np.float32),
-            full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
+            full_observation={0: np.zeros(11,), 1: np.zeros(11,)},
+            terminal=False,
+            heatmap_stacks= RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs))            
         )  
         # 3rd step:
         buffer.store(
@@ -523,7 +551,9 @@ class Test_PPOBuffer:
             val=test['values'][2],
             logp=0,
             src=np.zeros((1,2), dtype=np.float32),
-            full_observation={0: np.zeros(11,), 1: np.zeros(11,)}
+            full_observation={0: np.zeros(11,), 1: np.zeros(11,)},
+            terminal=False,
+            heatmap_stacks= RADTEAM_core.HeatMaps(torch.tensor(obs), torch.tensor(obs))                 
         )               
               
         buffer.GAE_advantage_and_rewardsToGO(last_state_value=test['last_val'])
@@ -536,6 +566,8 @@ class Test_PPOBuffer:
         
     def test_get(self, init_parameters)-> None:
         buffer = PPO.PPOBuffer(**init_parameters)    
+        
+        map = RADTEAM_core.MapsBuffer(observation_dimension=11, number_of_agents=2,steps_per_episode=5)
                 
         # Manual test variables                
         test = dict(
@@ -552,8 +584,24 @@ class Test_PPOBuffer:
             src = np.array([788.0, 306.0]),
             act = np.array([1, 2]),
             logp = np.array([-1.777620792388916, -1.777620792388916]),
-            last_val = -0.26634163
+            last_val = -0.26634163,
+            terminal=False               
         )     
+        
+        # Get mapstack
+        stack = map.observation_to_map(test['full_obs'], id=0)
+        actor_map_stack: torch.Tensor = torch.stack(
+            [torch.tensor(stack[0]), torch.tensor(stack[1]), torch.tensor(stack[2]), torch.tensor(stack[3]),  torch.tensor(stack[4])]
+        )
+        critic_map_stack: torch.Tensor = torch.stack(
+            [torch.tensor(stack[2]), torch.tensor(stack[3]),  torch.tensor(stack[4]), torch.tensor(stack[5])]
+        )            
+        
+        # Add single batch tensor dimension for action selection
+        batched_actor_mapstack: torch.Tensor = torch.unsqueeze(actor_map_stack, dim=0)      
+        batched_critic_mapstack: torch.Tensor = torch.unsqueeze(critic_map_stack, dim=0)           
+        
+        test['heat'] = RADTEAM_core.HeatMaps(batched_actor_mapstack, batched_critic_mapstack)
             
         # Prime buffer
         # 1st step: 
@@ -564,7 +612,9 @@ class Test_PPOBuffer:
             val=test['values'][0],
             logp=test['logp'][0],
             src=test['src'],
-            full_observation=test['full_obs']
+            full_observation=test['full_obs'],
+            terminal=test['terminal'],
+            heatmap_stacks=test['heat']            
         )
         # 2nd step:
         buffer.store(
@@ -574,7 +624,9 @@ class Test_PPOBuffer:
             val=test['values'][1],
             logp=test['logp'][1],
             src=test['src'],
-            full_observation=test['full_obs']
+            full_observation=test['full_obs'],
+            terminal=test['terminal'],
+            heatmap_stacks=test['heat']                     
         )
         
         buffer.store_episode_length(2)

@@ -372,10 +372,6 @@ def create_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def setup_training():
-    pass
-
-
 def main() -> None:
     ''' Set up experiment and create simulation environment. '''    
     args = parse_args(create_parser())
@@ -559,10 +555,11 @@ def main() -> None:
         print("##### BY CUMTIME #####")
         stats = pstats.Stats(profiler).sort_stats('cumtime')
         stats.print_stats()       
-        stats.dump_stats(f"{save_path[0]}/{save_path[1]}/profile.txt")         
-        # print("##### BY TOTTIME #####")
-        # stats = pstats.Stats(profiler).sort_stats('tottime')
-        # stats.print_stats()                
+        stats.dump_stats(f"{save_path[0]}/profile_cumtime.txt")         
+        print("##### BY TOTTIME #####")
+        stats = pstats.Stats(profiler).sort_stats('tottime')
+        stats.print_stats() 
+        stats.dump_stats(f"{save_path[0]}/profile_tottime.txt")                                
 
     #     try:
     #         # Begin simulation

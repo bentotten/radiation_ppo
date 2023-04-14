@@ -120,6 +120,24 @@ def generalized_advantage_estimate(gamma, lamb, done, rewards, values):
         
     return advantages
 
+# NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
+def rewards_to_go(batch_rews, gamma):
+    ''' 
+    Calculate the rewards to go. Gamma is the discount factor.
+    Thank you to https://medium.com/swlh/coding-ppo-from-scratch-with-pytorch-part-2-4-f9d8b8aa938a
+    '''
+    # The rewards-to-go (rtg) per episode per batch to return and the shape will be (num timesteps per episode).
+    batch_rtgs = [] 
+    
+    # Iterate through each episode backwards to maintain same order in batch_rtgs
+    discounted_reward = 0 # The discounted reward so far
+    
+    for rew in reversed(batch_rews):
+        discounted_reward = rew + discounted_reward * gamma
+        batch_rtgs.insert(0, discounted_reward)
+            
+    return batch_rtgs     
+
 
 class UpdateResult(NamedTuple):
     ''' Object that contains the return values from the neural network updates '''
