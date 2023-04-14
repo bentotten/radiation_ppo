@@ -29,6 +29,8 @@ except ModuleNotFoundError:
 except: 
     raise Exception
 
+PROFILE = True
+
 def log_state(error: Exception):
     trace_back = traceback.format_exc()  # Gives error and location    
     trace = inspect.trace()
@@ -413,6 +415,12 @@ def main() -> None:
         'DEBUG': args.DEBUG
     }
 
+    if PROFILE:
+        import cProfile, pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
+
+
     # Set up training
     if args.mode == 'train':
         env: RadSearch = gym.make(args.env_name,**env_kwargs)
@@ -545,6 +553,16 @@ def main() -> None:
         simulation = evaluate.evaluate_PPO(eval_kwargs=eval_kwargs)
         
         simulation.evaluate() 
+
+    if PROFILE:
+        profiler.disable()
+        print("##### BY CUMTIME #####")
+        stats = pstats.Stats(profiler).sort_stats('cumtime')
+        stats.print_stats()       
+        stats.dump_stats(f"{save_path[0]}/{save_path[1]}/profile.txt")         
+        # print("##### BY TOTTIME #####")
+        # stats = pstats.Stats(profiler).sort_stats('tottime')
+        # stats.print_stats()                
 
     #     try:
     #         # Begin simulation

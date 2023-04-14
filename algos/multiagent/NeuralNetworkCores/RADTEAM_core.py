@@ -363,13 +363,16 @@ class MapsBuffer:
             grids to contain them. Default is 0.22727272727272727 to increase the grid size to 27.
             
         :param obstacle_state_offset: Number of initial elements in state return that do not indicate there is an obstacle. First element is intensity, second two are x and y coords. 
-            Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.          
+            Defaults to 3, with the 4th element indicating the beginning of obstacle detections. This defaults to 3.       
+            
+        :param resolution_multiplier: The multiplier used to create the resolution accuracy. Used to indicate how maps should be reset, for efficiency.   
     '''
     #TODO change env return to a named tuple instead.   
     # Inputs
     observation_dimension: int  
     steps_per_episode: int # 
     number_of_agents: int # Used for normalizing visists count in visits map
+    resolution_multiplier: float
             
     # Option Parameters
     grid_bounds: Tuple = field(default_factory= lambda: (1,1)) 
@@ -409,6 +412,9 @@ class MapsBuffer:
     #:  point precision errors, it is "cheaper" to calculate the log on the fly with a second sparce matrix than to inflate a log'd number. Stores tuples (x, y, 2(i)) where i increments every hit.
     visit_counts_shadow: Dict = field(default_factory=lambda: dict())     
     
+    #: Locations matrix for all tracked locations. Used for fast map clearing after reset
+    locations_matrix: List = field(default_factory=lambda: list())
+    
     # Buffers
     #: Data preprocessing tools for standardization, normalization, and estimating values in order to input into a observation map.
     tools: ConversionTools = field(default_factory=lambda: ConversionTools())
@@ -425,18 +431,15 @@ class MapsBuffer:
         self.y_limit_scaled: int = self.map_dimensions[1]
         
         # Initialize maps and buffer
+        self._reset_maps() # Initialize maps
         self.reset()         
         
     def reset(self)-> None:
         ''' Obsolete method to clear maps and reset matrices. Replaced with clear_matrices(). If seeing errors in maps, try a full reset with full_reset() '''
-        # TODO slow
-        self.combined_location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))         
-        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
-        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
-        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
-        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
         
+        self._clear_maps()
+        
+        self.locations_matrix.clear()
         self.visit_counts_shadow.clear()        
         self.tools.reset() 
 
@@ -459,12 +462,13 @@ class MapsBuffer:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
             inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None
+            self.locations_matrix.append(inflated_agent_coordinates)
             
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
                 self._update_combined_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
-            else:            
+            else:   
                 self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)                
                 self._update_combined_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)                
                 
@@ -480,6 +484,48 @@ class MapsBuffer:
             self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))          
         
         return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map, self.combined_location_map))
+            
+    def _clear_maps(self)-> None:
+        ''' Clear values stored in maps from coordinates stored in sparse matrices '''
+        
+        if self.resolution_multiplier < 0.1:
+            # For sparse matrices, reset via saved coordinates
+            for coords in self.tools.last_coords.values():
+                inflated_last_coordinates = self._inflate_coordinates(single_observation=coords)
+                self.combined_location_map[inflated_last_coordinates] = 0 
+                self.location_map[inflated_last_coordinates] = 0 
+                self.others_locations_map[inflated_last_coordinates] = 0                
+            
+            # Reinitialize non-sparse matrices
+            self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))                      
+            self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+            self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+            
+        else:
+            for k in self.locations_matrix:
+                self.combined_location_map[k] = 0 
+                self.location_map[k] = 0 
+                self.others_locations_map[k] = 0    
+                self.readings_map[k] = 0    
+                self.obstacles_map[k] = 0
+                self.visit_counts_map[k] = 0                 
+            
+        assert (self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0)                
+        assert (self.readings_map.max() == 0 and self.readings_map.min() == 0)                
+        assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)                  
+        assert (self.location_map.max() == 0 and self.location_map.min() == 0)            
+        assert (self.combined_location_map.max() == 0 and self.combined_location_map.min() == 0)              
+        assert (self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0) 
+        
+    def _reset_maps(self)-> None:
+        ''' Fully reinstatiate maps'''
+        self.combined_location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))         
+        self.location_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.others_locations_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
+        self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))  
+        self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
+        self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
+        self.visit_counts_shadow.clear()
                               
     def _inflate_coordinates(self, single_observation: Union[np.ndarray, Point])-> Tuple[int, int]:
         ''' 
@@ -1369,7 +1415,8 @@ class CNNBase:
                 resolution_accuracy=self.resolution_accuracy,
                 offset=self.scaled_offset,
                 steps_per_episode=self.steps_per_episode,
-                number_of_agents = self.number_of_agents
+                number_of_agents = self.number_of_agents,
+                resolution_multiplier = self.resolution_multiplier
             )
         
         # Set up actor and critic
