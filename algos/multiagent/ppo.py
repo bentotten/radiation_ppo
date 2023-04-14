@@ -125,12 +125,12 @@ class UpdateResult(NamedTuple):
     ''' Object that contains the return values from the neural network updates '''
     stop_iteration: int
     loss_policy: float
-    loss_critic: float
+    loss_critic: Union[float, None]
     loss_predictor: float
     kl_divergence: npt.NDArray[np.float32]
     Entropy: npt.NDArray[np.float32]
     ClipFrac: npt.NDArray[np.float32]
-    LocLoss: Union[Torch.Tensor, None]
+    LocLoss: Union[torch.Tensor, None]
     VarExplain: int #TODO what is this?
 
 
@@ -657,7 +657,7 @@ class AgentPPO:
             pfgru_hidden = 0
             hiddens = (actor_hidden, critic_hidden, pfgru_hidden)
             
-            self.agent.clear_maps()
+            self.agent.reset()
         
         return hiddens
      
@@ -712,7 +712,7 @@ class AgentPPO:
                     update_results['pi_info'], 
                     update_results['term'],  
                     update_results['loc_loss']
-                ) = self.update_a2c(data, min_iterations, logger=logger)  # pi_l = policy loss # type: ignore
+                ) = self.update_a2c(data, min_iterations, logger=logger)  # type: ignore
                 kk += 1
                 
             # Reduce learning rate
@@ -827,7 +827,6 @@ class AgentPPO:
         for index in sample:
             # Reset existing episode maps
             self.reset_neural_nets()     
-            self.agent.clear_maps()                      
             single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index, map_stack=mapstacks_buffer[index])
             
             pi_loss_list.append(single_pi_l)
