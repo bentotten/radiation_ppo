@@ -322,135 +322,77 @@ class train_PPO:
                     if epoch_ended and not (episode_over):
                         print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.", flush=True)   
                            
-                    # Conduct end-of-episode (and potentially end of epoch) activities              
-                    self.process_episode_reset(timeout=timeout, episode_over=episode_over, epoch_ended=epoch_ended, hiddens=hiddens)
+                    # Conduct end-of-episode (and potentially end of epoch) activities.             
+                    self.episode_count += 1
+                    
+                    # If the epoch is over and the agent didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics.
+                    # ^ In english, this means use the state-value to estimate the next reward, as state-value is just a prediction of such. Because there is no terminal state, 
+                    # we're short one reward value for training.
+                    if timeout or epoch_ended:
+                        # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
+                        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
+                            observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
+
+                        # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is 
+                        # used in that place.
+                        for id, ac in self.agents.items():
+                            results, _ = ac.step(observations, hiddens=hiddens)  
+                            last_state_value = results.state_value
+
+                        if epoch_ended:
+                            # Set flag to reset/sample new environment parameters. If epoch has not ended, keep training on the same environment. 
+                            self.env.epoch_end = True 
+                    else:
+                        # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) [for use in the GAE() function]
+                        last_state_value = 0  
+                        
+                    # Finish the trajectory and compute advantages.                      
+                    for id, ac in self.agents.items():
+                        ac.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value)
+                        
+                    # If the episode is over, save episode returns and episode length.     
+                    if episode_over:
+                        for id, ac in self.agents.items():
+                            self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)
+                            ac.ppo_buffer.store_episode_length(episode_length=steps_in_episode)
+
+                    # Reset the environment and counters
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
+                        for id in self.agents:
+                            self.stat_buffers[id].reset()
+                                                
+                    # If not at the end of an epoch, reset agents for incoming new episode    
+                    if timeout and not epoch_ended: # not env.epoch_end:
+                        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                               
+                            for id, ac in self.agents.items():                        
+                                hiddens[id] = ac.reset_neural_nets()
+                    # Else log epoch results and reset counters
+                    else:
+                        for id in self.agents:
+                            # TODO this was already done above, is this being done twice?                            
+                            self.loggers[id].store(DoneCount=terminal_counter[id], OutOfBound=out_of_bounds_count[id])
+                            terminal_counter[id] = 0
+                            out_of_bounds_count[id] = 0
+                    
+                    # Reset environment
+                    observations, _,  _, _ = self.env.reset()                                         
+                    source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
+                    episode_return = {id: 0 for id in self.agents}
+                    steps_in_episode = 0
+                    
+                    # Reset maps for new episode
+                    if self.actor_critic_architecture == 'cnn':
+                        for id, ac in self.agents.items():                        
+                            _ = ac.reset_neural_nets()    
+
+                    # RAD-A2C Update stat buffers for all agent observations for later observation normalization
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
+                        for id in self.agents:
+                            self.stat_buffers[id].update(observations[id][0])
+                            
                     self.process_render(epoch_ended=epoch_ended, epoch=epoch)
-                # if episode_reset_next_step:
-                #     if epoch_ended and not (episode_over):
-                #         print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.", flush=True)
+            ############################################################################################################
 
-                #     # If the epoch is over and the agent didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics.
-                #     # ^ In english, this means use the state-value to estimate the next reward, as state-value is just a prediction of such. Because there is no terminal state, 
-                #     # we're short one reward value for training.
-                #     if timeout or epoch_ended:
-                        
-                #         # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
-                #         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                #             observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
-
-                #         # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is 
-                #         # used in that place.
-                #         for id, ac in self.agents.items():
-                #             results, _ = ac.step(observations, hiddens=hiddens)  
-                #             last_state_value = results.state_value
- 
-                #         if epoch_ended:
-                #             # Set flag to reset/sample new environment parameters
-                #             self.env.epoch_end = True 
-                #     else:
-                #         # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout)
-                #         # for use in the GAE() function                        
-                #         last_state_value = 0  
-                        
-                #     # Finish the trajectory and compute advantages. See function comments for more information                        
-                #     for id, ac in self.agents.items():
-                #         ac.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value)
-                        
-                #     if episode_over:
-                #         # only save episode returns and episode length if trajectory finished
-                #         for id, ac in self.agents.items():
-                #             self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)
-                #             # TODO verify matches logger - goal is to get logger out of PPO buffer
-                #             ac.ppo_buffer.store_episode_length(episode_length=steps_in_episode)
-
-                #     ############################################################################################################
-                #     # TODO: Move to own render function
-                #     ############################################################################################################
-                #     # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
-                #     asked_to_save = epoch_ended and self.render
-                #     save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
-                #     save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
-                #     time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
-                #     if (asked_to_save and save_first_epoch and time_to_save):
-                #         # Render Agent heatmaps
-                #         if self.actor_critic_architecture == 'cnn':
-                #             for id, ac in self.agents.items():
-                #                 ac.render(
-                #                     savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                #                     epoch_count=epoch,
-                #                     add_value_text=True
-                #                 )
-                #         # Render gif
-                #         self.env.render(
-                #             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-                #             epoch_count=epoch,
-                #         )                                
-                #     # Always render first episode
-                #     if self.render and epoch == 0 and self.render_first_episode:
-                #         for id, ac in self.agents.items():
-                #             if self.actor_critic_architecture == 'cnn':
-                #                 ac.render(
-                #                     savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                #                     epoch_count=epoch,
-                #                     add_value_text=True
-                #                 )                             
-                #         self.env.render(
-                #             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-                #             epoch_count=epoch,
-                        
-                #         )                              
-                #         self.render_first_episode = False             
-                #     # Always render last epoch's episode
-                #     if self.DEBUG and epoch == self.total_epochs-1:
-                #         self.env.render(
-                #             path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
-                #             epoch_count=epoch,
-                #         )                        
-                #         for id, ac in self.agents.items():
-                #             if self.actor_critic_architecture == 'cnn':
-                #                 ac.render(
-                #                     savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                #                     epoch_count=epoch,
-                #                     add_value_text=True
-                #                 )                            
-                #     ############################################################################################################
-
-                #     # Reset the environment and counters
-                #     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                #         for id in self.agents:
-                #             self.stat_buffers[id].reset()
-                                               
-                #     # If not at the end of an epoch, reset hidden layers for incoming new episode    
-                #     if timeout and not epoch_ended: # not env.epoch_end:
-                #         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                               
-                #             for id, ac in self.agents.items():                        
-                #                 hiddens[id] = ac.reset_neural_nets()
-                #     # Else log epoch results                    
-                #     else:
-                #         for id in self.agents:
-                #             # TODO this was already done above, is this being done twice?                            
-                #             # if 'out_of_bounds_count' in infos[id]:
-                #             #     out_of_bounds_count[id] += infos[id]['out_of_bounds_count'] 
-                #             self.loggers[id].store(DoneCount=terminal_counter[id], OutOfBound=out_of_bounds_count[id])
-                #             terminal_counter[id] = 0
-                #             out_of_bounds_count[id] = 0
-                    
-                #     # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-                #     observations, _,  _, _ = self.env.reset()                                         
-                #     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-                #     episode_return = {id: 0 for id in self.agents}
-                #     steps_in_episode = 0
-                    
-                #     # Reset maps for new episode
-                #     if self.actor_critic_architecture == 'cnn':
-                #         for id, ac in self.agents.items():                        
-                #             _ = ac.reset_neural_nets()    
-
-                #     # Update stat buffers for all agent observations for later observation normalization
-                #     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                #         for id in self.agents:
-                #             self.stat_buffers[id].update(observations[id][0])                              
-                    
             # Save model
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
                 for id, agent in self.agents.items():
@@ -522,76 +464,6 @@ class train_PPO:
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
                 
-    def process_episode_reset(self, timeout: bool, episode_over: bool, epoch_ended: bool, hiddens):
-        self.episode_count += 1
-        
-        # If the epoch is over and the agent didn't reach terminal state, bootstrap value target with standardized observation using per episode running statistics.
-        # ^ In english, this means use the state-value to estimate the next reward, as state-value is just a prediction of such. Because there is no terminal state, 
-        # we're short one reward value for training.
-        if timeout or epoch_ended:
-            # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
-            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
-
-            # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is 
-            # used in that place.
-            for id, ac in self.agents.items():
-                results, _ = ac.step(observations, hiddens=hiddens)  
-                last_state_value = results.state_value
-
-            if epoch_ended:
-                # Set flag to reset/sample new environment parameters. If epoch has not ended, keep training on the same environment. 
-                self.env.epoch_end = True 
-        else:
-            # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) [for use in the GAE() function]
-            last_state_value = 0  
-            
-        # Finish the trajectory and compute advantages.                      
-        for id, ac in self.agents.items():
-            ac.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value)
-            
-        # If the episode is over, save episode returns and episode length.     
-        if episode_over:
-            for id, ac in self.agents.items():
-                self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)
-                # TODO verify matches logger - goal is to get logger out of PPO buffer
-                ac.ppo_buffer.store_episode_length(episode_length=steps_in_episode)
-
-        # Reset the environment and counters
-        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-            for id in self.agents:
-                self.stat_buffers[id].reset()
-                                    
-        # If not at the end of an epoch, reset hidden layers for incoming new episode    
-        if timeout and not epoch_ended: # not env.epoch_end:
-            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                               
-                for id, ac in self.agents.items():                        
-                    hiddens[id] = ac.reset_neural_nets()
-        # Else log epoch results                    
-        else:
-            for id in self.agents:
-                # TODO this was already done above, is this being done twice?                            
-                # if 'out_of_bounds_count' in infos[id]:
-                #     out_of_bounds_count[id] += infos[id]['out_of_bounds_count'] 
-                self.loggers[id].store(DoneCount=terminal_counter[id], OutOfBound=out_of_bounds_count[id])
-                terminal_counter[id] = 0
-                out_of_bounds_count[id] = 0
-        
-        # Reset environment. Obsertvations for each agent - 11 dimensions: [intensity reading, x coord, y coord, 8 directions of distance detected to obstacle]
-        observations, _,  _, _ = self.env.reset()                                         
-        source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
-        episode_return = {id: 0 for id in self.agents}
-        steps_in_episode = 0
-        
-        # Reset maps for new episode
-        if self.actor_critic_architecture == 'cnn':
-            for id, ac in self.agents.items():                        
-                _ = ac.reset_neural_nets()    
-
-        # Update stat buffers for all agent observations for later observation normalization
-        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-            for id in self.agents:
-                self.stat_buffers[id].update(observations[id][0])        
                 
     def process_render(self, epoch_ended: bool, epoch: int):
         # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
