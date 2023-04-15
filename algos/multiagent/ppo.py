@@ -1204,8 +1204,8 @@ class AgentPPO:
         ''' Wrapper for network '''
         self.agent.load(checkpoint_path=path)
         
-    def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0):
+    def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0, episode_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")
         self.agent.render(
-            savepath=savepath, save_map=save_map, add_value_text=add_value_text, interpolation_method=interpolation_method, epoch_count=epoch_count
+            savepath=savepath, save_map=save_map, add_value_text=add_value_text, interpolation_method=interpolation_method, epoch_count=epoch_count, episode_count=episode_count
         )

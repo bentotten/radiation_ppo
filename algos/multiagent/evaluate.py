@@ -322,6 +322,7 @@ class EpisodeRunner:
                     # Render Agent heatmaps
                     if self.actor_critic_architecture == 'cnn':
                         for id, ac in self.agents.items():
+                            # TODO add episode counter
                             ac.render(
                                 savepath=self.render_path, 
                                 epoch_count=run_counter, # TODO change this to a more flexible name

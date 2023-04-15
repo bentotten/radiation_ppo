@@ -326,7 +326,7 @@ class RadSearch(gym.Env):
     seed: Union[int, None] = field(default=None)  # TODO make env generation work with this
     scale: float = field(init=False)  # Used to deflate and inflate coordinates
     scaled_grid_max: Tuple = field(default_factory=lambda: (1,1)) # Max x and max y for grid after deflation  
-    epoch_end: bool = field(default=False) 
+    epoch_end: bool = field(default=False) # flag to reset/sample new environment parameters. This is necessary when runnning monte carlo evaluations to ensure env is standardized for all evaluation, unless indicated.
     
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps

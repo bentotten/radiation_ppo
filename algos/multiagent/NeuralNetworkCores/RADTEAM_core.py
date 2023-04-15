@@ -1585,7 +1585,7 @@ class CNNBase:
         self.reset_flag += 1 if self.reset_flag < 100 else 1
           
 
-    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0)-> None:
+    def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0, episode_count: int=0)-> None:
         ''' 
             Renders heatmaps from maps buffer
             
@@ -1643,8 +1643,8 @@ class CNNBase:
                     if obstacles_transposed[i, j] > 0:
                         obs_ax.text(j, i, obstacles_transposed[i, j].astype(float).round(2), ha="center", va="center", color="black", size=6)                        
         
-        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.png', format='png')
-        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{self.render_counter}.eps', format='eps')
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{episode_count}({self.render_counter}).png', format='png')
+        fig.savefig(f'{str(savepath)}/heatmaps/heatmap_agent{self.id}_epoch_{epoch_count}-{episode_count}({self.render_counter}).eps', format='eps')
         
         self.render_counter += 1
         plt.close(fig)
