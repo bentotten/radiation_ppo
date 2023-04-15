@@ -35,6 +35,10 @@ Metadata = TypedDict(
     "Metadata", {"render.modes": List[str], "video.frames_per_second": int}
 )
 
+# TODO RESET TO 10 m!
+MIN_STARTING_DISTANCE = 500
+MAX_CREATION_TRIES = 1000000000
+
 # These actions correspond to:
 # -1: stay idle
 # 0: left
@@ -50,7 +54,6 @@ Directions: TypeAlias = Literal[0, 1, 2, 3, 4, 5, 6, 7]
 
 A_SIZE = len(get_args(Action))
 DETECTABLE_DIRECTIONS = len(get_args(Directions)) # Ignores -1 idle state
-MAX_CREATION_TRIES = 1000
 DET_STEP = 100.0  # detector step size at each timestep in cm/s
 DET_STEP_FRAC = 71.0  # diagonal detector step size in cm/s
 DIST_TH = 110.0  # Detector-obstruction range measurement threshold in cm
@@ -966,7 +969,7 @@ class RadSearch(gym.Env):
             test_count = 0          
             while not src_clear and test_count < MAX_CREATION_TRIES:
                 subtest_count = 0
-                while dist_p(detector, source) < 1000 and subtest_count < MAX_CREATION_TRIES:
+                while dist_p(detector, source) < MIN_STARTING_DISTANCE and subtest_count < MAX_CREATION_TRIES:
                     source = rand_point()
                     subtest_count += 1
                     if subtest_count == MAX_CREATION_TRIES:
