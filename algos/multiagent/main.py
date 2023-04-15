@@ -12,6 +12,7 @@ from typing import Tuple
 import inspect
 import traceback
 import json
+import ray
 
 import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
@@ -19,10 +20,12 @@ from gym_rad_search.envs import RadSearch  # type: ignore
 
 try:
     import train  # type: ignore
+    import train_remote  # type: ignore    
     from ppo import BpArgs  # type: ignore
     import evaluate # type: ignore
 except ModuleNotFoundError:
     import algos.multiagent.train as train  # type: ignore
+    import algos.multiagent.train_remote as train_remote  # type: ignore    
     from algos.multiagent.ppo import BpArgs  # type: ignore
     import algos.multiagent.evaluate as evaluate  # type: ignore
     
@@ -30,6 +33,7 @@ except:
     raise Exception
 
 PROFILE = True
+RAY = True
 
 def log_state(error: Exception):
     trace_back = traceback.format_exc()  # Gives error and location    
@@ -415,7 +419,12 @@ def main() -> None:
         import cProfile, pstats
         profiler = cProfile.Profile()
         profiler.enable()
-
+        
+    if RAY:
+        try:
+            ray.init(address='auto')
+        except:
+            print("Ray failed to initialize. Running on single server.")        
 
     # Set up training
     if args.mode == 'train':
@@ -496,24 +505,44 @@ def main() -> None:
             GlobalCriticOptimizer=None
         )
 
-        simulation = train.train_PPO(
-            env=env,
-            logger_kwargs=logger_kwargs,
-            ppo_kwargs=ppo_kwargs,
-            seed=robust_seed,
-            number_of_agents=args.agent_count,
-            actor_critic_architecture=args.net_type,   
-            global_critic_flag = args.global_critic,                    
-            steps_per_epoch=args.steps_per_epoch,
-            steps_per_episode=args.steps_per_episode,
-            total_epochs=args.epochs,
-            render=args.render,
-            save_path=save_path,
-            save_gif=args.render, # TODO combine into just render
-            save_freq=args.save_freq,
-            save_gif_freq=args.save_gif_freq,
-            DEBUG=args.DEBUG
-        )
+        if RAY:
+            simulation = train_remote.train_PPO(
+                        env=env,
+                        logger_kwargs=logger_kwargs,
+                        ppo_kwargs=ppo_kwargs,
+                        seed=robust_seed,
+                        number_of_agents=args.agent_count,
+                        actor_critic_architecture=args.net_type,   
+                        global_critic_flag = args.global_critic,                    
+                        steps_per_epoch=args.steps_per_epoch,
+                        steps_per_episode=args.steps_per_episode,
+                        total_epochs=args.epochs,
+                        render=args.render,
+                        save_path=save_path,
+                        save_gif=args.render, # TODO combine into just render
+                        save_freq=args.save_freq,
+                        save_gif_freq=args.save_gif_freq,
+                        DEBUG=args.DEBUG
+                    )            
+        else:
+            simulation = train.train_PPO(
+                env=env,
+                logger_kwargs=logger_kwargs,
+                ppo_kwargs=ppo_kwargs,
+                seed=robust_seed,
+                number_of_agents=args.agent_count,
+                actor_critic_architecture=args.net_type,   
+                global_critic_flag = args.global_critic,                    
+                steps_per_epoch=args.steps_per_epoch,
+                steps_per_episode=args.steps_per_episode,
+                total_epochs=args.epochs,
+                render=args.render,
+                save_path=save_path,
+                save_gif=args.render, # TODO combine into just render
+                save_freq=args.save_freq,
+                save_gif_freq=args.save_gif_freq,
+                DEBUG=args.DEBUG
+            )
         
         # try:
         #     # Begin simulation
@@ -552,14 +581,24 @@ def main() -> None:
 
     if PROFILE:
         profiler.disable()
+        with open(f"{save_path[0]}/profile_cumtime.txt", 'w') as stream:
+            stats = pstats.Stats(profiler,  stream=stream).sort_stats('cumtime')            
+            stats.print_stats()
+            
+        stream.close()
+        
+        with open(f"{save_path[0]}/profile_tottime.txt", 'w') as stream:
+            stats = pstats.Stats(profiler,  stream=stream).sort_stats('tottime')            
+            stats.print_stats()          
+                
         # print("##### BY CUMTIME #####")
-        stats = pstats.Stats(profiler).sort_stats('cumtime')
-        #stats.print_stats()       
-        stats.dump_stats(f"{save_path[0]}/profile_cumtime.txt")         
+        # stats = pstats.Stats(profiler).sort_stats('cumtime')
+        # stats.print_stats()       
+        # stats.dump_stats(f"{save_path[0]}/profile_cumtime.txt")         
         # print("##### BY TOTTIME #####")
-        stats = pstats.Stats(profiler).sort_stats('tottime')
-        #stats.print_stats() 
-        stats.dump_stats(f"{save_path[0]}/profile_tottime.txt")                                
+        # stats = pstats.Stats(profiler).sort_stats('tottime')
+        # #stats.print_stats() 
+        # stats.dump_stats(f"{save_path[0]}/profile_tottime.txt")                                
 
     #     try:
     #         # Begin simulation

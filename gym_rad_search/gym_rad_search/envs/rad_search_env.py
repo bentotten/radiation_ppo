@@ -1552,27 +1552,28 @@ class RadSearch(gym.Env):
             print(f"Rendering in {str(path)}/gifs/")
             print(f"Frames to render: ", reward_length-1)
 
-            ani = animation.FuncAnimation(
-                fig,
-                update,
-                #frames=reward_length,
-                frames=data_length,
-                fargs=(ax1, ax2, ax3, self.src_coords, self.bbox, measurements, flattened_rewards),
-            )
-            if self.save_gif or save_gif:
-                if self.DEBUG:
-                    fps = 1
-                else:
-                    fps = FPS
-                writer = PillowWriter(fps=fps)
-                if not os.path.isdir(str(path) + "/gifs/"):
-                    os.mkdir(str(path) + "/gifs/")
-                #ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
-                ani.save(f'{str(path)}/gifs/epoch_{epoch_count}-{episode_count}({self.render_counter}).gif', writer=writer)
+            if data_length > 1:
+                ani = animation.FuncAnimation(
+                    fig,
+                    update,
+                    #frames=reward_length,
+                    frames=data_length,
+                    fargs=(ax1, ax2, ax3, self.src_coords, self.bbox, measurements, flattened_rewards),
+                )
+                if self.save_gif or save_gif:
+                    if self.DEBUG:
+                        fps = 1
+                    else:
+                        fps = FPS
+                    writer = PillowWriter(fps=fps)
+                    if not os.path.isdir(str(path) + "/gifs/"):
+                        os.mkdir(str(path) + "/gifs/")
+                    #ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
+                    ani.save(f'{str(path)}/gifs/epoch_{epoch_count}-{episode_count}({self.render_counter}).gif', writer=writer)
                     
-            else:
-                plt.show()
-            self.render_counter += 1
+                else:
+                    plt.show()
+                self.render_counter += 1
             return
 
 # TODO make multi-agent

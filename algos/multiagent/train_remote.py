@@ -7,6 +7,7 @@ import glob
 import time
 from datetime import datetime
 import math
+import ray
 
 import torch
 from torch.optim import Adam
@@ -29,10 +30,12 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # PPO and logger
 try:
-    from ppo import OptimizationStorage, PPOBuffer, AgentPPO, update_remote_agent  # type: ignore
+    from ppo_remote import AgentPPO as remote_AgentPPO # type: ignore
+    from ppo import AgentPPO  # type: ignore
     from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore    
 except ModuleNotFoundError:
-    from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
+    from algos.multiagent.ppo_remote import AgentPPO as remote_AgentPPO # type: ignore
+    from algos.multiagent.ppo import AgentPPO  # type: ignore
     from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json    
 except: 
     raise Exception
@@ -119,7 +122,7 @@ class train_PPO:
     #: Object that normalizes returns from environment for RAD-A2C. RAD-TEAM does so from within PPO module
     stat_buffers: Dict[int, StatisticStandardization] = field(default_factory=lambda:dict())
     #: Object that holds agents
-    agents: Dict[int, AgentPPO] = field(default_factory=lambda:dict())
+    agents: Dict = field(default_factory=lambda:dict())
     #: Object that holds agent loggers
     loggers: Dict[int, EpochLogger] = field(default_factory=lambda:dict())
     #: Global Critic for Centralized Training scenarios
@@ -135,8 +138,9 @@ class train_PPO:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)    
 
+        # TODO get to work with ray remote
         # Save configuration   
-        config_json: Dict[str, Any] = convert_json(locals())                       
+        #config_json: Dict[str, Any] = convert_json(locals())                       
                                   
         # Set up parent directory logger and save initial configurations
         parent_kwargs = setup_logger_kwargs(
@@ -146,7 +150,7 @@ class train_PPO:
                 env_name=self.logger_kwargs['env_name']
             )
         self.parent_logger = EpochLogger(**(parent_kwargs))
-        self.parent_logger.save_config(config_json) 
+        #self.parent_logger.save_config(config_json) 
         
         # Instatiate loggers   
         for id in range(self.number_of_agents):
@@ -174,18 +178,19 @@ class train_PPO:
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 self.stat_buffers[i] = StatisticStandardization()          
             
-            self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
-            self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy
+            self.agents[i] = remote_AgentPPO.remote(id=i, **self.ppo_kwargs)
+            # TODO Make work with Ray
+            #self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy
             
             # Sanity check
-            if self.global_critic_flag:
-                assert self.agents[i].agent.critic is self.GlobalCritic
-                assert self.agents[i].GlobalCriticOptimizer is self.GlobalCriticOptimizer
-            elif self.actor_critic_architecture == 'cnn':
-                assert self.agents[i].agent.critic is not self.GlobalCritic
-                if i > 0:
-                    assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
-                    assert not self.agents[i].GlobalCriticOptimizer and not self.GlobalCriticOptimizer                
+            # if self.global_critic_flag:
+            #     assert self.agents[i].agent.critic is self.GlobalCritic
+            #     assert self.agents[i].GlobalCriticOptimizer is self.GlobalCriticOptimizer
+            # elif self.actor_critic_architecture == 'cnn':
+            #     assert self.agents[i].agent.critic is not self.GlobalCritic
+            #     if i > 0:
+            #         assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
+            #         assert not self.agents[i].GlobalCriticOptimizer and not self.GlobalCriticOptimizer                
                 
                       
     def train(self)-> None:
@@ -219,11 +224,7 @@ class train_PPO:
         
         # For RAD-A2C - Update stat buffers for all agent observations for later observation normalization
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            for id in self.agents:
-                self.stat_buffers[id].update(observations[id][0])
-
-            for id in self.agents: 
-                self.agents[id].agent.model.eval() # Sets PFGRU model into "eval" mode    
+            raise ValueError("RAD-A2C not compatible with remote")
 
         print(f"Starting main training loop!", flush=True)
         self.start_time: float = time.time()        
@@ -233,23 +234,13 @@ class train_PPO:
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode.
         for epoch in range(self.total_epochs):
             
-            # For RAD-A2C - Reset hidden layers and sets Actor into "eval" mode.
-            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                for id, ac in self.agents.items():
-                    ac.agent.pi.logits_net.v_net.eval()
-                    hiddens[id] = ac.reset_hidden()            
-            
             # Start epoch! Episodes end when steps_per_episode is reached, steps_per_epoch is reached, or a terminal state is found
             for steps_in_epoch in range(self.steps_per_epoch):
                 
-                # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
-                if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                    observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
-                    
                 # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts.clear()
                 for id, ac in self.agents.items():
-                    agent_thoughts[id], heatmaps = ac.step(observations=observations, hiddens = hiddens[id], message=infos)
+                    agent_thoughts[id], heatmaps = ray.get(ac.step.remote(observations=observations, hiddens = hiddens[id], message=infos))
                     hiddens[id] = agent_thoughts[id].hiddens # For RAD-A2C - save latest hiddens for use in next steps.
                     
                 # Create action list to send to environment
@@ -296,7 +287,7 @@ class train_PPO:
                         reward = rewards['team_reward']
                     
                     # Store in PPO Buffer
-                    ac.ppo_buffer.store(
+                    ray.get(ac.store_ppo_buffer.remote(
                         obs = observations[id],
                         rew = reward,
                         act = agent_action_decisions[id],
@@ -306,14 +297,10 @@ class train_PPO:
                         terminal = episode_reset_next_step,
                         heatmap_stacks= heatmaps,
                         full_observation = observations
-                    )
+                    ))
                     
                     # Store in logger
-                    self.loggers[id].store(VVals=agent_thoughts[id].state_value)
-                    
-                    # RAD-A2C - update mean/std for the next observation in stat buffers,record state values with logger 
-                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                        self.stat_buffers[id].update(next_observations[id][0])                    
+                    self.loggers[id].store(VVals=agent_thoughts[id].state_value)             
 
                 # Update observation (critical!)
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation already.'
@@ -322,6 +309,8 @@ class train_PPO:
                 ############################################################################################################
                 # Check for episode end
                 if episode_reset_next_step:
+                    if self.DEBUG:
+                        print('NEW EPISODE')
                     if epoch_ended and not (episode_over):
                         print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.", flush=True)   
                            
@@ -332,14 +321,11 @@ class train_PPO:
                     # ^ In english, this means use the state-value to estimate the next reward, as state-value is just a prediction of such. Because there is no terminal state, 
                     # we're short one reward value for training.
                     if timeout or epoch_ended:
-                        # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
-                        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                            observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
 
                         # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is 
                         # used in that place.
                         for id, ac in self.agents.items():
-                            bootstrap_results, _ = ac.step(observations, hiddens=hiddens[id])  
+                            bootstrap_results, _ = ray.get(ac.step.remote(observations, hiddens=hiddens[id]))
                             last_state_value = bootstrap_results.state_value
 
                         if epoch_ended:
@@ -351,24 +337,17 @@ class train_PPO:
                         
                     # Finish the trajectory and compute advantages.                      
                     for id, ac in self.agents.items():
-                        ac.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value)
+                        ray.get(ac.GAE_advantage_and_rewardsToGO.remote(last_state_value))
                         
                     # If the episode is over, save episode returns and episode length.     
                     if episode_over:
                         for id, ac in self.agents.items():
                             self.loggers[id].store(EpRet=episode_return[id], EpLen=steps_in_episode)
-                            ac.ppo_buffer.store_episode_length(episode_length=steps_in_episode)
-
-                    # Reset the environment and counters
-                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                        for id in self.agents:
-                            self.stat_buffers[id].reset()
+                            ray.get(ac.store_episode_length.remote(episode_length=steps_in_episode))
                                                 
                     # For RAD-A2C - If not at the end of an epoch, reset RAD-A2C agents for incoming new episode    
                     if not epoch_ended: # not env.epoch_end:
-                        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                               
-                            for id, ac in self.agents.items():
-                                hiddens[id] = ac.reset_hidden()
+                        pass
                     # If at the end of an epoch, log epoch results and reset counters
                     else:
                         for id in self.agents:
@@ -384,14 +363,8 @@ class train_PPO:
                     steps_in_episode = 0
                     
                     # Reset agent maps for new episode
-                    if self.actor_critic_architecture == 'cnn':
-                        for id, ac in self.agents.items():                        
-                            ac.reset_agent()    
-
-                    # RAD-A2C Update stat buffers for all agent observations for later observation normalization
-                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
-                        for id in self.agents:
-                            self.stat_buffers[id].update(observations[id][0])
+                    for id, ac in self.agents.items():                        
+                        ray.get(ac.reset_agent.remote())
                             
                     self.process_render(epoch_ended=epoch_ended, epoch=epoch)
             ############################################################################################################
@@ -399,21 +372,21 @@ class train_PPO:
             # Save model
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
                 for id, agent in self.agents.items():
-                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                        self.loggers[id].save_state({}, None)
-                    else:
-                        test = self.loggers[id].output_dir       
-                        agent.save(path=test) 
+                        test = self.loggers[id].output_dir   
+                        current = os.path.split(os.path.split(os.getcwd())[0])[0]
+                        for part in test.parts[2:]:
+                            current += f'/{part}'
+                        ray.get(agent.save.remote(path=current))
 
             # Reduce localization module training iterations after 100 epochs to speed up training
             if epoch > 99:
                 for ac in self.agents.values():
-                    ac.reduce_pfgru_training()
+                    ray.get(ac.reduce_pfgru_training.remote())
 
             # Perform PPO update!
             for id, ac in self.agents.items():
                 # Note: Global critic is updated by first agent within update_agent
-                update_results = ac.update_agent(self.loggers[id])
+                update_results = ray.get(ac.update_agent.remote(self.loggers[id]))
                 
                 # Store results
                 if self.global_critic_flag:
@@ -449,7 +422,8 @@ class train_PPO:
             # Log info about epoch
             for id in self.agents:
                 self.loggers[id].log_tabular("AgentID", id)        
-                self.loggers[id].log_tabular("Epoch", epoch)      
+                self.loggers[id].log_tabular("Epoch", epoch)  
+                self.loggers[id].log_tabular("DoneCount", sum_only=True)                    
                 self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
                 self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
@@ -461,7 +435,6 @@ class train_PPO:
                 self.loggers[id].log_tabular("Entropy", average_only=True)
                 self.loggers[id].log_tabular("kl_divergence", average_only=True)
                 self.loggers[id].log_tabular("ClipFrac", average_only=True)
-                self.loggers[id].log_tabular("DoneCount", sum_only=True)
                 self.loggers[id].log_tabular("OutOfBound", average_only=True)
                 self.loggers[id].log_tabular("stop_iteration", average_only=True)
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
@@ -476,14 +449,13 @@ class train_PPO:
         
         if (asked_to_save and save_first_epoch and time_to_save):
             # Render Agent heatmaps
-            if self.actor_critic_architecture == 'cnn':
-                for id, ac in self.agents.items():
-                    ac.render(
-                        savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                        epoch_count=epoch,
-                        episode_count=self.episode_count,
-                        add_value_text=True
-                    )
+            for id, ac in self.agents.items():
+                ray.get(ac.render.remote(
+                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    epoch_count=epoch,
+                    episode_count=self.episode_count,
+                    add_value_text=True
+                ))
             # Render gif
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
@@ -493,13 +465,12 @@ class train_PPO:
         # Always render first episode
         if self.render and epoch == 0 and self.render_first_episode:
             for id, ac in self.agents.items():
-                if self.actor_critic_architecture == 'cnn':
-                    ac.render(
-                        savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                        epoch_count=epoch,
-                        episode_count=self.episode_count,                        
-                        add_value_text=True
-                    )                             
+                ray.get(ac.render.remote(
+                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    epoch_count=epoch,
+                    episode_count=self.episode_count,                        
+                    add_value_text=True
+                ))                           
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                 epoch_count=epoch,
@@ -514,10 +485,9 @@ class train_PPO:
                 episode_count=self.episode_count,                                
             )                        
             for id, ac in self.agents.items():
-                if self.actor_critic_architecture == 'cnn':
-                    ac.render(
-                        savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
-                        epoch_count=epoch,
-                        add_value_text=True,
-                        episode_count=self.episode_count,
-                    )
+                ray.get(ac.render.remote(
+                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    epoch_count=epoch,
+                    add_value_text=True,
+                    episode_count=self.episode_count,
+                ))

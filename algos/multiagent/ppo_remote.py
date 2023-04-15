@@ -162,7 +162,7 @@ class BpArgs(NamedTuple):
     elbo_weight: float
     area_scale: float
 
-
+@ray.remote
 @dataclass
 class OptimizationStorage:
     '''     
@@ -218,7 +218,7 @@ class OptimizationStorage:
         else:
             self.critic_scheduler = None # RAD-A2C has critic embeded in pi
 
-
+@ray.remote
 @dataclass
 class PPOBuffer:
     """
@@ -480,7 +480,13 @@ class PPOBuffer:
 
         return data
 
+    def get_heatmap_buffer(self, key:str):
+        return self.heatmap_buffer[key]
+    
+    def get_full_observation_buffer(self):
+        return self.full_observation_buffer
 
+@ray.remote
 @dataclass 
 class AgentPPO:
     '''
@@ -604,7 +610,7 @@ class AgentPPO:
                 CriticOptimizer = self.GlobalCriticOptimizer
             
             # Initialize learning opitmizers                           
-            self.agent_optimizer = OptimizationStorage(
+            self.agent_optimizer = OptimizationStorage.remote(
                 train_pi_iters = self.train_pi_iters,                
                 train_v_iters = self.train_v_iters,
                 train_pfgru_iters = self.train_pfgru_iters,              
@@ -625,7 +631,7 @@ class AgentPPO:
                 raise Exception("No global critic option for RAD-A2C")        
             
             # Initialize learning opitmizers                           
-            self.agent_optimizer = OptimizationStorage(
+            self.agent_optimizer = OptimizationStorage.remote(
                 train_pi_iters = self.train_pi_iters,                
                 train_v_iters = None, # Critic is embeded in policy for RAD-A2C
                 train_pfgru_iters = self.train_pfgru_iters,              
@@ -642,7 +648,7 @@ class AgentPPO:
             
         # Inititalize buffer
         if self.steps_per_epoch > 0:
-            self.ppo_buffer = PPOBuffer(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, max_episode_length=self.steps_per_episode, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
+            self.ppo_buffer = PPOBuffer.remote(observation_dimension=self.observation_space, max_size=self.steps_per_epoch, max_episode_length=self.steps_per_episode, gamma=self.gamma, lam=self.lam, number_agents=self.number_of_agents)
         else:
             raise ValueError("Steps per epoch cannot be 0")
         
@@ -708,7 +714,7 @@ class AgentPPO:
             return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
          
         # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
-        data: Dict[str, torch.Tensor] = self.ppo_buffer.get() 
+        data: Dict[str, torch.Tensor] = ray.get(self.ppo_buffer.get.remote())
         min_iterations = len(data["ep_form"])
         kk = 0
         term = False        
@@ -719,7 +725,7 @@ class AgentPPO:
             model_loss = self.update_model(data)
                         
             # Reset gradients 
-            self.agent_optimizer.pi_optimizer.zero_grad()
+            ray.get(self.agent_optimizer.pi_optimizer.zero_grad.remote())
             # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             while not term and kk < self.train_pi_iters:
                 # Early stop training if KL divergence above certain threshold
@@ -733,8 +739,8 @@ class AgentPPO:
                 kk += 1
                 
             # Reduce learning rate
-            self.agent_optimizer.pi_scheduler.step()
-            self.agent_optimizer.pfgru_scheduler.step()
+            ray.get(self.agent_optimizer.pi_scheduler.step.remote())
+            ray.get(self.agent_optimizer.pfgru_scheduler.step.remote())
 
             # Log changes from update
             return UpdateResult(
@@ -760,14 +766,14 @@ class AgentPPO:
             if PRIO_MEMORY:
                 actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
             else:
-                actor_maps_buffer = self.ppo_buffer.heatmap_buffer['actor']
-                critic_maps_buffer = self.ppo_buffer.heatmap_buffer['critic']
+                actor_maps_buffer = ray.get(self.ppo_buffer.get_heatmap_buffer.remote('actor'))
+                critic_maps_buffer =  ray.get(self.ppo_buffer.get_heatmap_buffer.remote('critic'))
                 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             for k_epoch in range(self.train_pi_iters):
                 
                 # Reset gradients 
-                self.agent_optimizer.pi_optimizer.zero_grad()
+                ray.get(self.agent_optimizer.pi_optimizer.zero_grad.remote())
                 
                 # Get indexes of episodes that will be sampled
                 sample_indexes = sample(self, data=data)
@@ -778,12 +784,12 @@ class AgentPPO:
                 # Check Actor KL Divergence
                 if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
                     actor_loss_results['pi_loss'].backward()
-                    self.agent_optimizer.pi_optimizer.step() 
+                    ray.get(self.agent_optimizer.pi_optimizer.step.remote())
                 else:
                     break  # Skip remaining training               
 
             # Reduce learning rate
-            self.agent_optimizer.pi_scheduler.step()
+            ray.get(self.agent_optimizer.pi_scheduler.step.remote())
 
             # TODO Uncomment after implementing PFGRU
             #self.agent_optimizer.pfgru_scheduler.step() 
@@ -795,13 +801,13 @@ class AgentPPO:
             # For global critic, only first agent performs the update
             if not self.GlobalCriticOptimizer or self.id == 0:       
                 for _ in range(self.train_v_iters):
-                    self.agent_optimizer.critic_optimizer.zero_grad()
+                    ray.get(self.agent_optimizer.critic_optimizer.zero_grad.remote())
                     critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
                     critic_loss_results['critic_loss'].backward()
-                    self.agent_optimizer.critic_optimizer.step()
+                    ray.get(self.agent_optimizer.critic_optimizer.step.remote())
                 
                 # Reduce learning rate
-                self.agent_optimizer.critic_scheduler.step()  
+                ray.get(self.agent_optimizer.critic_scheduler.step.remote())
                             
                 results = UpdateResult(
                     stop_iteration=k_epoch,  
@@ -1041,13 +1047,13 @@ class AgentPPO:
                 model_loss_arr = torch.hstack((model_loss_arr, total_loss.unsqueeze(0)))
 
             model_loss: torch.Tensor = model_loss_arr.mean()
-            self.agent_optimizer.model_optimizer.zero_grad()
+            ray.get(self.agent_optimizer.model_optimizer.zero_grad.remote())
             model_loss.backward()
             # Clip gradient TODO should 5 be a variable?
             # TODO Pylance error: https://github.com/Textualize/rich/issues/1523. Unable to resolve
             torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), 5) # TODO make multi-agent
 
-            self.agent_optimizer.model_optimizer.step()
+            ray.get(self.agent_optimizer.model_optimizer.step.remote())
 
         self.agent.model.eval() 
         return model_loss
@@ -1120,7 +1126,7 @@ class AgentPPO:
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
             
-            val_loss = self.agent_optimizer.MSELoss(val, ret) # MSE critc loss 
+            val_loss = ray.get(self.agent_optimizer.MSELoss.remote(val, ret)) # MSE critc loss 
 
             # TODO: More descriptive name
             new_loss: torch.Tensor = -(
@@ -1151,9 +1157,9 @@ class AgentPPO:
 
         kl = pi_info["kl"][-1].mean()  # type: ignore
         if kl.item() < 1.5 * self.target_kl:
-            self.agent_optimizer.pi_optimizer.zero_grad()
+            ray.get(self.agent_optimizer.pi_optimizer.zero_grad.remote())
             loss_pi.backward()
-            self.agent_optimizer.pi_optimizer.step()
+            ray.get(self.agent_optimizer.pi_optimizer.step.remote())
             term = False
         else:
             term = True
@@ -1181,7 +1187,7 @@ class AgentPPO:
         self.agent.reset()
         
         # Convert observations to maps
-        for step in self.ppo_buffer.full_observation_buffer:
+        for step in ray.get(self.ppo_buffer.get_full_observation_buffer.remote()):
             observation = {key: value for key, value in step.items() if key != 'terminal'}
             batched_actor_mapstack, batched_critic_mapstack = self.agent.get_map_stack(state_observation=observation, id=self.id)
             
@@ -1211,135 +1217,20 @@ class AgentPPO:
         ''' Wrapper for network '''
         self.agent.load(checkpoint_path=path)
         
+    def get_id(self)-> int:
+        return self.id
+    
+    def store_ppo_buffer(self, **kwargs):
+        ray.get(self.ppo_buffer.store.remote(**kwargs))    
+        
+    def GAE_advantage_and_rewardsToGO(self, last_state_value):  
+        ray.get(self.ppo_buffer.GAE_advantage_and_rewardsToGO.remote(last_state_value))
+          
+    def store_episode_length(self, episode_length):
+        ray.get(self.ppo_buffer.store_episode_length.remote(episode_length=episode_length))
+        
     def render(self, savepath: str='.', save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0, episode_count: int=0):
         print(f"Rendering heatmap for Agent {self.id}")
         self.agent.render(
             savepath=savepath, save_map=save_map, add_value_text=add_value_text, interpolation_method=interpolation_method, epoch_count=epoch_count, episode_count=episode_count
         )
-        
-# Uncomment when ready to run with Ray
-@ray.remote     
-def update_remote_agent(PPOAgent: AgentPPO) -> UpdateResult: #         (env, bp_args, loss_fcn=loss)
-    """
-    Wrapper function to update individual neural networks. Note: update functions perform multiple updates per call
-    
-    :param logger: (EpochLogger) Logger used for RAD-A2C updates.
-    """
-    
-    ################################## set device ##################################
-    print("============================================================================================")
-    # set device to cpu or cuda
-    device = torch.device('cpu')
-    if(torch.cuda.is_available()): 
-        device = torch.device('cuda:0') 
-        torch.cuda.empty_cache()
-        print("Device set to : " + str(torch.cuda.get_device_name(device)))
-    else:
-        print("Device set to : cpu")
-    print("============================================================================================")        
-    
-    def sample(PPOAgent, data, minibatch=None):
-        ''' Get sample indexes of episodes to train on'''
-        if not minibatch:
-            minibatch = PPOAgent.minibatch
-        # Randomize and sample observation batch indexes
-        ep_length = data["ep_len"].item()
-        indexes = np.arange(0, ep_length, dtype=np.int32)
-        number_of_samples = int((ep_length / minibatch))
-        return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
-        
-    # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
-    data: Dict[str, torch.Tensor] = PPOAgent.ppo_buffer.get() 
-    min_iterations = len(data["ep_form"])
-    kk = 0
-    term = False        
-
-    # Train RAD-TEAM framework                 
-    # TODO get PFGRU working with RAD-TEAM
-    model_loss = torch.tensor(0)
-    
-    # Put agents in train mode
-    PPOAgent.agent.set_mode(mode='train')
-    
-    # Get mapstacks from buffer or inflate from logs, if in max-memory mode
-    if PRIO_MEMORY:
-        actor_maps_buffer, critic_maps_buffer = PPOAgent.generate_mapstacks()
-    else:
-        actor_maps_buffer = PPOAgent.ppo_buffer.heatmap_buffer['actor']
-        critic_maps_buffer = PPOAgent.ppo_buffer.heatmap_buffer['critic']
-        
-    # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
-    for k_epoch in range(PPOAgent.train_pi_iters):
-        
-        # Reset gradients 
-        PPOAgent.agent_optimizer.pi_optimizer.zero_grad()
-        
-        # Get indexes of episodes that will be sampled
-        sample_indexes = sample(PPOAgent, data=data)
-        
-        #actor_loss_results = PPOAgent.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-        actor_loss_results = PPOAgent.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
-        
-        # Check Actor KL Divergence
-        if actor_loss_results['kl'].item() < 1.5 * PPOAgent.target_kl:
-            actor_loss_results['pi_loss'].backward()
-            PPOAgent.agent_optimizer.pi_optimizer.step() 
-        else:
-            break  # Skip remaining training               
-
-    results: UpdateResult
-
-    # If local critic, do Value function learning here
-    # For global critic, only first agent performs the update
-    if not PPOAgent.GlobalCriticOptimizer or PPOAgent.id == 0:       
-        for _ in range(PPOAgent.train_v_iters):
-            PPOAgent.agent_optimizer.critic_optimizer.zero_grad()
-            critic_loss_results = PPOAgent.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
-            critic_loss_results['critic_loss'].backward()
-            PPOAgent.agent_optimizer.critic_optimizer.step()
-                
-        results = UpdateResult(
-            stop_iteration=k_epoch,  
-            loss_policy=actor_loss_results['pi_loss'].item(),
-            loss_critic=critic_loss_results['critic_loss'].item(),
-            loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-            kl_divergence=actor_loss_results["kl"],
-            Entropy=actor_loss_results["entropy"],
-            ClipFrac=actor_loss_results["clip_fraction"],
-            LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-            VarExplain=0 # TODO what is this?
-        )                          
-    else:
-        results = UpdateResult(
-            stop_iteration=k_epoch,  
-            loss_policy=actor_loss_results['pi_loss'].item(),
-            loss_critic=None,
-            loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-            kl_divergence=actor_loss_results["kl"],
-            Entropy=actor_loss_results["entropy"],
-            ClipFrac=actor_loss_results["clip_fraction"],
-            LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-            VarExplain=0 # TODO what is this?
-        )                          
-
-    # Reduce learning rates
-    assert PPOAgent.agent_optimizer.pi_optimizer.state[PPOAgent.agent_optimizer.pi_optimizer.param_groups[0]["params"][-1]]["step"] > 1
-    assert PPOAgent.agent_optimizer.pi_scheduler._step_count == 1
-    PPOAgent.agent_optimizer.pi_scheduler.step()
-    assert PPOAgent.agent_optimizer.pi_scheduler._step_count == 2      
-    
-    assert PPOAgent.agent_optimizer.critic_optimizer.state[PPOAgent.agent_optimizer.critic_optimizer.param_groups[0]["params"][-1]]["step"] == 40
-    
-    assert PPOAgent.agent_optimizer.critic_scheduler._step_count == 1     
-    PPOAgent.agent_optimizer.critic_scheduler.step()  
-    assert PPOAgent.agent_optimizer.critic_scheduler._step_count == 2  
-    
-    # TODO Uncomment after implementing PFGRU
-    #PPOAgent.agent_optimizer.pfgru_scheduler.step() 
-    # Reduce pfgru learning rate    
-    
-    # Take agents out of train mode
-    PPOAgent.agent.set_mode(mode='eval')                           
-    
-    # Log changes from update
-    return results        

@@ -256,7 +256,6 @@ class EpisodeRunner:
             agent.set_mode('eval')
         
         while run_counter < self.montecarlo_runs:
-            # TODO this is repeated in train(); create seperate function?
             # Get Agent choices
             agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
             for id, agent in self.agents.items():
@@ -284,7 +283,6 @@ class EpisodeRunner:
             steps_in_episode += 1
             
             # Tally up ending conditions
-            # TODO move this to seperate function
             # Check if there was a terminal state. Note: if terminals are introduced that only affect one agent but not all, this will need to be changed.
             terminal_reached_flag = False
             for id in terminal_counter:
