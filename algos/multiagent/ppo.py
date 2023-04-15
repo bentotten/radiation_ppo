@@ -659,15 +659,21 @@ class AgentPPO:
         :param message: (Dict) Information from the episode.
         
         '''
+        # RAD-A2C compatibility
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
-            results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
+            a, v, logp, hidden, out_pred = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
+            results = RADCNN_core.ActionChoice(
+                id= self.id,
+                action= a,
+                action_logprob= logp,
+                state_value= v, 
+                loc_pred= out_pred,
+                hiddens= hidden
+                )
             heatmaps = None
-        elif self.actor_critic_architecture == 'cnn':
-            results, heatmaps = self.agent.select_action(observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
-                
         else:
-            raise ValueError("Unknown architecture")
+            results, heatmaps = self.agent.select_action(observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
         return results, heatmaps         
     
     def reset_neural_nets(self) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:

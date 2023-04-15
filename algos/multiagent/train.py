@@ -235,7 +235,7 @@ class train_PPO:
             
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
                 for ac in self.agents.values():
-                    ac.agent.pi.logits_net.v_net.eval() # TODO should the pfgru call .eval also?                       
+                    ac.agent.pi.logits_net.v_net.eval()                      
             
             # Start epoch! Episodes end when steps_per_episode is reached, steps_per_epoch is reached, or a terminal state is found
             for steps_in_epoch in range(self.steps_per_epoch):
@@ -248,6 +248,7 @@ class train_PPO:
                 agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
                 for id, ac in self.agents.items():
                     agent_thoughts[id], heatmaps = ac.step(observations=observations, hiddens = hiddens, message=infos)
+                    hiddens[id] = agent_thoughts[id].hiddens
                     
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts} 
@@ -464,8 +465,7 @@ class train_PPO:
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
                 
-                
-    def process_render(self, epoch_ended: bool, epoch: int):
+    def process_render(self, epoch_ended: bool, epoch: int)-> None:
         # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
         asked_to_save = epoch_ended and self.render
         save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
@@ -518,4 +518,4 @@ class train_PPO:
                         epoch_count=epoch,
                         add_value_text=True,
                         episode_count=self.episode_count,
-                    )                                            
+                    )
