@@ -331,6 +331,7 @@ class RadSearch(gym.Env):
     # Rendering
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
     all_agent_max_count: float = field(init=False) # Sets y limit for radiation count graph
+    render_counter: int = field(default=0)
 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # For debugging
@@ -1162,6 +1163,7 @@ class RadSearch(gym.Env):
         save_gif: bool = True,
         path: Optional[str] = None,
         epoch_count: Optional[int] = None,
+        episode_count: Optional[int] = None,
         just_env: Optional[bool] = False,
         obstacles=[],
         episode_rewards={},
@@ -1563,14 +1565,14 @@ class RadSearch(gym.Env):
                 else:
                     fps = FPS
                 writer = PillowWriter(fps=fps)
-                if os.path.isdir(str(path) + "/gifs/"):
-                    ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
-                    print("")
-                else:
+                if not os.path.isdir(str(path) + "/gifs/"):
                     os.mkdir(str(path) + "/gifs/")
-                    ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
+                #ani.save(str(path) + f"/gifs/test_epoch{epoch_count}.gif", writer=writer)
+                ani.save(f'{str(path)}/gifs/epoch_{epoch_count}-{episode_count}({self.render_counter}).gif', writer=writer)
+                    
             else:
                 plt.show()
+            self.render_counter += 1
             return
 
 # TODO make multi-agent

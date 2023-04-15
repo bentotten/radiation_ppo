@@ -471,6 +471,7 @@ class train_PPO:
         save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
         save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
+        
         if (asked_to_save and save_first_epoch and time_to_save):
             # Render Agent heatmaps
             if self.actor_critic_architecture == 'cnn':
@@ -485,6 +486,7 @@ class train_PPO:
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                 epoch_count=epoch,
+                episode_count=self.episode_count,                
             )                                
         # Always render first episode
         if self.render and epoch == 0 and self.render_first_episode:
@@ -499,7 +501,7 @@ class train_PPO:
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                 epoch_count=epoch,
-            
+                episode_count=self.episode_count,                
             )                              
             self.render_first_episode = False             
         # Always render last epoch's episode
@@ -507,6 +509,7 @@ class train_PPO:
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                 epoch_count=epoch,
+                episode_count=self.episode_count,                                
             )                        
             for id, ac in self.agents.items():
                 if self.actor_critic_architecture == 'cnn':
