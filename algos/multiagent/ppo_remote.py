@@ -226,6 +226,7 @@ class OptimizationStorage:
             self.model_optimizer.zero_grad() 
                                    
         elif name == 'critic_optimizer':
+            assert self.critic_optimizer            
             self.critic_optimizer.zero_grad()           
             
     def step(self, name: str):

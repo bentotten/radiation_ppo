@@ -364,19 +364,20 @@ class train_PPO:
                     
                     # Reset agent maps for new episode
                     for id, ac in self.agents.items():                        
-                        ray.get(ac.reset_agent.remote())
+                        ray.get(ac.reset_agent.remote())                          
                             
-                    self.process_render(epoch_ended=epoch_ended, epoch=epoch)
+                    self.process_render(epoch_ended=epoch_ended, epoch=epoch, logger= self.loggers)
             ############################################################################################################
 
-            # Save model
+            # Save model          
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
                 for id, agent in self.agents.items():
-                        test = self.loggers[id].output_dir   
-                        current = os.path.split(os.path.split(os.getcwd())[0])[0]
-                        for part in test.parts[2:]:
-                            current += f'/{part}'
-                        ray.get(agent.save.remote(path=current))
+                    # Get save directory
+                    test = self.loggers[id].output_dir   
+                    current = os.path.split(os.path.split(os.getcwd())[0])[0]
+                    for part in test.parts[2:]:
+                        current += f'/{part}'                      
+                    ray.get(agent.save.remote(path=current))
 
             # Reduce localization module training iterations after 100 epochs to speed up training
             if epoch > 99:
@@ -440,18 +441,27 @@ class train_PPO:
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
                 self.loggers[id].dump_tabular()
                 
-    def process_render(self, epoch_ended: bool, epoch: int)-> None:
+    def process_render(self, epoch_ended: bool, epoch: int, logger: EpochLogger)-> None:
+        
         # If at the end of an epoch and render flag is set or the save_gif frequency indicates it is time to
         asked_to_save = epoch_ended and self.render
         save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
         save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
-        
+             
+                        
         if (asked_to_save and save_first_epoch and time_to_save):
             # Render Agent heatmaps
-            for id, ac in self.agents.items():
+            for id, ac in self.agents.items(): 
+                # Get save directory
+                test = self.loggers[id].output_dir   
+                current = os.path.split(os.path.split(os.getcwd())[0])[0]
+                for part in test.parts[2:]:
+                    current += f'/{part}' 
+                
                 ray.get(ac.render.remote(
-                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    #savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    savepath=current,
                     epoch_count=epoch,
                     episode_count=self.episode_count,
                     add_value_text=True
@@ -465,8 +475,14 @@ class train_PPO:
         # Always render first episode
         if self.render and epoch == 0 and self.render_first_episode:
             for id, ac in self.agents.items():
+                # Get save directory
+                test = self.loggers[id].output_dir   
+                current = os.path.split(os.path.split(os.getcwd())[0])[0]
+                for part in test.parts[2:]:
+                    current += f'/{part}'                 
                 ray.get(ac.render.remote(
-                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    #savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    savepath = current,
                     epoch_count=epoch,
                     episode_count=self.episode_count,                        
                     add_value_text=True
@@ -485,8 +501,15 @@ class train_PPO:
                 episode_count=self.episode_count,                                
             )                        
             for id, ac in self.agents.items():
+                # Get save directory
+                test = self.loggers[id].output_dir   
+                current = os.path.split(os.path.split(os.getcwd())[0])[0]
+                for part in test.parts[2:]:
+                    current += f'/{part}' 
+                                    
                 ray.get(ac.render.remote(
-                    savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    #savepath=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}", 
+                    savepath = current,
                     epoch_count=epoch,
                     add_value_text=True,
                     episode_count=self.episode_count,
