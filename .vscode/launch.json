@@ -88,13 +88,12 @@
         // "--exp-name",
         // "TEAM-RAD",
         "--net-type",
-        "cnn",
+        "rnn",
         // "--DEBUG",
         // "True",
         // "--save-freq",
         // "1"
-        // "--no-global-critic",
-        //"False"
+        "--no-global-critic",
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }

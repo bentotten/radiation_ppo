@@ -552,13 +552,13 @@ def main() -> None:
 
     if PROFILE:
         profiler.disable()
-        print("##### BY CUMTIME #####")
+        # print("##### BY CUMTIME #####")
         stats = pstats.Stats(profiler).sort_stats('cumtime')
-        stats.print_stats()       
+        #stats.print_stats()       
         stats.dump_stats(f"{save_path[0]}/profile_cumtime.txt")         
-        print("##### BY TOTTIME #####")
+        # print("##### BY TOTTIME #####")
         stats = pstats.Stats(profiler).sort_stats('tottime')
-        stats.print_stats() 
+        #stats.print_stats() 
         stats.dump_stats(f"{save_path[0]}/profile_tottime.txt")                                
 
     #     try:

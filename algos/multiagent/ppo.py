@@ -365,13 +365,14 @@ class PPOBuffer:
         self.source_tar[self.ptr] = src
         self.logp_buf[self.ptr] = logp
         
-        if PRIO_MEMORY:
-            for agent_id, agent_obs in full_observation.items():
-                self.full_observation_buffer[self.ptr][agent_id] = agent_obs
-                self.full_observation_buffer[self.ptr]['terminal'] = terminal
-        else:
-            self.heatmap_buffer['actor'][self.ptr] = heatmap_stacks.actor
-            self.heatmap_buffer['critic'][self.ptr] = heatmap_stacks.critic
+        if heatmap_stacks:
+            if PRIO_MEMORY:
+                for agent_id, agent_obs in full_observation.items():
+                    self.full_observation_buffer[self.ptr][agent_id] = agent_obs
+                    self.full_observation_buffer[self.ptr]['terminal'] = terminal
+            else:
+                self.heatmap_buffer['actor'][self.ptr] = heatmap_stacks.actor
+                self.heatmap_buffer['critic'][self.ptr] = heatmap_stacks.critic
         
         self.ptr += 1
 
@@ -654,6 +655,7 @@ class AgentPPO:
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
             results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
+            heatmaps = None
         elif self.actor_critic_architecture == 'cnn':
             results, heatmaps = self.agent.select_action(observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
                 
@@ -719,7 +721,6 @@ class AgentPPO:
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             # Reset gradients 
             self.agent_optimizer.pi_optimizer.zero_grad()
-            self.agent_optimizer.critic_optimizer.zero_grad()                
             # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             while not term and kk < self.train_pi_iters:
                 # Early stop training if KL divergence above certain threshold
@@ -735,7 +736,6 @@ class AgentPPO:
                 
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
-            self.agent_optimizer.critic_scheduler.step()            
             self.agent_optimizer.pfgru_scheduler.step()
 
             # Log changes from update
