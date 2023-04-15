@@ -80,7 +80,7 @@
         // "--save-gif-freq",
         // "1",
         "--obstruct",
-        "1",
+        "0",
         // "--seed",
         // "2",
         "--enforce-boundaries",

@@ -217,6 +217,41 @@ class OptimizationStorage:
             )
         else:
             self.critic_scheduler = None # RAD-A2C has critic embeded in pi
+            
+    def zero_grad(self, name: str):
+        if name == 'pi_optimizer':
+            self.pi_optimizer.zero_grad()
+              
+        elif name == 'model_optimizer':
+            self.model_optimizer.zero_grad() 
+                                   
+        elif name == 'critic_optimizer':
+            self.critic_optimizer.zero_grad()           
+            
+    def step(self, name: str):
+        if name == 'pi_optimizer':
+            self.pi_optimizer.step()
+            
+        elif name == 'pi_scheduler':
+            self.pi_scheduler.step()
+            
+        elif name == 'pfgru_scheduler':
+            self.pfgru_scheduler.step() 
+              
+        elif name == 'model_optimizer':
+            self.model_optimizer.step() 
+                                   
+        elif name == 'critic_optimizer':
+            assert self.critic_optimizer
+            self.critic_optimizer.step() 
+            
+        elif name == 'critic_scheduler':
+            assert self.critic_scheduler
+            self.critic_scheduler.step() 
+            
+    def MSE_loss(self, **kwargs):
+        self.MSELoss(**kwargs)
+
 
 @ray.remote
 @dataclass
@@ -621,28 +656,7 @@ class AgentPPO:
                 clip_ratio = self.clip_ratio,
                 alpha = self.alpha,
                 target_kl = self.target_kl,             
-                )                         
-        # Gated recurrent architecture for RAD-A2C 
-        elif self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            # Initialize Agents                
-            self.agent = RADA2C_core.RNNModelActorCritic(**self.actor_critic_args)
-            
-            if self.GlobalCriticOptimizer:
-                raise Exception("No global critic option for RAD-A2C")        
-            
-            # Initialize learning opitmizers                           
-            self.agent_optimizer = OptimizationStorage.remote(
-                train_pi_iters = self.train_pi_iters,                
-                train_v_iters = None, # Critic is embeded in policy for RAD-A2C
-                train_pfgru_iters = self.train_pfgru_iters,              
-                pi_optimizer = Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
-                critic_optimizer = None, # Critic is embeded in policy for RAD-A2C
-                model_optimizer = Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
-                MSELoss = torch.nn.MSELoss(reduction="mean"),
-                clip_ratio = self.clip_ratio,
-                alpha = self.alpha,
-                target_kl = self.target_kl,             
-                )                
+                )                                    
         else:
             raise ValueError('Unsupported Neural Network type requested')
             
@@ -719,126 +733,89 @@ class AgentPPO:
         kk = 0
         term = False        
 
-        # Train RAD-A2C framework
-        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model        
-            model_loss = self.update_model(data)
-                        
-            # Reset gradients 
-            ray.get(self.agent_optimizer.pi_optimizer.zero_grad.remote())
-            # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
-            while not term and kk < self.train_pi_iters:
-                # Early stop training if KL divergence above certain threshold
-                update_results: Dict[str, Union[torch.Tensor, npt.NDArray[Any], List[Any], bool]] = {}
-                (
-                    update_results['pi_l'], 
-                    update_results['pi_info'], 
-                    update_results['term'],  
-                    update_results['loc_loss']
-                ) = self.update_rada2c(data, min_iterations, logger=logger)  # type: ignore
-                kk += 1
-                
-            # Reduce learning rate
-            ray.get(self.agent_optimizer.pi_scheduler.step.remote())
-            ray.get(self.agent_optimizer.pfgru_scheduler.step.remote())
-
-            # Log changes from update
-            return UpdateResult(
-                stop_iteration=kk,
-                loss_policy=update_results['pi_l'].item(), # type: ignore
-                loss_critic=update_results['pi_info']["val_loss"].item(), # type: ignore
-                loss_predictor=model_loss.item(),  # TODO if using the regression GRU
-                kl_divergence=update_results['pi_info']["kl"], # type: ignore
-                Entropy=update_results['pi_info']["ent"], # type: ignore
-                ClipFrac=update_results['pi_info']["cf"], # type: ignore
-                LocLoss=update_results['loc_loss'], # type: ignore
-                VarExplain=0 # TODO what is this?
-            )
-        # Train RAD-TEAM framework                 
+        # TODO get PFGRU working with RAD-TEAM
+        model_loss = torch.tensor(0)
+        
+        # Put agents in train mode
+        self.agent.set_mode(mode='train')
+        
+        # Get mapstacks from buffer or inflate from logs, if in max-memory mode
+        if PRIO_MEMORY:
+            actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
         else:
-            # TODO get PFGRU working with RAD-TEAM
-            model_loss = torch.tensor(0)
+            actor_maps_buffer = ray.get(self.ppo_buffer.get_heatmap_buffer.remote('actor'))
+            critic_maps_buffer =  ray.get(self.ppo_buffer.get_heatmap_buffer.remote('critic'))
             
-            # Put agents in train mode
-            self.agent.set_mode(mode='train')
+        # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
+        for k_epoch in range(self.train_pi_iters):
             
-            # Get mapstacks from buffer or inflate from logs, if in max-memory mode
-            if PRIO_MEMORY:
-                actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
+            # Reset gradients 
+            ray.get(self.agent_optimizer.zero_grad.remote('pi_optimizer'))
+            
+            # Get indexes of episodes that will be sampled
+            sample_indexes = sample(self, data=data)
+            
+            #actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
+            actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
+            
+            # Check Actor KL Divergence
+            if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
+                actor_loss_results['pi_loss'].backward()
+                ray.get(self.agent_optimizer.step.remote('pi_optimizer'))
             else:
-                actor_maps_buffer = ray.get(self.ppo_buffer.get_heatmap_buffer.remote('actor'))
-                critic_maps_buffer =  ray.get(self.ppo_buffer.get_heatmap_buffer.remote('critic'))
-                
-            # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
-            for k_epoch in range(self.train_pi_iters):
-                
-                # Reset gradients 
-                ray.get(self.agent_optimizer.pi_optimizer.zero_grad.remote())
-                
-                # Get indexes of episodes that will be sampled
-                sample_indexes = sample(self, data=data)
-                
-                #actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
-                
-                # Check Actor KL Divergence
-                if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
-                    actor_loss_results['pi_loss'].backward()
-                    ray.get(self.agent_optimizer.pi_optimizer.step.remote())
-                else:
-                    break  # Skip remaining training               
+                break  # Skip remaining training               
 
+        # Reduce learning rate
+        ray.get(self.agent_optimizer.step.remote('pi_scheduler'))
+
+        # TODO Uncomment after implementing PFGRU
+        #self.agent_optimizer.pfgru_scheduler.step() 
+        # Reduce pfgru learning rate
+
+        results: UpdateResult
+
+        # If local critic, do Value function learning here
+        # For global critic, only first agent performs the update
+        if not self.GlobalCriticOptimizer or self.id == 0:       
+            for _ in range(self.train_v_iters):
+                ray.get(self.agent_optimizer.zero_grad.remote('critic_optimizer'))
+                critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
+                critic_loss_results['critic_loss'].backward()
+                ray.get(self.agent_optimizer.step.remote('critic_optimizer'))
+            
             # Reduce learning rate
-            ray.get(self.agent_optimizer.pi_scheduler.step.remote())
+            ray.get(self.agent_optimizer.step.remote('critic_scheduler'))
+                        
+            results = UpdateResult(
+                stop_iteration=k_epoch,  
+                loss_policy=actor_loss_results['pi_loss'].item(),
+                loss_critic=critic_loss_results['critic_loss'].item(),
+                loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
+                kl_divergence=actor_loss_results["kl"],
+                Entropy=actor_loss_results["entropy"],
+                ClipFrac=actor_loss_results["clip_fraction"],
+                LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
+                VarExplain=0 # TODO what is this?
+            )                          
+        else:
+            results = UpdateResult(
+                stop_iteration=k_epoch,  
+                loss_policy=actor_loss_results['pi_loss'].item(),
+                loss_critic=None,
+                loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
+                kl_divergence=actor_loss_results["kl"],
+                Entropy=actor_loss_results["entropy"],
+                ClipFrac=actor_loss_results["clip_fraction"],
+                LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
+                VarExplain=0 # TODO what is this?
+            )                          
 
-            # TODO Uncomment after implementing PFGRU
-            #self.agent_optimizer.pfgru_scheduler.step() 
-            # Reduce pfgru learning rate
-
-            results: UpdateResult
-
-            # If local critic, do Value function learning here
-            # For global critic, only first agent performs the update
-            if not self.GlobalCriticOptimizer or self.id == 0:       
-                for _ in range(self.train_v_iters):
-                    ray.get(self.agent_optimizer.critic_optimizer.zero_grad.remote())
-                    critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
-                    critic_loss_results['critic_loss'].backward()
-                    ray.get(self.agent_optimizer.critic_optimizer.step.remote())
+        # Take agents out of train mode
+        self.agent.set_mode(mode='eval')                           
+        
+        # Log changes from update
+        return results
                 
-                # Reduce learning rate
-                ray.get(self.agent_optimizer.critic_scheduler.step.remote())
-                            
-                results = UpdateResult(
-                    stop_iteration=k_epoch,  
-                    loss_policy=actor_loss_results['pi_loss'].item(),
-                    loss_critic=critic_loss_results['critic_loss'].item(),
-                    loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-                    kl_divergence=actor_loss_results["kl"],
-                    Entropy=actor_loss_results["entropy"],
-                    ClipFrac=actor_loss_results["clip_fraction"],
-                    LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-                    VarExplain=0 # TODO what is this?
-                )                          
-            else:
-                results = UpdateResult(
-                    stop_iteration=k_epoch,  
-                    loss_policy=actor_loss_results['pi_loss'].item(),
-                    loss_critic=None,
-                    loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-                    kl_divergence=actor_loss_results["kl"],
-                    Entropy=actor_loss_results["entropy"],
-                    ClipFrac=actor_loss_results["clip_fraction"],
-                    LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-                    VarExplain=0 # TODO what is this?
-                )                          
-
-            # Take agents out of train mode
-            self.agent.set_mode(mode='eval')                           
-            
-            # Log changes from update
-            return results
-                    
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch = None):
         ''' Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi'''
         
@@ -1047,13 +1024,13 @@ class AgentPPO:
                 model_loss_arr = torch.hstack((model_loss_arr, total_loss.unsqueeze(0)))
 
             model_loss: torch.Tensor = model_loss_arr.mean()
-            ray.get(self.agent_optimizer.model_optimizer.zero_grad.remote())
+            ray.get(self.agent_optimizer.zero_grad.remote('model_optimizer'))
             model_loss.backward()
             # Clip gradient TODO should 5 be a variable?
             # TODO Pylance error: https://github.com/Textualize/rich/issues/1523. Unable to resolve
             torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), 5) # TODO make multi-agent
 
-            ray.get(self.agent_optimizer.model_optimizer.step.remote())
+            ray.get(self.agent_optimizer.step.remote('model_optimizer'))
 
         self.agent.model.eval() 
         return model_loss
@@ -1126,7 +1103,7 @@ class AgentPPO:
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
             
-            val_loss = ray.get(self.agent_optimizer.MSELoss.remote(val, ret)) # MSE critc loss 
+            val_loss = ray.get(self.agent_optimizer.MSE_loss.remote(val, ret)) # MSE critc loss 
 
             # TODO: More descriptive name
             new_loss: torch.Tensor = -(
@@ -1157,9 +1134,9 @@ class AgentPPO:
 
         kl = pi_info["kl"][-1].mean()  # type: ignore
         if kl.item() < 1.5 * self.target_kl:
-            ray.get(self.agent_optimizer.pi_optimizer.zero_grad.remote())
+            ray.get(self.agent_optimizer.zero_grad.remote('pi_optimizer'))
             loss_pi.backward()
-            ray.get(self.agent_optimizer.pi_optimizer.step.remote())
+            ray.get(self.agent_optimizer.step.remote('pi_optimizer'))
             term = False
         else:
             term = True
