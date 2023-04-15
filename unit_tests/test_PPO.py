@@ -768,7 +768,7 @@ class Test_PPOAgent:
         with pytest.raises(ValueError):    
             AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-    def test_reset_neural_nets(self, init_parameters, rada2c):
+    def test_reset_agent(self, init_parameters, rada2c):
         hiddens = rada2c.get_hiddens()         
 
         observations = {
@@ -784,7 +784,7 @@ class Test_PPOAgent:
         assert AgentPPO.agent.maps.reset_flag == 1
         assert AgentPPO.agent.maps.tools.reset_flag == 1
                 
-        _ = AgentPPO.reset_neural_nets()
+        _ = AgentPPO.reset_agent()
         assert AgentPPO.agent.reset_flag == 1
         assert AgentPPO.agent.maps.reset_flag == 2
         assert AgentPPO.agent.maps.tools.reset_flag == 2

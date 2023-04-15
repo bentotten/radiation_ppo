@@ -213,14 +213,17 @@ class train_PPO:
         # Prepare epoch variables
         out_of_bounds_count: Dict[int, int] = {id: 0 for id in self.agents} # Out of Bounds counter for the epoch (not the episode)
         terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
-
+        hiddens: Dict[int, Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]] = {id: None for id in self.agents} # For RAD-A2C compatibility
+        
+        # Prepare episode variables
+        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] =  {id: None for id in self.agents}       
+        
         # For RAD-A2C - Update stat buffers for all agent observations for later observation normalization
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             for id in self.agents:
                 self.stat_buffers[id].update(observations[id][0])
 
             for id in self.agents: 
-                self.agents[id].reset_neural_nets()      
                 self.agents[id].agent.model.eval() # Sets PFGRU model into "eval" mode    
 
         print(f"Starting main training loop!", flush=True)
@@ -230,12 +233,12 @@ class train_PPO:
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode.
         for epoch in range(self.total_epochs):
-            # Reset hidden layers and sets Actor into "eval" mode. For CNN, resets maps
-            hiddens: Dict[int, Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]] = {id: ac.reset_neural_nets() for id, ac in self.agents.items()}            
             
+            # For RAD-A2C - Reset hidden layers and sets Actor into "eval" mode.
             if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                for ac in self.agents.values():
-                    ac.agent.pi.logits_net.v_net.eval()                      
+                for id, ac in self.agents.items():
+                    ac.agent.pi.logits_net.v_net.eval()
+                    hiddens[id] = ac.reset_hidden()            
             
             # Start epoch! Episodes end when steps_per_episode is reached, steps_per_epoch is reached, or a terminal state is found
             for steps_in_epoch in range(self.steps_per_epoch):
@@ -244,11 +247,11 @@ class train_PPO:
                 if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                     observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
                     
-                # Actor: Compute action and logp (log probability); Critic: compute state-value
-                agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
+                # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
+                agent_thoughts.clear()
                 for id, ac in self.agents.items():
-                    agent_thoughts[id], heatmaps = ac.step(observations=observations, hiddens = hiddens, message=infos)
-                    hiddens[id] = agent_thoughts[id].hiddens
+                    agent_thoughts[id], heatmaps = ac.step(observations=observations, hiddens = hiddens[id], message=infos)
+                    hiddens[id] = agent_thoughts[id].hiddens # For RAD-A2C - save latest hiddens for use in next steps.
                     
                 # Create action list to send to environment
                 agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts} 
@@ -337,8 +340,8 @@ class train_PPO:
                         # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is 
                         # used in that place.
                         for id, ac in self.agents.items():
-                            results, _ = ac.step(observations, hiddens=hiddens)  
-                            last_state_value = results.state_value
+                            bootstrap_results, _ = ac.step(observations, hiddens=hiddens[id])  
+                            last_state_value = bootstrap_results.state_value
 
                         if epoch_ended:
                             # Set flag to reset/sample new environment parameters. If epoch has not ended, keep training on the same environment. 
@@ -362,12 +365,12 @@ class train_PPO:
                         for id in self.agents:
                             self.stat_buffers[id].reset()
                                                 
-                    # If not at the end of an epoch, reset agents for incoming new episode    
-                    if timeout and not epoch_ended: # not env.epoch_end:
+                    # For RAD-A2C - If not at the end of an epoch, reset RAD-A2C agents for incoming new episode    
+                    if not epoch_ended: # not env.epoch_end:
                         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                               
-                            for id, ac in self.agents.items():                        
-                                hiddens[id] = ac.reset_neural_nets()
-                    # Else log epoch results and reset counters
+                            for id, ac in self.agents.items():
+                                hiddens[id] = ac.reset_hidden()
+                    # If at the end of an epoch, log epoch results and reset counters
                     else:
                         for id in self.agents:
                             # TODO this was already done above, is this being done twice?                            
@@ -375,16 +378,16 @@ class train_PPO:
                             terminal_counter[id] = 0
                             out_of_bounds_count[id] = 0
                     
-                    # Reset environment
+                    # Reset environment and RAD-TEAM agents
                     observations, _,  _, _ = self.env.reset()                                         
                     source_coordinates = np.array(self.env.src_coords, dtype="float32")  # Target for later NN update after episode concludes
                     episode_return = {id: 0 for id in self.agents}
                     steps_in_episode = 0
                     
-                    # Reset maps for new episode
+                    # Reset agent maps for new episode
                     if self.actor_critic_architecture == 'cnn':
                         for id, ac in self.agents.items():                        
-                            _ = ac.reset_neural_nets()    
+                            ac.reset_agent()    
 
                     # RAD-A2C Update stat buffers for all agent observations for later observation normalization
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            

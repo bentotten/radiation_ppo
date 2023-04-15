@@ -120,6 +120,7 @@ def generalized_advantage_estimate(gamma, lamb, done, rewards, values):
         
     return advantages
 
+
 # NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
 def rewards_to_go(batch_rews, gamma):
     ''' 
@@ -650,7 +651,7 @@ class AgentPPO:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
-    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
+    def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, List[torch.Tensor]] = None, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
         ''' 
         Wrapper for neural network action selection 
         
@@ -661,8 +662,7 @@ class AgentPPO:
         '''
         # RAD-A2C compatibility
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            assert type(hiddens) == dict
-            a, v, logp, hidden, out_pred = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
+            a, v, logp, hidden, out_pred = self.agent.step(observations[self.id], hidden=hiddens) # type: ignore
             results = RADCNN_core.ActionChoice(
                 id= self.id,
                 action= a,
@@ -676,18 +676,18 @@ class AgentPPO:
             results, heatmaps = self.agent.select_action(observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
         return results, heatmaps         
     
-    def reset_neural_nets(self) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+    def reset_agent(self)-> None:
         ''' 
         Reset the neural networks at the end of an episode or training batch update. For RAD-TEAM, this does not reset the network parameters, it just flushes
         the heatmaps and resets all standardization/normalization tools.
         '''
-        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            hiddens = self.agent.reset_hidden() # type: ignore
-        else:
-            hiddens = (0, 0, 0)
-            self.agent.reset()
+        self.agent.reset()
         
-        return hiddens
+    def reset_hidden(self)-> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            return self.agent.reset_hidden() # type: ignore        
+        else:
+            raise ValueError("Attempting to reset hidden layers on non-RAD-A2C architecture!")
      
     def update_agent(self, logger: EpochLogger = None) -> UpdateResult: #         (env, bp_args, loss_fcn=loss)
         """
@@ -845,7 +845,7 @@ class AgentPPO:
         # Get sampled returns from actor and critic
         for index in sample:
             # Reset existing episode maps
-            self.reset_neural_nets()     
+            self.reset_agent()     
             single_pi_l, single_pi_info = self.compute_loss_pi(data=data, index=index, map_stack=mapstacks_buffer[index])
             
             pi_loss_list.append(single_pi_l)
@@ -920,7 +920,7 @@ class AgentPPO:
         # Get sampled returns from actor and critic
         for index in sample:
             # Reset existing episode maps
-            self.reset_neural_nets()                           
+            self.reset_agent()                           
             critic_loss_list.append(self.compute_loss_critic(data=data, map_stack=map_buffer_maps[index], index=index))
 
         #take mean of everything for batch update
@@ -968,7 +968,7 @@ class AgentPPO:
             )
             for ep in ep_form:
                 sl = len(ep[0])
-                hidden = self.agent.reset_hidden()[0] # type: ignore
+                hidden = self.reset_hidden()[0] # type: ignore
                 #src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
                 src_tar: torch.Tensor = ep[0][:, source_loc_idx:].clone()
                 src_tar[:, :2] = src_tar[:, :2] / args.area_scale
@@ -1092,7 +1092,7 @@ class AgentPPO:
         for ep in ep_form:
             # For each set of episodes per process from an epoch, compute loss
             trajectories = ep[0] # type: ignore
-            hidden = self.reset_neural_nets() 
+            hidden = self.reset_hidden() 
             obs, act, logp_old, adv, ret, src_tar = (
                 trajectories[:, :observation_idx],
                 trajectories[:, action_idx],
