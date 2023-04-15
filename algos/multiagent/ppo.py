@@ -645,13 +645,20 @@ class AgentPPO:
             raise ValueError("Steps per epoch cannot be 0")
         
     def reduce_pfgru_training(self):
-        '''Reduce localization module training iterations after some number of epochs to speed up training'''
+        ''' Reduce localization module training iterations after some number of epochs to speed up training '''
         if self.reduce_pfgru_iters:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False     
     
     def step(self, observations: Dict[int, List[Any]], hiddens: Union[None, Dict] = None, message: Union[None, Dict] =None) -> RADCNN_core.ActionChoice:
-        ''' Wrapper for neural network action selection'''
+        ''' 
+        Wrapper for neural network action selection 
+        
+        :param observations: (Dict) Observations from all agents.
+        :param hiddens: (Dict) Hidden layer values for each agent. Only compatible with RAD-A2C.
+        :param message: (Dict) Information from the episode.
+        
+        '''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             assert type(hiddens) == dict
             results = self.agent.step(observations[self.id], hidden=hiddens[self.id]) # type: ignore
@@ -663,29 +670,24 @@ class AgentPPO:
             raise ValueError("Unknown architecture")
         return results, heatmaps         
     
-    def reset_neural_nets(self, batch_size: int = 1) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
-        ''' Reset the neural networks at the end of an episode'''
+    def reset_neural_nets(self) -> Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor]:
+        ''' 
+        Reset the neural networks at the end of an episode or training batch update. For RAD-TEAM, this does not reset the network parameters, it just flushes
+        the heatmaps and resets all standardization/normalization tools.
+        '''
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             hiddens = self.agent.reset_hidden() # type: ignore
         else:
-            # TODO implement reset function that has return values
-            # actor_hidden = self.agent.pi._reset_state()
-            # critic_hidden = self.agent.critic._reset_state()
-            #pfgru_hidden = self.agent.model.init_hidden(batch_size)
-            actor_hidden = 0
-            critic_hidden = 0
-            pfgru_hidden = 0
-            hiddens = (actor_hidden, critic_hidden, pfgru_hidden)
-            
+            hiddens = (0, 0, 0)
             self.agent.reset()
         
         return hiddens
      
-    #TODO Make this a Ray remote function 
-    def update_agent(self, logger = None) -> UpdateResult: #         (env, bp_args, loss_fcn=loss)
+    def update_agent(self, logger: EpochLogger = None) -> UpdateResult: #         (env, bp_args, loss_fcn=loss)
         """
-        Update for the localization (PFGRU) and A2C modules
-        Note: update functions perform multiple updates per call
+        Wrapper function to update individual neural networks. Note: update functions perform multiple updates per call
+        
+        :param logger: (EpochLogger) Logger used for RAD-A2C updates.
         """     
         
         def sample(self, data, minibatch=None):
@@ -698,40 +700,29 @@ class AgentPPO:
             number_of_samples = int((ep_length / minibatch))
             return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
          
-        # Get data from buffers
+        # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get() 
-        
-        # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
-        # TODO get this working for CNN
-        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            model_losses = self.update_model(data)
-        else:
-            # TODO remove after working for cnn
-            model_losses = torch.tensor(0)
-            
-        # Update function if using the regression GRU
-        # model_losses = update_loc_rnn(data,env,loss)
-
-        # Length of data ep_form
         min_iterations = len(data["ep_form"])
         kk = 0
         term = False        
 
-        # RADPPO trains both actor and critic in same function/train_pi_iters, while TEAM-RAD needs to enable a global critic so iterates inside update_a2c() instead
+        # Train RAD-A2C framework
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model        
+            model_loss = self.update_model(data)
+                        
             # Reset gradients 
             self.agent_optimizer.pi_optimizer.zero_grad()
             # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             while not term and kk < self.train_pi_iters:
                 # Early stop training if KL divergence above certain threshold
-                #pi_l, pi_info, term, loc_loss = self.update_a2c(agent, data, min_iters, kk)  # pi_l = policy loss
                 update_results: Dict[str, Union[torch.Tensor, npt.NDArray[Any], List[Any], bool]] = {}
                 (
                     update_results['pi_l'], 
                     update_results['pi_info'], 
                     update_results['term'],  
                     update_results['loc_loss']
-                ) = self.update_a2c(data, min_iterations, logger=logger)  # type: ignore
+                ) = self.update_rada2c(data, min_iterations, logger=logger)  # type: ignore
                 kk += 1
                 
             # Reduce learning rate
@@ -743,20 +734,23 @@ class AgentPPO:
                 stop_iteration=kk,
                 loss_policy=update_results['pi_l'].item(), # type: ignore
                 loss_critic=update_results['pi_info']["val_loss"].item(), # type: ignore
-                loss_predictor=model_losses.item(),  # TODO if using the regression GRU
+                loss_predictor=model_loss.item(),  # TODO if using the regression GRU
                 kl_divergence=update_results['pi_info']["kl"], # type: ignore
                 Entropy=update_results['pi_info']["ent"], # type: ignore
                 ClipFrac=update_results['pi_info']["cf"], # type: ignore
                 LocLoss=update_results['loc_loss'], # type: ignore
                 VarExplain=0 # TODO what is this?
             )
-                            
+        # Train RAD-TEAM framework                 
         else:
+            # TODO get PFGRU working with RAD-TEAM
+            model_loss = torch.tensor(0)
+            
             # Put agents in train mode
             self.agent.set_mode(mode='train')
             
+            # Get mapstacks from buffer or inflate from logs, if in max-memory mode
             if PRIO_MEMORY:
-                # Get mapstack 
                 actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
             else:
                 actor_maps_buffer = self.ppo_buffer.heatmap_buffer['actor']
@@ -764,6 +758,7 @@ class AgentPPO:
                 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
             for k_epoch in range(self.train_pi_iters):
+                
                 # Reset gradients 
                 self.agent_optimizer.pi_optimizer.zero_grad()
                 
@@ -805,7 +800,7 @@ class AgentPPO:
                     stop_iteration=k_epoch,  
                     loss_policy=actor_loss_results['pi_loss'].item(),
                     loss_critic=critic_loss_results['critic_loss'].item(),
-                    loss_predictor=model_losses.item(),  # TODO implement when PFGRU is working for CNN
+                    loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
                     kl_divergence=actor_loss_results["kl"],
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
@@ -817,7 +812,7 @@ class AgentPPO:
                     stop_iteration=k_epoch,  
                     loss_policy=actor_loss_results['pi_loss'].item(),
                     loss_critic=None,
-                    loss_predictor=model_losses.item(),  # TODO implement when PFGRU is working for CNN
+                    loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
                     kl_divergence=actor_loss_results["kl"],
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
@@ -1050,7 +1045,7 @@ class AgentPPO:
         self.agent.model.eval() 
         return model_loss
 
-    def update_a2c(
+    def update_rada2c(
             self, data: Dict[str, torch.Tensor], min_iterations: int,  logger: EpochLogger, minibatch: Union[int, None] = None
         ) -> Tuple[torch.Tensor, Dict[str, Union[npt.NDArray, list]], bool, torch.Tensor]:
         ''' RAD-A2C Actor and Critic updates'''

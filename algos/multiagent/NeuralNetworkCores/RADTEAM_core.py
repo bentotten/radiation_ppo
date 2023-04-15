@@ -37,6 +37,7 @@ Shape = Union[int, Tuple[int, ...]]
 DIST_TH = 110.0
 #: [Global] Toggle for simple value/max normalization vs stdbuffer for radiation intensity map and log-based for visit-counts map. Type: bool
 SIMPLE_NORMALIZATION = False
+NORMALIZE_RADIATION = False
 
 
 def calculate_map_dimensions(grid_bounds: Tuple, resolution_accuracy: float, offset: float):
@@ -421,6 +422,9 @@ class MapsBuffer:
     #: This needs to be moved to PPO, but currently holds a set of stackable maps in an experience buffer to later be used for updates.
     observation_buffer: List = field(default_factory=lambda: list())  # TODO move to PPO buffer
 
+    # Reset flag for unit testing
+    reset_flag: int = field(init=False, default=0) # TODO switch out for pytest mock
+
     def __post_init__(self)-> None:
         # Set logrithmic base for visits counts normalization
         self.base = ((self.steps_per_episode+1) * self.number_of_agents)  # Extra observation is for the "last step" where the next state value is used to bootstrap rewards
@@ -442,6 +446,8 @@ class MapsBuffer:
         self.locations_matrix.clear()
         self.visit_counts_shadow.clear()        
         self.tools.reset() 
+        self.reset_flag += 1 if self.reset_flag < 100 else 1
+        
         
     def full_reset(self)-> None:
         ''' Obsolete method to reinitialize maps and reset matrices. Slower than reset()'''
@@ -644,13 +650,14 @@ class MapsBuffer:
         
         # Standardize radiation reading
         self.tools.standardizer.update(estimate)                
-        standardized_reading = self.tools.standardizer.standardize(estimate)
+        reading = self.tools.standardizer.standardize(estimate)
         
         # Normalize radiation reading and save to map
-        normalized_reading = self.tools.normalizer.normalize(current_value=standardized_reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())
+        if NORMALIZE_RADIATION:
+            reading = self.tools.normalizer.normalize(current_value=reading, max=self.tools.standardizer.get_max(), min=self.tools.standardizer.get_min())
         
         # Save to map
-        self.readings_map[coordinates[0]][coordinates[1]] = normalized_reading        
+        self.readings_map[coordinates[0]][coordinates[1]] = reading        
 
     def _update_visits_count_map(self, coordinates: Tuple[int, int])-> None:
         ''' 
@@ -1399,7 +1406,10 @@ class CNNBase:
     #:  memory intensive, reduce the resolution multiplier. To return to full inflation and full accuracy, change the multipier to 1. 
     resolution_accuracy: float = field(init=False)
     #: Ensures heatmap renders to not overwrite eachother when saving to a file.
-    render_counter: int = field(init=False)    
+    render_counter: int = field(init=False)  
+    
+    # Reset flag for unit testing
+    reset_flag: int = field(init=False, default=0) # TODO switch out for pytest mock   
 
     def __post_init__(self)-> None:
         # Put agent number on save_path
@@ -1441,7 +1451,8 @@ class CNNBase:
         
         # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
         # TODO Finish integrating this 
-        self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")             
+        self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")  
+                        
         
     def set_mode(self, mode: str) -> None:
         ''' 
@@ -1570,7 +1581,9 @@ class CNNBase:
             
     def reset(self)-> None:
         ''' Reset entire maps buffer '''
-        self.maps.reset()  
+        self.maps.reset()
+        self.reset_flag += 1 if self.reset_flag < 100 else 1
+          
 
     def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0)-> None:
         ''' 

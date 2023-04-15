@@ -14,13 +14,13 @@ def helpers():
     return Helpers
 
 @pytest.fixture
-def rada2c_hiddens():
-    return Hiddens
+def rada2c():
+    return RADA2C
 
 
-class Hiddens:
+class RADA2C:
     @staticmethod
-    def get():
+    def get_hiddens():
         return {0: ((
             torch.Tensor([[0.5960, 0.1294, 0.2328, 0.9597, 0.8043, 0.4710, 0.5223, 0.6586, 0.2308, 0.6779, 0.1494, 0.1594, 0.4553, 0.6984, 0.9075, 0.1983, 
                             0.0502, 0.6131,0.0998, 0.5853, 0.1522, 0.4587, 0.7399, 0.8631],
@@ -145,6 +145,11 @@ class Hiddens:
             torch.Tensor([[[ 0.0443,  0.1509,  0.0280, -0.1628,  0.0428,  0.1115, -0.1386, -0.0474,  0.1737,  0.1868, -0.1770,  0.1078,  0.0150,  0.1685,
                     0.0116, -0.0410, -0.0254, -0.1502,  0.1679,  0.1237,  0.0376, -0.0082, -0.0871,  0.0100]]]))}
 
+    def get_init():
+        return {   
+            'obs_dim': 11, 'act_dim': 8,'hidden_sizes_pol': [[32]], 'hidden_sizes_val': [[32]], 'hidden_sizes_rec': [24], 
+            'hidden': [[24]], 'net_type': 'rnn', 'batch_s': 1, 'seed': 0, 'pad_dim': 2
+            }                   
 
 class Helpers:
     @staticmethod
@@ -695,13 +700,10 @@ class Test_PPOAgent:
             actor_critic_architecture = 'cnn'
         )
             
-    def test_Init(self, init_parameters):
+    def test_Init(self, init_parameters, rada2c):
         _ = PPO.AgentPPO(**init_parameters)
         
-        rad_a2c_kwargs={
-            'obs_dim': init_parameters['observation_space'], 'act_dim': init_parameters['actor_critic_args']['action_space'],'hidden_sizes_pol': [[32]], 'hidden_sizes_val': [[32]], 'hidden_sizes_rec': [24], 
-            'hidden': [[24]], 'net_type': 'rnn', 'batch_s': 1, 'seed': 0, 'pad_dim': 2
-            }
+        rad_a2c_kwargs = rada2c.get_init()
         
         init_parameters['actor_critic_args'] = rad_a2c_kwargs
         init_parameters['actor_critic_architecture'] = 'rnn'
@@ -718,11 +720,11 @@ class Test_PPOAgent:
         assert AgentPPO.reduce_pfgru_iters == False
         assert AgentPPO.train_pfgru_iters == 5
         
-    def test_step(self, init_parameters, rada2c_hiddens):
+    def test_step(self, init_parameters, rada2c):
         ''' Wrapper between CNN and Train '''        
-        hiddens = rada2c_hiddens.get() 
-        
-
+        hiddens = rada2c.get_hiddens() 
+        # Test RAD-A2c
+        rad_a2c_kwargs= rada2c.get_init()
         
         observations = {
             0: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32), 
@@ -743,12 +745,7 @@ class Test_PPOAgent:
         assert 0 <= agent_thoughts.action and agent_thoughts.action < int(8)        
         assert agent_thoughts.hiddens == None
         assert agent_thoughts.loc_pred == None
-        
-        # Test RAD-A2c
-        rad_a2c_kwargs={
-            'obs_dim': init_parameters['observation_space'], 'act_dim': init_parameters['actor_critic_args']['action_space'],'hidden_sizes_pol': [[32]], 'hidden_sizes_val': [[32]], 'hidden_sizes_rec': [24], 
-            'hidden': [[24]], 'net_type': 'rnn', 'batch_s': 1, 'seed': 0, 'pad_dim': 2
-            }        
+     
                 
         rada2c_params = copy.deepcopy(init_parameters)
         rada2c_params['actor_critic_architecture'] = 'rnn'
@@ -756,7 +753,7 @@ class Test_PPOAgent:
         
         AgentPPO = PPO.AgentPPO(**rada2c_params)    
         
-        agent_thoughts, heatmaps  = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
         
         assert heatmaps == None
         assert agent_thoughts.action_logprob != None
@@ -768,5 +765,39 @@ class Test_PPOAgent:
         
         # Test invalid architecture 
         init_parameters['actor_critic_architecture'] = 'foo'
-        with pytest.raises(AssertionError):    
+        with pytest.raises(ValueError):    
             AgentPPO = PPO.AgentPPO(**init_parameters)    
+        
+    def test_reset_neural_nets(self, init_parameters, rada2c):
+        hiddens = rada2c.get_hiddens()         
+
+        observations = {
+            0: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32), 
+            1: np.array([41.0, 0.42181818, 0.92181818, 0., 0., 0., 0., 0., 0., 0., 0.], dtype=np.float32)
+            }
+        message = None
+        
+        # Test CNN
+        AgentPPO = PPO.AgentPPO(**init_parameters)    
+        _  = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        assert AgentPPO.agent.reset_flag == 0
+        assert AgentPPO.agent.maps.reset_flag == 1
+        assert AgentPPO.agent.maps.tools.reset_flag == 1
+                
+        _ = AgentPPO.reset_neural_nets()
+        assert AgentPPO.agent.reset_flag == 1
+        assert AgentPPO.agent.maps.reset_flag == 2
+        assert AgentPPO.agent.maps.tools.reset_flag == 2
+
+        # Test RAD-A2c
+        rad_a2c_kwargs= rada2c.get_init()
+        rada2c_params = copy.deepcopy(init_parameters)
+        rada2c_params['actor_critic_architecture'] = 'rnn'
+        rada2c_params['actor_critic_args'] = rad_a2c_kwargs        
+        
+        AgentPPO = PPO.AgentPPO(**rada2c_params)    
+        _ = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        # TODO add check for RAD-A2C
+
+
+        
