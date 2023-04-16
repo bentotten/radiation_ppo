@@ -261,7 +261,8 @@ class train_PPO:
 
                 # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
                 if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                    observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
+                    for id in self.agents:
+                        observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
 
                 # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
                 agent_thoughts.clear()
@@ -354,7 +355,8 @@ class train_PPO:
                     if timeout or epoch_ended:
                         # For RAD-A2C - Standardize prior observation of radiation intensity for the actor-critic input using running statistics per episode. This is done within RAD-TEAMs CNN framework.
                         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                            observations = {id: self.stat_buffers[id].standardize(observations[id][0]) for id in self.agents}
+                            for id in self.agents:
+                                observations[id][0] = self.stat_buffers[id].standardize(observations[id][0])
 
                         # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is
                         # used in that place.

@@ -539,7 +539,7 @@ class RNNModelActorCritic(nn.Module):
             obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
             loc_pred, hidden_part = self.model(obs_t[:, :3], hidden[0]) # PFGRU
             obs_t = torch.cat((obs_t, loc_pred.unsqueeze(0)), dim=1)
-            obs_tensor_unsqueezed = obs_t.unsqueeze(0)
+            #obs_tensor_unsqueezed = obs_t.unsqueeze(0)
             pi, hidden2, v = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])  # Actor
             a = pi.sample()
             logp_a: Tensor = self.pi._log_prob_from_distribution(pi, a)  # Actor
