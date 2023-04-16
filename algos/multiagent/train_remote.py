@@ -309,8 +309,8 @@ class train_PPO:
                 ############################################################################################################
                 # Check for episode end
                 if episode_reset_next_step:
-                    if self.DEBUG:
-                        print('NEW EPISODE')
+                    self.process_render(epoch_ended=epoch_ended, epoch=epoch, logger= self.loggers)
+                    
                     if epoch_ended and not (episode_over):
                         print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.", flush=True)   
                            
@@ -366,7 +366,6 @@ class train_PPO:
                     for id, ac in self.agents.items():                        
                         ray.get(ac.reset_agent.remote())                          
                             
-                    self.process_render(epoch_ended=epoch_ended, epoch=epoch, logger= self.loggers)
             ############################################################################################################
 
             # Save model          
@@ -448,8 +447,7 @@ class train_PPO:
         save_first_epoch = (epoch != 0 or self.save_gif_freq == 1)
         save_time_triggered = (epoch % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((epoch + 1) == self.total_epochs)
-             
-                        
+                     
         if (asked_to_save and save_first_epoch and time_to_save):
             # Render Agent heatmaps
             for id, ac in self.agents.items(): 
@@ -473,7 +471,7 @@ class train_PPO:
                 episode_count=self.episode_count,                
             )                                
         # Always render first episode
-        if self.render and epoch == 0 and self.render_first_episode:
+        elif self.render and epoch == 0 and self.render_first_episode:
             for id, ac in self.agents.items():
                 # Get save directory
                 test = self.loggers[id].output_dir   
@@ -494,7 +492,7 @@ class train_PPO:
             )                              
             self.render_first_episode = False             
         # Always render last epoch's episode
-        if self.DEBUG and epoch == self.total_epochs-1:
+        elif asked_to_save and epoch == self.total_epochs-1:
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                 epoch_count=epoch,

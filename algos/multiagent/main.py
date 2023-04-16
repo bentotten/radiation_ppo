@@ -33,7 +33,7 @@ except:
     raise Exception
 
 PROFILE = True
-RAY = False
+RAY = True
 
 def log_state(error: Exception):
     trace_back = traceback.format_exc()  # Gives error and location    

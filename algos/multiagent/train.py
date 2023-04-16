@@ -215,7 +215,7 @@ class train_PPO:
         hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: None for id in self.agents} # For RAD-A2C compatibility
         
         # Prepare episode variables
-        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] =  {id: None for id in self.agents}       
+        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
         
         # For RAD-A2C - Update stat buffers for all agent observations for later observation normalization
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
@@ -313,7 +313,7 @@ class train_PPO:
                     
                     # RAD-A2C - update mean/std for the next observation in stat buffers,record state values with logger 
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                        self.stat_buffers[id].update(next_observations[id][0])                    
+                        self.stat_buffers[id].update(next_observations[id][0])                                          
 
                 # Update observation (critical!)
                 assert observations is not next_observations, 'Previous step observation is pointing to next observation already.'
@@ -322,6 +322,8 @@ class train_PPO:
                 ############################################################################################################
                 # Check for episode end
                 if episode_reset_next_step:
+                    self.process_render(epoch_ended=epoch_ended, epoch=epoch)
+                    
                     if epoch_ended and not (episode_over):
                         print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.", flush=True)   
                            
@@ -392,8 +394,6 @@ class train_PPO:
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':            
                         for id in self.agents:
                             self.stat_buffers[id].update(observations[id][0])
-                            
-                    self.process_render(epoch_ended=epoch_ended, epoch=epoch)
             ############################################################################################################
 
             # Save model
@@ -449,7 +449,8 @@ class train_PPO:
             # Log info about epoch
             for id in self.agents:
                 self.loggers[id].log_tabular("AgentID", id)        
-                self.loggers[id].log_tabular("Epoch", epoch)      
+                self.loggers[id].log_tabular("Epoch", epoch)  
+                self.loggers[id].log_tabular("DoneCount", sum_only=True)                    
                 self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
                 self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
@@ -461,7 +462,6 @@ class train_PPO:
                 self.loggers[id].log_tabular("Entropy", average_only=True)
                 self.loggers[id].log_tabular("kl_divergence", average_only=True)
                 self.loggers[id].log_tabular("ClipFrac", average_only=True)
-                self.loggers[id].log_tabular("DoneCount", sum_only=True)
                 self.loggers[id].log_tabular("OutOfBound", average_only=True)
                 self.loggers[id].log_tabular("stop_iteration", average_only=True)
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)                 
@@ -491,7 +491,7 @@ class train_PPO:
                 episode_count=self.episode_count,                
             )                                
         # Always render first episode
-        if self.render and epoch == 0 and self.render_first_episode:
+        elif self.render and epoch == 0 and self.render_first_episode:
             for id, ac in self.agents.items():
                 if self.actor_critic_architecture == 'cnn':
                     ac.render(
@@ -507,7 +507,7 @@ class train_PPO:
             )                              
             self.render_first_episode = False             
         # Always render last epoch's episode
-        if self.DEBUG and epoch == self.total_epochs-1:
+        elif self.DEBUG and epoch == self.total_epochs-1:
             self.env.render(
                 path=f"{self.logger_kwargs['data_dir']}/{self.logger_kwargs['env_name']}",
                 epoch_count=epoch,
