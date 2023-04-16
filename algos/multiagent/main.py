@@ -12,7 +12,7 @@ from typing import Tuple
 import inspect
 import traceback
 import json
-import ray
+import os
 
 import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
@@ -20,20 +20,21 @@ from gym_rad_search.envs import RadSearch  # type: ignore
 
 try:
     import train  # type: ignore
-    import train_remote  # type: ignore    
     from ppo import BpArgs  # type: ignore
     import evaluate # type: ignore
+    from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads # type: ignore
+    from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs # type: ignore         
 except ModuleNotFoundError:
     import algos.multiagent.train as train  # type: ignore
     import algos.multiagent.train_remote as train_remote  # type: ignore    
     from algos.multiagent.ppo import BpArgs  # type: ignore
     import algos.multiagent.evaluate as evaluate  # type: ignore
-    
+    from algos.multiagent.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads # type: ignore
+    from algos.multiagent.rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs # type: ignore         
 except: 
     raise Exception
 
 PROFILE = True
-RAY = True
 
 def log_state(error: Exception):
     trace_back = traceback.format_exc()  # Gives error and location    
@@ -379,12 +380,28 @@ def create_parser() -> argparse.ArgumentParser:
 def main() -> None:
     ''' Set up experiment and create simulation environment. '''    
     args = parse_args(create_parser())
+    
+    # Setup MPI
+
+    # Steps in batch must be greater than the max epoch steps times num. of cpu
+    if args.DEBUG:
+        cpus = 1
+    else:
+        cpus = os.cpu_count()
+    if cpus > 1:
+        tot_epoch_steps = cpus * args.steps_per_epoch if cpus else args.steps_per_epoch
+        tot_epoch_steps = tot_epoch_steps if tot_epoch_steps > args.steps_per_epoch else args.steps_per_epoch
+        print(f'Sys cpus {cpus}; Total Steps set to {tot_epoch_steps}')
+        mpi_fork(cpus)  # run parallel code with mpi            
+        
+        args.steps_per_epoch = int(tot_epoch_steps / num_procs())
 
     save_dir_name: str = args.exp_name  
     exp_name: str = (args.exp_name + "_agents" + str(args.agent_count))
 
     # Generate a large random seed and random generator object for reproducibility
-    robust_seed = _int_list_from_bigint(hash_seed(args.seed))[0]
+    #Generate a large random seed and random generator object for reproducibility
+    robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]
     rng = npr.default_rng(robust_seed)
 
     # Set up logger args 
@@ -418,13 +435,7 @@ def main() -> None:
     if PROFILE:
         import cProfile, pstats
         profiler = cProfile.Profile()
-        profiler.enable()
-        
-    if RAY:
-        try:
-            ray.init(address='auto')
-        except:
-            print("Ray failed to initialize. Running on single server.")        
+        profiler.enable()  
 
     # Set up training
     if args.mode == 'train':
@@ -504,45 +515,25 @@ def main() -> None:
             lam=args.lam,
             GlobalCriticOptimizer=None
         )
-
-        if RAY:
-            simulation = train_remote.train_PPO(
-                        env=env,
-                        logger_kwargs=logger_kwargs,
-                        ppo_kwargs=ppo_kwargs,
-                        seed=robust_seed,
-                        number_of_agents=args.agent_count,
-                        actor_critic_architecture=args.net_type,   
-                        global_critic_flag = args.global_critic,                    
-                        steps_per_epoch=args.steps_per_epoch,
-                        steps_per_episode=args.steps_per_episode,
-                        total_epochs=args.epochs,
-                        render=args.render,
-                        save_path=save_path,
-                        save_gif=args.render, # TODO combine into just render
-                        save_freq=args.save_freq,
-                        save_gif_freq=args.save_gif_freq,
-                        DEBUG=args.DEBUG
-                    )            
-        else:
-            simulation = train.train_PPO(
-                env=env,
-                logger_kwargs=logger_kwargs,
-                ppo_kwargs=ppo_kwargs,
-                seed=robust_seed,
-                number_of_agents=args.agent_count,
-                actor_critic_architecture=args.net_type,   
-                global_critic_flag = args.global_critic,                    
-                steps_per_epoch=args.steps_per_epoch,
-                steps_per_episode=args.steps_per_episode,
-                total_epochs=args.epochs,
-                render=args.render,
-                save_path=save_path,
-                save_gif=args.render, # TODO combine into just render
-                save_freq=args.save_freq,
-                save_gif_freq=args.save_gif_freq,
-                DEBUG=args.DEBUG
-            )
+          
+        simulation = train.train_PPO(
+            env=env,
+            logger_kwargs=logger_kwargs,
+            ppo_kwargs=ppo_kwargs,
+            seed=robust_seed,
+            number_of_agents=args.agent_count,
+            actor_critic_architecture=args.net_type,   
+            global_critic_flag = args.global_critic,                    
+            steps_per_epoch=args.steps_per_epoch,
+            steps_per_episode=args.steps_per_episode,
+            total_epochs=args.epochs,
+            render=args.render,
+            save_path=save_path,
+            save_gif=args.render, # TODO combine into just render
+            save_freq=args.save_freq,
+            save_gif_freq=args.save_gif_freq,
+            DEBUG=args.DEBUG
+        )
         
         # try:
         #     # Begin simulation

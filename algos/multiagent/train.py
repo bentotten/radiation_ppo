@@ -29,11 +29,15 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 
 # PPO and logger
 try:
-    from ppo import OptimizationStorage, PPOBuffer, AgentPPO, update_remote_agent  # type: ignore
-    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore    
+    from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
+    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore   
+    from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads # type: ignore
+    from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs # type: ignore     
 except ModuleNotFoundError:
     from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json    
+    from algos.multiagent.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json   
+    from algos.multiagent.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads # type: ignore
+    from algos.multiagent.rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs # type: ignore     
 except: 
     raise Exception
 
@@ -185,7 +189,17 @@ class train_PPO:
                 assert self.agents[i].agent.critic is not self.GlobalCritic
                 if i > 0:
                     assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
-                    assert not self.agents[i].GlobalCriticOptimizer and not self.GlobalCriticOptimizer                
+                    assert not self.agents[i].GlobalCriticOptimizer and not self.GlobalCriticOptimizer   
+                    
+        # Special function to avoid certain slowdowns from PyTorch + MPI combo.
+        setup_pytorch_for_mpi()  
+        
+        for agent in self.agents.values():
+            # Sync params across processes
+            sync_params(agent.agent.pi)             
+            sync_params(agent.agent.critic)  
+            #sync_params(agent.agent.model) # TODO: Add when PFGRU up             
+                       
                 
                       
     def train(self)-> None:
@@ -231,6 +245,7 @@ class train_PPO:
         # For a total number of epochs, Agent will choose an action using its policy and send it to the environment to take a step in it, yielding a new state observation.
         #   Agent will continue doing this until the episode concludes; a check will be done to see if Agent is at the end of an epoch or not - if so, the agent will use 
         #   its buffer to update/train its networks. Sometimes an epoch ends mid-episode.
+        print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)    
         for epoch in range(self.total_epochs):
             
             # For RAD-A2C - Reset hidden layers and sets Actor into "eval" mode.
@@ -322,7 +337,8 @@ class train_PPO:
                 ############################################################################################################
                 # Check for episode end
                 if episode_reset_next_step:
-                    self.process_render(epoch_ended=epoch_ended, epoch=epoch)
+                    if proc_id() == 0:
+                        self.process_render(epoch_ended=epoch_ended, epoch=epoch)
                     
                     if epoch_ended and not (episode_over):
                         print(f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.", flush=True)   

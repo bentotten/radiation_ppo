@@ -19,10 +19,14 @@ try:
     import NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore  
     import NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from epoch_logger import EpochLogger # type: ignore
+    from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads # type: ignore
+    from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs # type: ignore     
 except ModuleNotFoundError:
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core # type: ignore
     from algos.multiagent.epoch_logger import EpochLogger 
+    from algos.multiagent.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads # type: ignore
+    from algos.multiagent.rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs # type: ignore      
 except: 
     raise Exception
 
@@ -421,8 +425,9 @@ class PPOBuffer:
         assert number_episodes > 0 # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
         
         # the next two lines implement the advantage normalization trick
-        adv_mean = self.adv_buf.mean()
-        adv_std = self.adv_buf.std()
+        # adv_mean = self.adv_buf.mean()
+        # adv_std = self.adv_buf.std()
+        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)        
         self.adv_buf: npt.NDArray[np.float32] = (self.adv_buf - adv_mean) / adv_std
         
         # Reset pointers and episode lengths buffer
@@ -778,6 +783,9 @@ class AgentPPO:
                 # Check Actor KL Divergence
                 if actor_loss_results['kl'].item() < 1.5 * self.target_kl:
                     actor_loss_results['pi_loss'].backward()
+                    
+                    mpi_avg_grads(self.agent.pi) # Average gradients across processes
+
                     self.agent_optimizer.pi_optimizer.step() 
                 else:
                     break  # Skip remaining training               
@@ -798,6 +806,7 @@ class AgentPPO:
                     self.agent_optimizer.critic_optimizer.zero_grad()
                     critic_loss_results = self.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
                     critic_loss_results['critic_loss'].backward()
+                    mpi_avg_grads(self.agent.critic) # Average gradients across processes                    
                     self.agent_optimizer.critic_optimizer.step()
                 
                 # Reduce learning rate
@@ -1047,6 +1056,8 @@ class AgentPPO:
             # TODO Pylance error: https://github.com/Textualize/rich/issues/1523. Unable to resolve
             torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), 5) # TODO make multi-agent
 
+            mpi_avg_grads(self.agent.model) #Average gradients across the processes     # MPI
+
             self.agent_optimizer.model_optimizer.step()
 
         self.agent.model.eval() 
@@ -1149,10 +1160,16 @@ class AgentPPO:
         pi_info["cf"].append(clipfrac)  # type: ignore
         pi_info["val_loss"].append(loss_val)  # type: ignore
 
-        kl = pi_info["kl"][-1].mean()  # type: ignore
+        #kl = pi_info["kl"][-1].mean()  # type: ignore
+        #Average KL across processes 
+        kl = mpi_avg(pi_info["kl"][-1])             # MPI
+                
         if kl.item() < 1.5 * self.target_kl:
             self.agent_optimizer.pi_optimizer.zero_grad()
             loss_pi.backward()
+            
+            mpi_avg_grads(self.agent.pi) # Average gradients across processes    # MPI
+                    
             self.agent_optimizer.pi_optimizer.step()
             term = False
         else:
@@ -1217,129 +1234,3 @@ class AgentPPO:
             savepath=savepath, save_map=save_map, add_value_text=add_value_text, interpolation_method=interpolation_method, epoch_count=epoch_count, episode_count=episode_count
         )
         
-# Uncomment when ready to run with Ray
-@ray.remote     
-def update_remote_agent(PPOAgent: AgentPPO) -> UpdateResult: #         (env, bp_args, loss_fcn=loss)
-    """
-    Wrapper function to update individual neural networks. Note: update functions perform multiple updates per call
-    
-    :param logger: (EpochLogger) Logger used for RAD-A2C updates.
-    """
-    
-    ################################## set device ##################################
-    print("============================================================================================")
-    # set device to cpu or cuda
-    device = torch.device('cpu')
-    if(torch.cuda.is_available()): 
-        device = torch.device('cuda:0') 
-        torch.cuda.empty_cache()
-        print("Device set to : " + str(torch.cuda.get_device_name(device)))
-    else:
-        print("Device set to : cpu")
-    print("============================================================================================")        
-    
-    def sample(PPOAgent, data, minibatch=None):
-        ''' Get sample indexes of episodes to train on'''
-        if not minibatch:
-            minibatch = PPOAgent.minibatch
-        # Randomize and sample observation batch indexes
-        ep_length = data["ep_len"].item()
-        indexes = np.arange(0, ep_length, dtype=np.int32)
-        number_of_samples = int((ep_length / minibatch))
-        return np.random.choice(indexes, size=number_of_samples, replace=False) # Uniform                    
-        
-    # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
-    data: Dict[str, torch.Tensor] = PPOAgent.ppo_buffer.get() 
-    min_iterations = len(data["ep_form"])
-    kk = 0
-    term = False        
-
-    # Train RAD-TEAM framework                 
-    # TODO get PFGRU working with RAD-TEAM
-    model_loss = torch.tensor(0)
-    
-    # Put agents in train mode
-    PPOAgent.agent.set_mode(mode='train')
-    
-    # Get mapstacks from buffer or inflate from logs, if in max-memory mode
-    if PRIO_MEMORY:
-        actor_maps_buffer, critic_maps_buffer = PPOAgent.generate_mapstacks()
-    else:
-        actor_maps_buffer = PPOAgent.ppo_buffer.heatmap_buffer['actor']
-        critic_maps_buffer = PPOAgent.ppo_buffer.heatmap_buffer['critic']
-        
-    # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
-    for k_epoch in range(PPOAgent.train_pi_iters):
-        
-        # Reset gradients 
-        PPOAgent.agent_optimizer.pi_optimizer.zero_grad()
-        
-        # Get indexes of episodes that will be sampled
-        sample_indexes = sample(PPOAgent, data=data)
-        
-        #actor_loss_results = PPOAgent.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-        actor_loss_results = PPOAgent.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
-        
-        # Check Actor KL Divergence
-        if actor_loss_results['kl'].item() < 1.5 * PPOAgent.target_kl:
-            actor_loss_results['pi_loss'].backward()
-            PPOAgent.agent_optimizer.pi_optimizer.step() 
-        else:
-            break  # Skip remaining training               
-
-    results: UpdateResult
-
-    # If local critic, do Value function learning here
-    # For global critic, only first agent performs the update
-    if not PPOAgent.GlobalCriticOptimizer or PPOAgent.id == 0:       
-        for _ in range(PPOAgent.train_v_iters):
-            PPOAgent.agent_optimizer.critic_optimizer.zero_grad()
-            critic_loss_results = PPOAgent.compute_batched_losses_critic(data=data, sample=sample_indexes, map_buffer_maps=critic_maps_buffer)
-            critic_loss_results['critic_loss'].backward()
-            PPOAgent.agent_optimizer.critic_optimizer.step()
-                
-        results = UpdateResult(
-            stop_iteration=k_epoch,  
-            loss_policy=actor_loss_results['pi_loss'].item(),
-            loss_critic=critic_loss_results['critic_loss'].item(),
-            loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-            kl_divergence=actor_loss_results["kl"],
-            Entropy=actor_loss_results["entropy"],
-            ClipFrac=actor_loss_results["clip_fraction"],
-            LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-            VarExplain=0 # TODO what is this?
-        )                          
-    else:
-        results = UpdateResult(
-            stop_iteration=k_epoch,  
-            loss_policy=actor_loss_results['pi_loss'].item(),
-            loss_critic=None,
-            loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
-            kl_divergence=actor_loss_results["kl"],
-            Entropy=actor_loss_results["entropy"],
-            ClipFrac=actor_loss_results["clip_fraction"],
-            LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-            VarExplain=0 # TODO what is this?
-        )                          
-
-    # Reduce learning rates
-    assert PPOAgent.agent_optimizer.pi_optimizer.state[PPOAgent.agent_optimizer.pi_optimizer.param_groups[0]["params"][-1]]["step"] > 1
-    assert PPOAgent.agent_optimizer.pi_scheduler._step_count == 1
-    PPOAgent.agent_optimizer.pi_scheduler.step()
-    assert PPOAgent.agent_optimizer.pi_scheduler._step_count == 2      
-    
-    assert PPOAgent.agent_optimizer.critic_optimizer.state[PPOAgent.agent_optimizer.critic_optimizer.param_groups[0]["params"][-1]]["step"] == 40
-    
-    assert PPOAgent.agent_optimizer.critic_scheduler._step_count == 1     
-    PPOAgent.agent_optimizer.critic_scheduler.step()  
-    assert PPOAgent.agent_optimizer.critic_scheduler._step_count == 2  
-    
-    # TODO Uncomment after implementing PFGRU
-    #PPOAgent.agent_optimizer.pfgru_scheduler.step() 
-    # Reduce pfgru learning rate    
-    
-    # Take agents out of train mode
-    PPOAgent.agent.set_mode(mode='eval')                           
-    
-    # Log changes from update
-    return results        
