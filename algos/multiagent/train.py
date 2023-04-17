@@ -179,7 +179,7 @@ class train_PPO:
                 self.stat_buffers[i] = StatisticStandardization()
 
             self.agents[i] = AgentPPO(id=i, **self.ppo_kwargs)
-            self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy
+            self.loggers[i].setup_pytorch_saver(self.agents[i].agent)
 
             # Sanity check
             if self.global_critic_flag:
@@ -416,7 +416,7 @@ class train_PPO:
             if (epoch % self.save_freq == 0) or (epoch == self.total_epochs - 1):
                 for id, agent in self.agents.items():
                     if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-                        self.loggers[id].save_state({}, None)
+                        self.loggers[id].save_state(None, None)
                     else:
                         test = self.loggers[id].output_dir
                         agent.save(path=test)
