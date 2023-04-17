@@ -11,7 +11,7 @@ data/
 
 # Simple Logs
 *.csv
-profile_cumttime*
+profile_cumtime*
 profile_tottime*
 
 # Visuals
