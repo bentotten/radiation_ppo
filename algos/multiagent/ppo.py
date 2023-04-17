@@ -748,7 +748,7 @@ class AgentPPO:
                 Entropy=update_results['pi_info']["ent"], # type: ignore
                 ClipFrac=update_results['pi_info']["cf"], # type: ignore
                 LocLoss=update_results['loc_loss'], # type: ignore
-                VarExplain=0 # TODO what is this?
+                VarExplain=0 
             )
         # Train RAD-TEAM framework                 
         else:
@@ -818,7 +818,7 @@ class AgentPPO:
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
                     LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-                    VarExplain=0 # TODO what is this?
+                    VarExplain=0 
                 )                          
             else:
                 results = UpdateResult(
@@ -830,7 +830,7 @@ class AgentPPO:
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
                     LocLoss= torch.tensor(0), # TODO implement when PFGRU is working for CNN
-                    VarExplain=0 # TODO what is this?
+                    VarExplain=0 
                 )                          
 
             # Take agents out of train mode
@@ -889,7 +889,7 @@ class AgentPPO:
                 * logp: (tensor) batch of action logprobabilities.
                 * loc_pred: (tensor) batch of predicted location by PFGRU.
                 * ep_len: (tensor[int]) single dimension int of length of episode.
-                * ep_form: (tensor) Episode form (TODO)
+                * ep_form: (tensor) Episode form 
             :param index: (int) If doing a single observation at a time, index for data[]
         '''
         # NOTE: Not using observation tensor, using internal map buffer
@@ -900,7 +900,7 @@ class AgentPPO:
             action_logprobs, dist_entropy = self.agent.pi.evaluate(map_stack, act[index])  
         else:
             action_logprobs, dist_entropy = self.agent.pi.get_action_information(map_stack, act[index])              
-        action_logprobs = action_logprobs.cpu() # TODO do we need this on the CPU here?
+        action_logprobs = action_logprobs.cpu() 
         
         # Get how much change is about to be made, then clip it if it exceeds our threshold (PPO-CLIP)
         # NOTE: Loss will be averaged in the wrapper function, not here, as this is for a single observation/mapstack
@@ -949,8 +949,6 @@ class AgentPPO:
             Calculate critic loss with MSE between returns and critic value
                 critic_loss = (R - V(s))^2            
         '''    
-        # NOTE: Using mapstack from map buffer instead of observation
-        # TODO add mapstack to PPO buffer instead of CNN
         true_return = data['ret'][index]
         
         # Compare predicted return with true return and use MSE to indicate loss
@@ -1050,8 +1048,7 @@ class AgentPPO:
             self.agent_optimizer.model_optimizer.zero_grad()
             model_loss.backward()
             # Clip gradient TODO should 5 be a variable?
-            # TODO Pylance error: https://github.com/Textualize/rich/issues/1523. Unable to resolve
-            torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), 5) # TODO make multi-agent
+            torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), 5) 
 
             mpi_avg_grads(self.agent.model) #Average gradients across the processes     # MPI
 

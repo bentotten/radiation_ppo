@@ -549,7 +549,6 @@ class MapsBuffer:
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of deflated coordinates
             :return: (Tuple[int, int]) Inflated coordinates
         '''
-        # TODO it would be more convinient for processing to have element 0 and 1 be the x,y coordinates and radiation reading by element 2
         # Calculate current agent inflated location        
         result: Tuple[int, int]
         if isinstance(single_observation, np.ndarray):
@@ -568,7 +567,6 @@ class MapsBuffer:
             :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of inflated coordinates
             :return: (Tuple[int, int]) deflated coordinates
         '''
-        # TODO it would be more convinient for processing to have element 0 and 1 be the x,y coordinates and radiation reading be element 2
         # Calculate current agent inflated location        
         result: Point
         if isinstance(single_observation, np.ndarray):
@@ -738,8 +736,6 @@ class Actor(nn.Module):
         channels: int = map_count
         pool_output: int = int(((map_dim[0]-2) / 2) + 1) # Get maxpool output height/width and floor it
         
-        # TODO switch to leaky relu
-
         # Actor network
         self.step1 = nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1)  
         self.relu = nn.ReLU()
@@ -944,7 +940,6 @@ class Critic(nn.Module):
     def __init__(self, map_dim, batches: int=1, map_count: int=4):
         super(Critic, self).__init__()    
             
-        # TODO better to send one location map for all agents through or two separate maps?
         assert map_dim[0] > 0 and map_dim[0] == map_dim[1], 'Map dimensions mismatched. Must have equal x and y bounds.'
         
         self.map_count = map_count
@@ -966,7 +961,6 @@ class Critic(nn.Module):
         #nn.ReLU()
         
         self.critic = nn.Sequential(
-                    # TODO switch to leaky relu
                     # Starting shape (batch_size, 4, Height, Width)
                     nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (batch_size, 8, Height, Width)
                     nn.ReLU(),
@@ -1547,13 +1541,11 @@ class CNNBase:
             
             :param checkpoint_path: (str) Path to save neural network models to.
         '''
-        # TODO implement a full save instead of just model parameters
-        # https://pytorch.org/tutorials/beginner/saving_loading_models.html#saving-loading-a-general-checkpoint-for-inference-and-or-resuming-training
         
         # Save original modes
         pi_train_mode: bool = self.pi.training
         critic_train_mode: bool = self.critic.training
-        predictor_train_mode: bool = self.model.training # TODO rename
+        predictor_train_mode: bool = self.model.training 
         self.set_mode(mode='eval')
         
         self.pi.save_model(checkpoint_path=checkpoint_path)

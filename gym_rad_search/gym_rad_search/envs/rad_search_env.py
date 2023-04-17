@@ -35,8 +35,7 @@ Metadata = TypedDict(
     "Metadata", {"render.modes": List[str], "video.frames_per_second": int}
 )
 
-# TODO RESET TO 10 m!
-MIN_STARTING_DISTANCE = 500
+MIN_STARTING_DISTANCE = 1000
 MAX_CREATION_TRIES = 1000000000
 
 # These actions correspond to:
@@ -152,10 +151,9 @@ def get_step_size(action: Union[Action, int]) -> float:
     Return the step size for the given action.
     """
 
-    return DET_STEP if action % 2 == 0 else DET_STEP_FRAC  # TODO obsolete with arbritrary step angles
+    return DET_STEP if action % 2 == 0 else DET_STEP_FRAC 
 
 
-# TODO Get the new Y for an arbritrary action angle to work
 def get_y_step_coeff(action: Union[Action, int]) -> float:
     '''
     action (Action): Scalar representing desired travel angle
@@ -165,7 +163,6 @@ def get_y_step_coeff(action: Union[Action, int]) -> float:
     return round(math.sin(math.pi * (1.0 - action / 4.0)))
 
 
-# TODO Get the new Y for an arbritrary action angle to work
 # Get the new X coordinate for an arbritrary action angle
 def get_x_step_coeff(action: Union[Action, int] ) -> float:
     '''
@@ -177,7 +174,6 @@ def get_x_step_coeff(action: Union[Action, int] ) -> float:
 
 
 def get_step(action: Union[Action, int]) -> Point:
-    # TODO needs updated documentation for arbritrary angles
     """
     Return the step offset for the given action, scaled
         0: left
@@ -194,7 +190,6 @@ def get_step(action: Union[Action, int]) -> Point:
         return Point((0.0, 0.0))
     else:
         return scale_p(
-            # TODO update once no longer using -1 as idle
             Point((get_x_step_coeff(action=action), get_y_step_coeff(action=action))),
             get_step_size(action),
         )
@@ -314,7 +309,6 @@ class RadSearch(gym.Env):
     action_space: spaces.Discrete = spaces.Discrete(A_SIZE)
     number_actions: int = A_SIZE
     detectable_directions: int = DETECTABLE_DIRECTIONS
-    #_max_episode_steps: int = 120 # TODO Remove; artifact from RAD-A2C
     background_radiation_bounds: Point = Point((10, 51))
     continuous: bool = False
     done: bool = False
@@ -373,7 +367,7 @@ class RadSearch(gym.Env):
         self.agents = {i: Agent(id=i) for i in range(self.number_agents)}
         self.max_dist: float = dist_p(self.search_area[2], self.search_area[1])  # Maximum distance between two points within search area
         if self.seed != None:
-            np.random.seed(self.seed) # TODO Fix to work with rng arg?
+            np.random.seed(self.seed)
             self.np_random: npr.Generator = npr.default_rng(self.seed)     
         # Sanity Check
         # Assure there is room to spawn detectors and source with proper spacing
@@ -508,8 +502,6 @@ class RadSearch(gym.Env):
             )
 
             # Observation with the radiation measurement., detector coords and detector-obstruction range measurement.
-            # TODO: State should really be better organized. If there are distinct components to it, why not make it
-            # a named tuple?
 
             # Sensor measurement for obstacles and boundaries directly around agent
             sensor_meas: npt.NDArray[np.float64] = self.obstruction_sensors(agent=agent) if self.num_obs > 0 or self.enforce_grid_boundaries else np.zeros(DETECTABLE_DIRECTIONS)  
@@ -541,7 +533,6 @@ class RadSearch(gym.Env):
                 assert action[i] in get_args(Action)
         action_list = action if type(action) is dict else None
 
-        # TODO implement this natively to meet Gym environment requirements
         aggregate_observation_result: Dict = {_: None for _ in self.agents}
         aggregate_reward_result: Dict = {_: None for _ in self.agents}
         aggregate_success_result: Dict = {_: None for _ in self.agents}
@@ -781,8 +772,8 @@ class RadSearch(gym.Env):
             return False
 
         roll_back_action: bool = False
-        step = get_step(action) # TODO redudant calculation
-        tentative_coordinates = sum_p(agent.det_coords, step)  # TODO can delete and use value from proposed coords
+        step = get_step(action) 
+        tentative_coordinates = sum_p(agent.det_coords, step) 
         
         # If proposed move will collide with another agents proposed move, 
         if count_matching_p(tentative_coordinates, proposed_coordinates) > 1:
@@ -1057,12 +1048,11 @@ class RadSearch(gym.Env):
             )
             for action in cast(Tuple[Directions], get_args(Directions))
         ]
-        # TODO: Currently there are only eight actions -- what happens if we change that?
-        # This annotation would need to change as well.
+
         dists: List[float] = [0.0] * len(segs)  # Directions where an obstacle is detected
         obs_idx_ls: List[int] = [0] * len(self.poly)  # Keeps track of how many steps will interect with which obstacle
         inter = 0  # Intersect flag
-        seg_dist: List[float] = [0.0] * 4  # TODO what is the purpose of this? Saves into dists, appears to be the max "distance", but only tracks intersects?
+        seg_dist: List[float] = [0.0] * 4  # Saves obstruction line segments
         if self.num_obs > 0:
             for idx, seg in enumerate(segs): # TODO change seg to direction_segment
                 for obs_idx, poly in enumerate(self.line_segs): # TODO change poly to obstacle
@@ -1128,7 +1118,7 @@ class RadSearch(gym.Env):
         This often happens when an agent is on the edge of an obstruction.
         """
         x_check: List[bool] = [False] * DETECTABLE_DIRECTIONS
-        dist = 0.1  # TODO Scaled?
+        dist = 0.1 
         length = 1
         poly_p: vis.Polygon = to_vis_poly(poly)
 
@@ -1138,7 +1128,6 @@ class RadSearch(gym.Env):
             for action in cast(Tuple[Directions], get_args(Directions)):
                 # Gets slight offset to remove effects of being "on" an obstruction
                 step = scale_p(
-                    # TODO update once no longer using -1 as idle            
                     Point((get_x_step_coeff(action=action), get_y_step_coeff(action=action))),
                     dist * length,
                 )
@@ -1189,38 +1178,18 @@ class RadSearch(gym.Env):
             ax3: plt.Axes, 
             src: Point, 
             area_dim: BBox, 
-            measurements: List,
             flattened_rewards: List,
             ) -> None:
             """
             Renders each frame
             
-            data:
-            From detector storage - agent location
-            TODO get rid of
-            
-            ax1:
-            Actual grid
-            
-            ax2:
-            Radiation counts
-            
-            ax3:
-            Rewards
-            
-            src:
-            Source coordinates
-            
-            area_dim:
-            BBox - size of grid
-            
-            measurements:
-            From detector storage - intensity readings
-            TODO get rid of
-            
-            location_estimate
-            TODO fix
-            PathCollection variable from matplotlib for holding plot points
+            :param ax1: Actual grid
+            :param ax2: Radiation counts
+            :param ax3: Rewards
+            :param src: Source coordinates
+            :param area_dim:
+            :param area_dim: BBox - size of grid
+            :param flattened_rewards: flattened rewards between all agents
 
             """
             print(f"Current Frame: {frame_number}", end='\r') # Acts as a progress bar
@@ -1488,7 +1457,7 @@ class RadSearch(gym.Env):
             )
             # Plot Agents
             for agent_id, agent in self.agents.items():
-                data = np.array(agent.det_sto[0]) / 100 # TODO make just a single op instead of whole array
+                data = np.array(agent.det_sto[0]) / 100 
                 ax1.scatter(
                     data[0],
                     data[1],

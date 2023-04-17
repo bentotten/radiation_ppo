@@ -2,7 +2,7 @@
 Evaluate agents and update neural networks using simulation environment.
 '''
 # TODO!!!!
-DELETE_PI_AFTER_NEW_MODEL_TRAINED = True
+DELETE_PI_AFTER_NEW_MODEL_TRAINED = False
 
 import os
 import sys
@@ -101,7 +101,7 @@ class Distribution():
 
 
 # Uncomment when ready to run with Ray
-# @ray.remote 
+@ray.remote(num_cpus=2, num_gpus=0.08) 
 @dataclass
 class EpisodeRunner:
     '''
@@ -192,7 +192,6 @@ class EpisodeRunner:
         
         # Get agent model paths and saved agent configurations
         agent_models = {}
-        print(os.getcwd())
         for child in os.scandir(self.model_path):
             if child.is_dir() and 'agent' in child.name:
                 agent_models[int(child.name[0])] = child.path  # Read in model path by id number. NOTE: Important that ID number is the first element of file name 
@@ -236,10 +235,13 @@ class EpisodeRunner:
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         ######################################################################################################
         # TODO delete me after training RAD-A2C with robust seed
-        
-        actor_critic_args['seed'] = 2
+        if DELETE_PI_AFTER_NEW_MODEL_TRAINED:
+            actor_critic_args['seed'] = 2
         ######################################################################################################
         # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        
+        if self.actor_critic_architecture !='cnn':
+            assert self.team_mode == 'individual' # No global critic for RAD-A2C
         
         # Check current important parameters match parameters read in 
         for arg in actor_critic_args:
@@ -302,23 +304,22 @@ class EpisodeRunner:
         
         # If RAD-A2C, instatiate stat buffer and load/standardize first observation
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
-            initial_thoughts = dict()
+            initial_prediction = np.zeros((3,))
             for id, ac in self.agents.items():
                 stat_buffers[id] = StatisticStandardization()                
                 stat_buffers[id].update(observations[id][0])   
-                observations[id][0] = stat_buffers[id].standardize(observations[id][0])
-                
-                # Get first location prediction
-                print(self.env.agents[id].meas_sto[steps_in_episode])
-                print(self.env.agents[id].det_sto[steps_in_episode])
-                initial_thoughts[id], _ = ac.step(observations[id], hiddens[id])                                          
+                observations[id][0] = stat_buffers[id].standardize(observations[id][0])                                       
         
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    agent_thoughts[id], heatmaps = ac.step(observations[id], hiddens[id])
+                    if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':                    
+                        agent_thoughts[id], heatmaps = ac.step(observations[id], hiddens[id])
+                    else:
+                        agent_thoughts[id], heatmaps = ac.step(observations, hiddens)
+                    
                 hiddens[id] = agent_thoughts[id].hiddens # For RAD-A2C - save latest hiddens for use in next steps.
 
             # Create action list to send to environment
@@ -326,11 +327,16 @@ class EpisodeRunner:
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
-            # Take step in environment - Note: will be missing last reward, rewards link to previous step in env
-            observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions)
+            # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
+            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
+            
+            if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                for id, ac in self.agents.items():
+                    stat_buffers[id].update(observations[id][0])   
+                    observations[id][0] = stat_buffers[id].standardize(observations[id][0])
             
             # Incremement Counters and save new (individual) cumulative returns
-            if self.team_mode == 'competative':
+            if self.team_mode == 'individual':
                 for id in rewards['individual_reward']:
                     episode_return[id] += np.array(rewards['individual_reward'][id], dtype="float32").item()
             else:
@@ -356,7 +362,7 @@ class EpisodeRunner:
             episode_over: bool = terminal_reached_flag or timeout  # Either timeout or terminal found
 
             if episode_over:
-                self.process_render(run_counter=run_counter)
+                self.process_render(run_counter=run_counter, id=self.id)
                 
                 # Save results
                 if run_counter < 1:
@@ -371,10 +377,10 @@ class EpisodeRunner:
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(episode_return[0]) # TODO change for competative mode
+                    results.successful.episode_return.append(episode_return[0]) # TODO change for individual mode
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
-                    results.unsuccessful.episode_return.append(episode_return[0]) # TODO change for competative mode
+                    results.unsuccessful.episode_return.append(episode_return[0]) # TODO change for individual mode
 
                 # Incremenet run counter
                 run_counter +=1 
@@ -385,6 +391,13 @@ class EpisodeRunner:
                 terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
                 
                 observations = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
+                
+                # Reset stat buffer for RAD-A2C
+                if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+                    for id, ac in self.agents.items():
+                        stat_buffers[id].reset()
+                        stat_buffers[id].update(observations[id][0])   
+                        observations[id][0] = stat_buffers[id].standardize(observations[id][0])                    
 
                 # Reset agents
                 for agent in self.agents.values():
@@ -406,7 +419,7 @@ class EpisodeRunner:
     def say_hello(self):
         return self.id   
 
-    def process_render(self, run_counter: int)-> None:
+    def process_render(self, run_counter: int, id: int)-> None:
         # Render
         save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
         time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
@@ -417,19 +430,22 @@ class EpisodeRunner:
                     # TODO add episode counter
                     ac.render(
                         savepath=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        episode_count=id,
+                        epoch_count=run_counter,
                         add_value_text=True
                     )
             # Render gif           
             self.env.render(
                 path=self.render_path, 
-                epoch_count=run_counter, # TODO change this to a more flexible name
+                epoch_count=run_counter,
+                episode_count=id,                
             )     
             # Render environment image
             self.env.render(
                 path=self.render_path, 
-                epoch_count=run_counter, # TODO change this to a more flexible name
-                just_env=True
+                epoch_count=run_counter, 
+                just_env=True,
+                episode_count=id,                
             )                                               
         # Always render first episode
         if self.render and run_counter == 0 and self.render_first_episode:
@@ -438,19 +454,22 @@ class EpisodeRunner:
                 for id, ac in self.agents.items():
                     ac.render(
                         savepath=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                        add_value_text=True
+                        epoch_count=run_counter, 
+                        add_value_text=True,
+                        episode_count=id,                        
                     )
             # Render gif           
             self.env.render(
                 path=self.render_path, 
-                epoch_count=run_counter, # TODO change this to a more flexible name
+                epoch_count=run_counter, 
+                episode_count=id,
             )     
             # Render environment image
             self.env.render(
                 path=self.render_path, 
-                epoch_count=run_counter, # TODO change this to a more flexible name
-                just_env=True
+                epoch_count=run_counter, 
+                just_env=True,
+                episode_count=id,                
             )  
             self.render_first_episode = False             
 
@@ -461,19 +480,22 @@ class EpisodeRunner:
                 for id, ac in self.agents.items():
                     ac.render(
                         savepath=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                        add_value_text=True
+                        epoch_count=run_counter, 
+                        add_value_text=True,
+                        episode_count=id,                        
                     )
             # Render gif           
             self.env.render(
                 path=self.render_path, 
-                epoch_count=run_counter, # TODO change this to a more flexible name
+                epoch_count=run_counter, 
+                episode_count=id,                
             )     
             # Render environment image
             self.env.render(
                 path=self.render_path, 
-                epoch_count=run_counter, # TODO change this to a more flexible name
-                just_env=True
+                epoch_count=run_counter, 
+                just_env=True,
+                episode_count=id,                
             )  
                             
 
@@ -495,44 +517,48 @@ class evaluate_PPO:
     runners: Dict = field(init=False)
 
     def __post_init__(self)-> None:
+        obs = self.eval_kwargs['obstruction_count']
+        if obs == -1:
+            raise ValueError("Random sample of obstruction counts indicated. Please indicate a specific count between 1 and 7")
         self.test_env_dir = self.eval_kwargs['test_env_path']
         self.test_env_path = self.test_env_dir + f"/test_env_dict_obs{self.eval_kwargs['obstruction_count']}_{self.eval_kwargs['snr']}_v4"
         self.eval_kwargs['test_env_path'] = self.test_env_path
                 
-        #Initialize ray                
-        #Uncomment when ready to run with Ray                
-        # try:
-        #     ray.init(address='auto')
-        # except:
-        #     print("Ray failed to initialize. Running on single server.")
+        # Uncomment when ready to run with Ray   
+        #Initialize ray                                     
+        try:
+            ray.init(address='auto', num_cpus=112, num_gpus=8)
+        except:
+            print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         ''' Driver '''    
         start_time = time.time()           
         #Uncomment when ready to run with Ray
-        # runners = {i: EpisodeRunner
-        #            .remote(
-        #                 id=i, 
-        #                 current_dir=os.getcwd(),
-        #                 **self.eval_kwargs
-        #             ) 
-        #         for i in range(self.eval_kwargs['episodes'])
-        #     } 
-                
-        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
-        #print(full_results)
-        
-        #Uncomment when to run without Ray        
-        self.runners = {0: EpisodeRunner(
-                        id=0, 
+        runners = {i: EpisodeRunner
+                   .remote(
+                        id=i, 
                         current_dir=os.getcwd(),
                         **self.eval_kwargs
-            )}
-        full_results = [runner.run() for runner in self.runners.values()]
+                    ) 
+                for i in range(self.eval_kwargs['episodes'])
+            } 
+                
+        full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        print(full_results)
         
-        print('Runtime: {}', time.time() - start_time)
+        #Uncomment when to run without Ray        
+        # self.runners = {i: EpisodeRunner(
+        #                 id=0, 
+        #                 current_dir=os.getcwd(),
+        #                 **self.eval_kwargs
+        #         ) for i in range(self.eval_kwargs['episodes'])
+        #     }
+        # full_results = [runner.run() for runner in self.runners.values()]
         
-        self.parse_results(full_results)
+        # print('Runtime: {}', time.time() - start_time)
+        
+        #self.parse_results(full_results)
         pass
 
     def parse_results(self, results: List):

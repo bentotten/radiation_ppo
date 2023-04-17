@@ -348,7 +348,7 @@ class SeqLoc(nn.Module):
         return init_weights[0, :, None]
 
 
-# TODO is this the critic???
+# Critic in here
 class SeqPt(nn.Module):
     def __init__(
         self,
@@ -466,7 +466,7 @@ class RecurrentNet(nn.Module):
     ):
         super().__init__()
         self.hs = hidden_sizes[0][0]
-        self.v_net = SeqPt(obs_dim // batch_s, hidden_sizes)  # TODO Is this the critic?
+        self.v_net = SeqPt(obs_dim // batch_s, hidden_sizes) 
 
     def forward(self, obs, hidden, ep_form=None, meas_arr=None):
         return self.v_net(obs, hidden, ep_form=ep_form)
