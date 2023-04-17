@@ -422,7 +422,7 @@ class PPOBuffer:
         number_episodes = len(episode_lengths)
         total_episode_length = sum(episode_lengths)
         
-        assert number_episodes > 0 # NOTE: Because rewards are from the shortest-path, these should not be applied intra-episode
+        assert number_episodes > 0, "0 completed episodes. Usually caused by having epochs shorter than an episode"
         
         # the next two lines implement the advantage normalization trick
         # adv_mean = self.adv_buf.mean()
