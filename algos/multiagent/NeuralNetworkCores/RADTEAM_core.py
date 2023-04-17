@@ -1453,7 +1453,6 @@ class CNNBase:
         # TODO Finish integrating this 
         self.model = PFGRUCell(input_size=self.observation_space - 8, obs_size=self.observation_space - 8, use_resampling=True, activation="relu")  
                         
-        
     def set_mode(self, mode: str) -> None:
         ''' 
             Set mode for network. 
@@ -1583,8 +1582,14 @@ class CNNBase:
         ''' Reset entire maps buffer '''
         self.maps.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
-          
 
+    def step(self, state_observation: Dict[int, npt.NDArray]) -> Tuple[ActionChoice, HeatMaps]:
+        ''' Alias for select_action '''
+        return self.select_action(state_observation=state_observation, id=self.id)
+
+    def reset_hidden(self)-> None:
+        ''' For compatibility - returns nothing '''
+        return
     def render(self, savepath: str=getcwd(), save_map: bool=True, add_value_text: bool=False, interpolation_method: str='nearest', epoch_count: int=0, episode_count: int=0)-> None:
         ''' 
             Renders heatmaps from maps buffer

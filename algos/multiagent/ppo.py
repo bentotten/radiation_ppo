@@ -669,7 +669,7 @@ class AgentPPO:
         # RAD-A2C compatibility
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             #a, v, logp, hidden, out_pred = self.agent.step(obs=observations[self.id], hidden=hiddens) # type: ignore
-            results = self.agent.step(obs=observations[self.id], hidden=hiddens)
+            results, heatmaps = self.agent.step(obs=observations[self.id], hidden=hiddens)
             # results = RADCNN_core.ActionChoice(
             #     id= self.id,
             #     action= a,
@@ -678,7 +678,6 @@ class AgentPPO:
             #     loc_pred= out_pred,
             #     hiddens= hidden
             #     )
-            heatmaps = None
         else:
             results, heatmaps = self.agent.select_action(observations, self.id)  # TODO add in hidden layer shenanagins for PFGRU use
         return results, heatmaps         

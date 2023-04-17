@@ -99,7 +99,7 @@ class Distribution():
 
 
 # Uncomment when ready to run with Ray
-@ray.remote 
+# @ray.remote 
 @dataclass
 class EpisodeRunner:
     '''
@@ -250,27 +250,29 @@ class EpisodeRunner:
         
         # Refresh environment with test env parameters
         observations: Dict = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
-
         
         for agent in self.agents.values(): 
             agent.set_mode('eval')
+            
+        # Prepare episode variables
+        agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()            
+        hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents} # For RAD-A2C compatibility
         
         while run_counter < self.montecarlo_runs:
-            # Get Agent choices
-            agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
-            for id, agent in self.agents.items():
-                agent_thoughts[id], _ = agent.select_action(id=id, state_observation=observations, store_map = True)    
-                
+            # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
+            agent_thoughts.clear()
+            for id, ac in self.agents.items():
+                with torch.no_grad():
+                    agent_thoughts[id], heatmaps = ac.step(observations=observations, hiddens = hiddens[id])
+                hiddens[id] = agent_thoughts[id].hiddens # For RAD-A2C - save latest hiddens for use in next steps.
+
             # Create action list to send to environment
-            agent_action_decisions = {id: int(agent_thoughts[id].action.item()) for id in agent_thoughts}  
-            
-            # Ensure no item is above max actions or below 0. Idle action is max action dimension (here 8)
+            agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
-            
-            # Take step in environment - Critical that this value is saved as "next" observation so we can link
-            #  rewards from this new state to the prior step/action
-            observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions) 
+
+            # Take step in environment - Note: will be missing last reward, rewards link to previous step in env
+            observations, rewards, terminals, infos = self.env.step(action=agent_action_decisions)
             
             # Incremement Counters and save new (individual) cumulative returns
             if self.team_mode == 'competative':
@@ -291,10 +293,17 @@ class EpisodeRunner:
                     terminal_reached_flag = True
                     
             # Stopping conditions for episode
-            timeout: bool = steps_in_episode == self.steps_per_episode
-            terminal: bool = terminal_reached_flag or timeout         
+            # timeout: bool = steps_in_episode == self.steps_per_episode
+            # terminal: bool = terminal_reached_flag or timeout  
+               
+            # Stopping conditions for episode
+            timeout: bool = steps_in_episode == self.steps_per_episode # Max steps per episode reached
+            episode_over: bool = terminal_reached_flag or timeout  # Either timeout or terminal found
 
-            if terminal or timeout:
+            if episode_over:
+                self.process_render(run_counter=run_counter)
+                
+                # Save results
                 if run_counter < 1:
                     if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
@@ -311,77 +320,7 @@ class EpisodeRunner:
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
                     results.unsuccessful.episode_return.append(episode_return[0]) # TODO change for competative mode
-                    
 
-                # Render
-                save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
-                time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
-                if (self.render and time_to_save):
-                    # Render Agent heatmaps
-                    if self.actor_critic_architecture == 'cnn':
-                        for id, ac in self.agents.items():
-                            # TODO add episode counter
-                            ac.render(
-                                savepath=self.render_path, 
-                                epoch_count=run_counter, # TODO change this to a more flexible name
-                                add_value_text=True
-                            )
-                    # Render gif           
-                    self.env.render(
-                        path=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                    )     
-                    # Render environment image
-                    self.env.render(
-                        path=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                        just_env=True
-                    )                                               
-                # Always render first episode
-                if self.render and run_counter == 0 and self.render_first_episode:
-                    # Render Agent heatmaps
-                    if self.actor_critic_architecture == 'cnn':
-                        for id, ac in self.agents.items():
-                            ac.render(
-                                savepath=self.render_path, 
-                                epoch_count=run_counter, # TODO change this to a more flexible name
-                                add_value_text=True
-                            )
-                    # Render gif           
-                    self.env.render(
-                        path=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                    )     
-                    # Render environment image
-                    self.env.render(
-                        path=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                        just_env=True
-                    )  
-                    self.render_first_episode = False             
-
-                # Always render last episode
-                if self.render and run_counter == self.montecarlo_runs-1: 
-                    # Render Agent heatmaps
-                    if self.actor_critic_architecture == 'cnn':
-                        for id, ac in self.agents.items():
-                            ac.render(
-                                savepath=self.render_path, 
-                                epoch_count=run_counter, # TODO change this to a more flexible name
-                                add_value_text=True
-                            )
-                    # Render gif           
-                    self.env.render(
-                        path=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                    )     
-                    # Render environment image
-                    self.env.render(
-                        path=self.render_path, 
-                        epoch_count=run_counter, # TODO change this to a more flexible name
-                        just_env=True
-                    )  
-                
                 # Incremenet run counter
                 run_counter +=1 
                 
@@ -410,8 +349,78 @@ class EpisodeRunner:
         return getattr(self, attr)    
     
     def say_hello(self):
-        return self.id    
+        return self.id   
 
+    def process_render(self, run_counter: int)-> None:
+        # Render
+        save_time_triggered = (run_counter % self.save_gif_freq == 0) if self.save_gif_freq != 0 else False
+        time_to_save = save_time_triggered or ((run_counter + 1) == self.montecarlo_runs)
+        if (self.render and time_to_save):
+            # Render Agent heatmaps
+            if self.actor_critic_architecture == 'cnn':
+                for id, ac in self.agents.items():
+                    # TODO add episode counter
+                    ac.render(
+                        savepath=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        add_value_text=True
+                    )
+            # Render gif           
+            self.env.render(
+                path=self.render_path, 
+                epoch_count=run_counter, # TODO change this to a more flexible name
+            )     
+            # Render environment image
+            self.env.render(
+                path=self.render_path, 
+                epoch_count=run_counter, # TODO change this to a more flexible name
+                just_env=True
+            )                                               
+        # Always render first episode
+        if self.render and run_counter == 0 and self.render_first_episode:
+            # Render Agent heatmaps
+            if self.actor_critic_architecture == 'cnn':
+                for id, ac in self.agents.items():
+                    ac.render(
+                        savepath=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        add_value_text=True
+                    )
+            # Render gif           
+            self.env.render(
+                path=self.render_path, 
+                epoch_count=run_counter, # TODO change this to a more flexible name
+            )     
+            # Render environment image
+            self.env.render(
+                path=self.render_path, 
+                epoch_count=run_counter, # TODO change this to a more flexible name
+                just_env=True
+            )  
+            self.render_first_episode = False             
+
+        # Always render last episode
+        if self.render and run_counter == self.montecarlo_runs-1: 
+            # Render Agent heatmaps
+            if self.actor_critic_architecture == 'cnn':
+                for id, ac in self.agents.items():
+                    ac.render(
+                        savepath=self.render_path, 
+                        epoch_count=run_counter, # TODO change this to a more flexible name
+                        add_value_text=True
+                    )
+            # Render gif           
+            self.env.render(
+                path=self.render_path, 
+                epoch_count=run_counter, # TODO change this to a more flexible name
+            )     
+            # Render environment image
+            self.env.render(
+                path=self.render_path, 
+                epoch_count=run_counter, # TODO change this to a more flexible name
+                just_env=True
+            )  
+                            
 
 @dataclass
 class evaluate_PPO:
@@ -437,35 +446,34 @@ class evaluate_PPO:
                 
         #Initialize ray                
         #Uncomment when ready to run with Ray                
-        try:
-            ray.init(address='auto')
-        except:
-            print("Ray failed to initialize. Running on single server.")
+        # try:
+        #     ray.init(address='auto')
+        # except:
+        #     print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         ''' Driver '''    
         start_time = time.time()           
         #Uncomment when ready to run with Ray
-        runners = {i: EpisodeRunner
-                   .remote(
-                        id=i, 
-                        current_dir=os.getcwd(),
-                        **self.eval_kwargs
-                    ) 
-                for i in range(self.eval_kwargs['episodes'])
-            } 
+        # runners = {i: EpisodeRunner
+        #            .remote(
+        #                 id=i, 
+        #                 current_dir=os.getcwd(),
+        #                 **self.eval_kwargs
+        #             ) 
+        #         for i in range(self.eval_kwargs['episodes'])
+        #     } 
                 
-        full_results = ray.get([runner.run.remote() for runner in runners.values()])
-        
+        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
         #print(full_results)
         
         #Uncomment when to run without Ray        
-        # self.runners = {0: EpisodeRunner(
-        #                 id=0, 
-        #                 current_dir=os.getcwd(),
-        #                 **self.eval_kwargs
-        #     )}
-        # full_results = [runner.run() for runner in self.runners.values()]
+        self.runners = {0: EpisodeRunner(
+                        id=0, 
+                        current_dir=os.getcwd(),
+                        **self.eval_kwargs
+            )}
+        full_results = [runner.run() for runner in self.runners.values()]
         
         print('Runtime: {}', time.time() - start_time)
         
@@ -546,8 +554,7 @@ class evaluate_PPO:
                         q1, q3 = d1.quantile([0.25,0.75],return_pandas=False)
                         print('Weighted Median '+ key +': ' +str(np.round(weight_med,decimals=2))+ ' Weighted Percentiles (' +str(np.round(lp_w,3))+','+str(np.round(hp_w,3))+')')
         pass
-            
-        
+                   
     def calc_stats(results, mc=None, plot=False, snr=None, control=None, obs=None):
         """
         Calculate results from the evaluation
@@ -632,3 +639,6 @@ class evaluate_PPO:
                         print('Weighted Median '+ key +': ' +str(np.round(weight_med,decimals=2))+ ' Weighted Percentiles (' +str(np.round(lp_w,3))+','+str(np.round(hp_w,3))+')')
 
         return stats, d_count_dist
+    
+    
+    

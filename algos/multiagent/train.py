@@ -202,8 +202,6 @@ class train_PPO:
                 sync_params(agent.agent.critic)
             #sync_params(agent.agent.model) # TODO: Add when PFGRU up
 
-
-
     def train(self)-> None:
         ''' Function that executes training simulation.
             #. Begin experiment.

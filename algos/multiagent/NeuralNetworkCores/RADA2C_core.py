@@ -546,7 +546,7 @@ class RNNModelActorCritic(nn.Module):
             _hidden: tuple[Tensor, Tensor] = (hidden_part, hidden2)
                 
         #, action_logprob=action_logprob, state_value=state_value, hiddens=hiddens, loc_pred=loc_pred)    
-        return ActionChoice(action=a.numpy(), action_logprob=logp_a.numpy(), state_value=v.numpy(), hiddens=_hidden, loc_pred=loc_pred.numpy())    
+        return ActionChoice(action=a.numpy(), action_logprob=logp_a.numpy(), state_value=v.numpy(), hiddens=_hidden, loc_pred=loc_pred.numpy()), None  
 
 
     def grad_step(
