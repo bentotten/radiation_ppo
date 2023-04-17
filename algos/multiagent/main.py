@@ -245,13 +245,13 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of timesteps per epoch (before updating agent networks)",
     )
     parser.add_argument(
-        "--epochs", type=int, default=2000, help="Number of total epochs to train the agent"
+        "--epochs", type=int, default=3000, help="Number of total epochs to train the agent"
     )
     parser.add_argument("--seed", type=int, default=2, help="Random seed control")
     parser.add_argument(
         "--exp-name",
         type=str,
-        default="test",
+        default="RADTEAM",
         help="Name of experiment for saving",
     )
     parser.add_argument(
@@ -294,7 +294,7 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
     )
     parser.add_argument(
-        "--enforce-boundaries", type=bool, default=False, help="Indicate whether or not agents can travel outside of the search area"
+        "--enforce-boundaries", type=bool, default=True, help="Indicate whether or not agents can travel outside of the search area"
     )
     parser.add_argument(
         "--resolution-multiplier", type=float, default=0.01, help="Indicate degree of accuracy a heatmap should be downsized to. A value of 1 is full accuracy - not recommended for most training environments (see documentation)"

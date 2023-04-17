@@ -467,9 +467,6 @@ class train_PPO:
             for id in self.agents:
                 self.loggers[id].log_tabular("AgentID", id)
                 self.loggers[id].log_tabular("Epoch", epoch)
-                self.loggers[id].log_tabular("DoneCount", sum_only=True)
-                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)
-                self.loggers[id].log_tabular("EpLen", average_only=True)
                 self.loggers[id].log_tabular("VVals", with_min_and_max=True)
                 self.loggers[id].log_tabular("TotalEnvInteracts", (epoch + 1) * self.steps_per_epoch)
                 self.loggers[id].log_tabular("loss_policy", average_only=True)
@@ -481,6 +478,9 @@ class train_PPO:
                 self.loggers[id].log_tabular("ClipFrac", average_only=True)
                 self.loggers[id].log_tabular("OutOfBound", average_only=True)
                 self.loggers[id].log_tabular("stop_iteration", average_only=True)
+                self.loggers[id].log_tabular("EpRet", with_min_and_max=True)                
+                self.loggers[id].log_tabular("DoneCount", sum_only=True)
+                self.loggers[id].log_tabular("EpLen", average_only=True)                
                 self.loggers[id].log_tabular("Time", time.time() - self.start_time)
                 self.loggers[id].dump_tabular()
 
