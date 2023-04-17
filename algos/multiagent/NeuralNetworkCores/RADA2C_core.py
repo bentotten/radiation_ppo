@@ -580,7 +580,7 @@ class RNNModelActorCritic(nn.Module):
         a2c_hidden = self.pi._reset_state()  # Actor
         return (model_hidden, a2c_hidden)
     
-    def set_mode(mode: str = 'eval'):
+    def set_mode(self, mode: str = 'eval'):
         if mode == 'eval':
             self.model.eval()
             self.pi.eval()

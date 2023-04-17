@@ -1583,7 +1583,7 @@ class CNNBase:
         self.maps.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
 
-    def step(self, state_observation: Dict[int, npt.NDArray], hiddens: torch.Tensor = None) -> Tuple[ActionChoice, HeatMaps]:
+    def step(self, state_observation: Dict[int, npt.NDArray], hidden: torch.Tensor = None) -> Tuple[ActionChoice, HeatMaps]:
         ''' Alias for select_action '''
         return self.select_action(state_observation=state_observation, id=self.id)
 

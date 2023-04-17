@@ -191,7 +191,7 @@ class train_PPO:
                     assert self.agents[i].agent.critic is not self.agents[i-1].agent.critic
                     assert not self.agents[i].GlobalCriticOptimizer and not self.GlobalCriticOptimizer
 
-        # Special function to avoid certain slowdowns from PyTorch + MPI combo.
+        # Special function to avoid certain slowdowns from PyTorch + MPI combo. Even when MPI is not applied, this speeds up pytorch significantly
         setup_pytorch_for_mpi()
 
         for agent in self.agents.values():

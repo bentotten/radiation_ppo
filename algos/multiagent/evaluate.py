@@ -1,6 +1,8 @@
 '''
 Evaluate agents and update neural networks using simulation environment.
 '''
+# TODO!!!!
+DELETE_PI_AFTER_NEW_MODEL_TRAINED = True
 
 import os
 import sys
@@ -268,7 +270,10 @@ class EpisodeRunner:
                 
             elif self.actor_critic_architecture == 'rnn':
                 self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
-                self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+                if DELETE_PI_AFTER_NEW_MODEL_TRAINED:
+                    self.agents[i].pi.load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+                else:
+                    self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))                    
             else:
                 raise ValueError("Unsupported net type")
 
@@ -304,16 +309,16 @@ class EpisodeRunner:
                 observations[id][0] = stat_buffers[id].standardize(observations[id][0])
                 
                 # Get first location prediction
-                initial_thoughts[id], _ = ac.step(observations, hiddens[id])                
-                pass
-                          
+                print(self.env.agents[id].meas_sto[steps_in_episode])
+                print(self.env.agents[id].det_sto[steps_in_episode])
+                initial_thoughts[id], _ = ac.step(observations[id], hiddens[id])                                          
         
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    agent_thoughts[id], heatmaps = ac.step(observations, hiddens = hiddens[id])
+                    agent_thoughts[id], heatmaps = ac.step(observations[id], hiddens[id])
                 hiddens[id] = agent_thoughts[id].hiddens # For RAD-A2C - save latest hiddens for use in next steps.
 
             # Create action list to send to environment

@@ -750,7 +750,7 @@ class RadSearch(gym.Env):
         # Erase previous results from agent's memory (for render)
         for id, agent in self.agents.items():
             agent.det_sto = [env_dict[key][1].copy()] 
-            agent.meas_sto = [observation[0].copy()]  
+            agent.meas_sto = [observation[id][0].copy()]  
             agent.prev_det_dist = self.world.shortest_path(self.source, agent.detector, self.vis_graph, EPSILON).length() 
         
         # increment iteration counter
