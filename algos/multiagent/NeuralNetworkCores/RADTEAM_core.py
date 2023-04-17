@@ -476,16 +476,17 @@ class MapsBuffer:
         for agent_id in observation:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
-            inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None
+            #inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None
+            last_coordinates: Union[Point, None] = self.tools.last_coords[agent_id] if agent_id in self.tools.last_coords.keys() else None
             self.locations_matrix.append(inflated_agent_coordinates)
             
             # Update Locations maps
             if id == agent_id:
-                self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
-                self._update_combined_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)
+                self._update_current_agent_location_map(current_coordinates=inflated_agent_coordinates, last_coordinates=last_coordinates)
+                self._update_combined_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=last_coordinates)
             else:   
-                self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)                
-                self._update_combined_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=inflated_last_coordinates)                
+                self._update_other_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=last_coordinates)                
+                self._update_combined_agent_locations_map(current_coordinates=inflated_agent_coordinates, last_coordinates=last_coordinates)                
                 
             # Readings and Visits counts maps
             self._update_readings_map(coordinates=inflated_agent_coordinates)
@@ -496,7 +497,8 @@ class MapsBuffer:
                 self._update_obstacle_map(coordinates=inflated_agent_coordinates, single_observation=observation[agent_id])
                 
             # Update last coordinates
-            self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))          
+            #self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))          
+            self.tools.last_coords[agent_id] = Point(inflated_agent_coordinates)          
         
         return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map, self.combined_location_map))
             
@@ -506,12 +508,13 @@ class MapsBuffer:
         if self.resolution_multiplier < 0.1:
             # For sparse matrices, reset via saved coordinates
             for coords in self.tools.last_coords.values():
-                inflated_last_coordinates = self._inflate_coordinates(single_observation=coords)
+                #inflated_last_coordinates = self._inflate_coordinates(single_observation=coords)
+                inflated_last_coordinates = coords
                 self.combined_location_map[inflated_last_coordinates] = 0 
                 self.location_map[inflated_last_coordinates] = 0 
                 self.others_locations_map[inflated_last_coordinates] = 0                
             
-            # Reinitialize non-sparse matrices
+            # Reinitialize non-sparse matrices 
             self.readings_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))                      
             self.visit_counts_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32))
             self.obstacles_map: Map = Map(np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)) 
@@ -577,7 +580,7 @@ class MapsBuffer:
             raise ValueError("Unsupported type for observation parameter")
         return result         
 
-    def _update_combined_agent_locations_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+    def _update_combined_agent_locations_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Point, None])-> None:
         ''' 
             Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
             
@@ -595,7 +598,7 @@ class MapsBuffer:
             
         self.combined_location_map[current_coordinates[0]][current_coordinates[1]] += 1                  
         
-    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
+    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Point, None])-> None:
         ''' 
             Method to update the current agents location observation map. If prior location exists, this is reset to zero.
             
