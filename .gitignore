@@ -11,6 +11,8 @@ data/
 
 # Simple Logs
 *.csv
+profile_cumttime*
+profile_tottime*
 
 # Visuals
 *.gif

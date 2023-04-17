@@ -326,6 +326,7 @@ class RadSearch(gym.Env):
     iter_count: int = field(default=0)   # For render function, believe it counts timesteps
     all_agent_max_count: float = field(init=False) # Sets y limit for radiation count graph
     render_counter: int = field(default=0)
+    silent: bool = field(init=False)
 
     # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     # For debugging
@@ -1159,6 +1160,7 @@ class RadSearch(gym.Env):
         data=[],
         measurements: Optional[List[float]] = None,
         location_estimate=None,
+        silent: bool=False
     )-> None:
         """
         Method that produces a gif of the agent interacting in the environment. Only renders one episode at a time.
@@ -1166,6 +1168,7 @@ class RadSearch(gym.Env):
         reward_length = field(init=False) # Prevent from being unbound
         # Set up global saver (for changing colors of last graph's agents)      
         self.plot_saver = {i: field(init=False) for i in range(self.number_agents)}
+        self.silent = silent
             
         # global location_estimate 
         # location_estimate = None # TODO Trying to get out of global scope; this is for source prediction
@@ -1190,9 +1193,11 @@ class RadSearch(gym.Env):
             :param area_dim:
             :param area_dim: BBox - size of grid
             :param flattened_rewards: flattened rewards between all agents
+            :param silent: Indicate if print frame to render
 
             """
-            print(f"Current Frame: {frame_number}", end='\r') # Acts as a progress bar
+            if not silent:
+                print(f"Current Frame: {frame_number}", end='\r') # Acts as a progress bar
             
             if self.iter_count == 0:
                 raise Warning("Agent must take more than one step to render")
@@ -1503,8 +1508,9 @@ class RadSearch(gym.Env):
                 plt.show()
             # Figure is not reused, ok to close 
             plt.close(fig)
-            print(f"Render Complete", end='\r') # Acts as a progress bar
-            print("Figures open", plt.get_fignums())
+            if not self.silent:
+                print(f"Render Complete", end='\r') # Acts as a progress bar
+                print("Figures open", plt.get_fignums())
             return
             
         else:
@@ -1518,8 +1524,9 @@ class RadSearch(gym.Env):
             #     'Multi-Agent Radiation Localization', fontsize=16)       
 
             # Setup animation
-            print(f"Rendering in {str(path)}/gifs/")
-            print(f"Frames to render: ", reward_length-1)
+            if not self.silent:
+                print(f"Rendering in {str(path)}/gifs/")
+                print(f"Frames to render: ", reward_length-1)
 
             if data_length > 1:
                 ani = animation.FuncAnimation(

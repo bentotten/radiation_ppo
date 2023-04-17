@@ -438,14 +438,16 @@ class EpisodeRunner:
             self.env.render(
                 path=self.render_path, 
                 epoch_count=run_counter,
-                episode_count=id,                
+                episode_count=id,    
+                silent = True                            
             )     
             # Render environment image
             self.env.render(
                 path=self.render_path, 
                 epoch_count=run_counter, 
                 just_env=True,
-                episode_count=id,                
+                episode_count=id,      
+                silent = True                          
             )                                               
         # Always render first episode
         if self.render and run_counter == 0 and self.render_first_episode:
@@ -463,13 +465,15 @@ class EpisodeRunner:
                 path=self.render_path, 
                 epoch_count=run_counter, 
                 episode_count=id,
+                silent = True
             )     
             # Render environment image
             self.env.render(
                 path=self.render_path, 
                 epoch_count=run_counter, 
                 just_env=True,
-                episode_count=id,                
+                episode_count=id, 
+                silent = True                               
             )  
             self.render_first_episode = False             
 
@@ -488,14 +492,16 @@ class EpisodeRunner:
             self.env.render(
                 path=self.render_path, 
                 epoch_count=run_counter, 
-                episode_count=id,                
+                episode_count=id,   
+                silent = True                             
             )     
             # Render environment image
             self.env.render(
                 path=self.render_path, 
                 epoch_count=run_counter, 
                 just_env=True,
-                episode_count=id,                
+                episode_count=id,  
+                silent = True                              
             )  
                             
 

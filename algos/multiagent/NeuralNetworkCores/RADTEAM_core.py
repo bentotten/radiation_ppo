@@ -21,7 +21,7 @@ import json
 
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
-Point = NewType("Point", Tuple[float, float])
+Point = NewType("Point", Tuple[Union[float, int], Union[float, int]])
 #: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
 Map = NewType("Map", npt.NDArray[np.float32])
 #: [New Type] Mapstack - a Tuple of all existing maps.
@@ -311,7 +311,7 @@ class ConversionTools:
         Stores class objects that assist the conversion from an observation from the environment to a heatmap for processing by the neural networks.
     '''
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
-    last_coords: CoordinateStorage = field(init=False, default_factory=lambda: CoordinateStorage(dict()))
+    last_coords: Dict[int, Tuple[int, int]] = field(init=False, default_factory=lambda: dict())
     #: An intensity estimator class that samples every reading and estimates what the true intensity value is
     readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
     #: Statistics class for standardizing intensity readings from samples from the environment
@@ -324,7 +324,7 @@ class ConversionTools:
 
     def reset(self)-> None:
         ''' Method to reset and clear all members '''
-        self.last_coords = CoordinateStorage(dict())
+        self.last_coords = dict()
         self.readings.reset()
         self.standardizer.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
@@ -477,7 +477,7 @@ class MapsBuffer:
             # Fetch scaled coordinates
             inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
             #inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None
-            last_coordinates: Union[Point, None] = self.tools.last_coords[agent_id] if agent_id in self.tools.last_coords.keys() else None
+            last_coordinates: Union[Tuple[int, int], None] = self.tools.last_coords[agent_id] if agent_id in self.tools.last_coords.keys() else None
             self.locations_matrix.append(inflated_agent_coordinates)
             
             # Update Locations maps
@@ -498,7 +498,7 @@ class MapsBuffer:
                 
             # Update last coordinates
             #self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))          
-            self.tools.last_coords[agent_id] = Point(inflated_agent_coordinates)          
+            self.tools.last_coords[agent_id] = inflated_agent_coordinates
         
         return MapStack((self.location_map, self.others_locations_map, self.readings_map, self.visit_counts_map, self.obstacles_map, self.combined_location_map))
             
@@ -580,7 +580,7 @@ class MapsBuffer:
             raise ValueError("Unsupported type for observation parameter")
         return result         
 
-    def _update_combined_agent_locations_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Point, None])-> None:
+    def _update_combined_agent_locations_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
         ''' 
             Method to update the other-agent locations observation map. If prior location exists, this is reset to zero. Note: updates one location at a time, not in a batch
             
@@ -598,7 +598,7 @@ class MapsBuffer:
             
         self.combined_location_map[current_coordinates[0]][current_coordinates[1]] += 1                  
         
-    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Point, None])-> None:
+    def _update_current_agent_location_map(self, current_coordinates: Tuple[int, int], last_coordinates: Union[Tuple[int, int], None])-> None:
         ''' 
             Method to update the current agents location observation map. If prior location exists, this is reset to zero.
             
@@ -1578,7 +1578,7 @@ class CNNBase:
         self.maps.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
 
-    def step(self, state_observation: Dict[int, npt.NDArray], hidden: torch.Tensor = None) -> Tuple[ActionChoice, HeatMaps]:
+    def step(self, state_observation: Dict[int, npt.NDArray], hidden: Union[torch.Tensor, None] = None) -> Tuple[ActionChoice, HeatMaps]:
         ''' Alias for select_action '''
         return self.select_action(state_observation=state_observation, id=self.id)
 

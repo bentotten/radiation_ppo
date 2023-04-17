@@ -141,7 +141,7 @@ def plot_mu(x_mu,x_sig):
         #print('Plot mu',x_mu)
         #import sys
         #sys.exit()
-        import matplotlib.pyplot as plt
+        import matplotlib.pyplot as plt # type: ignore
         plt.figure()
         plt.subplot(121)
         plt.plot(range(len(x_mu)),x_mu)

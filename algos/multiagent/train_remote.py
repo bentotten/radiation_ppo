@@ -138,7 +138,6 @@ class train_PPO:
             torch.manual_seed(self.seed)
             np.random.seed(self.seed)    
 
-        # TODO get to work with ray remote
         # Save configuration   
         #config_json: Dict[str, Any] = convert_json(locals())                       
                                   
@@ -179,7 +178,6 @@ class train_PPO:
                 self.stat_buffers[i] = StatisticStandardization()          
             
             self.agents[i] = remote_AgentPPO.remote(id=i, **self.ppo_kwargs)
-            # TODO Make work with Ray
             #self.loggers[i].setup_pytorch_saver(self.agents[i].agent.pi)  # Only setup to save one nn module currently, here saving the policy
             
             # Sanity check
@@ -351,7 +349,6 @@ class train_PPO:
                     # If at the end of an epoch, log epoch results and reset counters
                     else:
                         for id in self.agents:
-                            # TODO this was already done above, is this being done twice?                            
                             self.loggers[id].store(DoneCount=terminal_counter[id], OutOfBound=out_of_bounds_count[id])
                             terminal_counter[id] = 0
                             out_of_bounds_count[id] = 0
@@ -401,7 +398,7 @@ class train_PPO:
                         Entropy=update_results.Entropy,
                         ClipFrac=update_results.ClipFrac,
                         LocLoss=update_results.LocLoss,
-                        VarExplain=update_results.VarExplain, # TODO what is this?
+                        VarExplain=update_results.VarExplain, 
                     )       
                 else:
                     self.loggers[id].store(
@@ -413,7 +410,7 @@ class train_PPO:
                         Entropy=update_results.Entropy,
                         ClipFrac=update_results.ClipFrac,
                         LocLoss=update_results.LocLoss,
-                        VarExplain=update_results.VarExplain, # TODO what is this?
+                        VarExplain=update_results.VarExplain, 
                     )                                     
             
             if not episode_over:

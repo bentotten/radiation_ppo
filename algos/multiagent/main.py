@@ -581,12 +581,14 @@ def main() -> None:
 
     if PROFILE:
         profiler.disable()
+        # cumtime is the cumulative time spent in this and all subfunctions
         with open(f"{save_path[0]}/profile_cumtime.txt", 'w') as stream:
             stats = pstats.Stats(profiler,  stream=stream).sort_stats('cumtime')
             stats.print_stats()
 
         stream.close()
 
+        # tottime is a total of the time spent in the given function
         with open(f"{save_path[0]}/profile_tottime.txt", 'w') as stream:
             stats = pstats.Stats(profiler,  stream=stream).sort_stats('tottime')
             stats.print_stats()
