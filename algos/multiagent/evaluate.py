@@ -162,7 +162,7 @@ class EpisodeRunner:
     save_path_for_ac: str
     test_env_path: str = field(default='./evaluation/test_environments')
     save_path: str = field(default='.')
-    seed: Union[int, None] = field(default=9389090)
+    seed: Union[int, None] = field(default=0)
     
     obstruction_count: int = field(default=0) 
     enforce_boundaries: bool = field(default=False)
@@ -176,7 +176,7 @@ class EpisodeRunner:
   
     # Initialized elsewhere
     #: Object that holds agents    
-    agents: Dict[int, RADCNN_core.CNNBase] = field(default_factory=lambda:dict())
+    agents: Dict[int, Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic]] = field(default_factory=lambda:dict())
     
     def __post_init__(self)-> None:
         # Change to correct directory
@@ -198,45 +198,80 @@ class EpisodeRunner:
                 general_config_path = child.path  
         original_configs = list(json.load(open(f"{general_config_path}/config.json"))['self'].values())[0]['ppo_kwargs']['actor_critic_args']
         
-        # Set up static A2C args.      
-        actor_critic_args=dict(
-            action_space=self.env.detectable_directions,
-            observation_space=self.env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
-            steps_per_episode=self.steps_per_episode,
-            number_of_agents=self.number_of_agents,
-            detector_step_size=self.env.step_size,
-            environment_scale=self.env.scale,
-            bounds_offset=self.env.observation_area,
-            enforce_boundaries=self.enforce_boundaries,
-            grid_bounds=self.env.scaled_grid_max,
-            resolution_multiplier=self.resolution_multiplier,
-            GlobalCritic=None,
-            no_critic=True,
-            save_path=self.save_path_for_ac
-        )
+        # Set up static A2C actor-critic args
+        if self.actor_critic_architecture == 'cnn':
+            actor_critic_args=dict(
+                action_space=self.env.detectable_directions,
+                observation_space=self.env.observation_space.shape[0], # Also known as state dimensions: The dimensions of the observation returned from the environment
+                steps_per_episode=self.steps_per_episode,
+                number_of_agents=self.number_of_agents,
+                detector_step_size=self.env.step_size,
+                environment_scale=self.env.scale,
+                bounds_offset=self.env.observation_area,
+                enforce_boundaries=self.enforce_boundaries,
+                grid_bounds=self.env.scaled_grid_max,
+                resolution_multiplier=self.resolution_multiplier,
+                GlobalCritic=None,
+                no_critic=True,
+                save_path=self.save_path_for_ac
+            )            
+        elif self.actor_critic_architecture =='rnn':
+            actor_critic_args=dict(
+                obs_dim=self.env.observation_space.shape[0],
+                act_dim=self.env.detectable_directions,
+                hidden_sizes_pol=[[32]],
+                hidden_sizes_val=[[32]],
+                hidden_sizes_rec=[24],
+                hidden=[[24]],
+                net_type='rnn',
+                batch_s=1,
+                seed=self.seed,
+                pad_dim=2
+            )
+        else:
+            raise ValueError("Unsupported net type")  
+          
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        ######################################################################################################
+        # TODO delete me after training RAD-A2C with robust seed
+        
+        actor_critic_args['seed'] = 2
+        ######################################################################################################
+        # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         
         # Check current important parameters match parameters read in 
         for arg in actor_critic_args:
             if arg != 'no_critic' and arg != 'GlobalCritic' and arg != 'save_path':
                 if type(original_configs[arg]) == int or type(original_configs[arg]) == float or type(original_configs[arg]) == bool:
-                    assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    assert actor_critic_args[arg] == original_configs[arg], f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is str:
-                    to_list = original_configs[arg].strip('][').split(' ')
-                    config = np.array([float(x) for x in to_list], dtype=np.float32)
-                    assert np.array_equal(config, actor_critic_args[arg]), f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    if arg == 'net_type':
+                        assert actor_critic_args[arg] == original_configs[arg]
+                    else:
+                        to_list = original_configs[arg].strip('][').split(' ')
+                        config = np.array([float(x) for x in to_list], dtype=np.float32)
+                        assert np.array_equal(config, actor_critic_args[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is list:
                     for a,b in zip(original_configs[arg], actor_critic_args[arg]):
-                        assert a == b, f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert a == b, f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 else:
-                    assert actor_critic_args[arg] == original_configs[arg], f"CNN Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"             
+                    assert actor_critic_args[arg] == original_configs[arg], f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"             
         
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
-            self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
-            self.agents[i].load(checkpoint_path=agent_models[i])
-            
-            # Sanity check
-            assert self.agents[i].critic.is_mock_critic()
+            if self.actor_critic_architecture == 'cnn':
+                self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
+                self.agents[i].load(checkpoint_path=agent_models[i])
+
+                # Sanity check
+                assert self.agents[i].critic.is_mock_critic()                
+                
+            elif self.actor_critic_architecture == 'rnn':
+                self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+                self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+            else:
+                raise ValueError("Unsupported net type")
+
     
     def run(self)-> MonteCarloResults:
         # Prepare tracking buffers and counters
@@ -247,9 +282,11 @@ class EpisodeRunner:
         
         # Prepare results buffers
         results = MonteCarloResults(id=self.id)
+        # For RAD-A2C Compatibility
+        stat_buffers: Dict[int, StatisticStandardization] = dict()
         
         # Refresh environment with test env parameters
-        observations: Dict = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
+        observations = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
         
         for agent in self.agents.values(): 
             agent.set_mode('eval')
@@ -258,12 +295,25 @@ class EpisodeRunner:
         agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()            
         hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents} # For RAD-A2C compatibility
         
+        # If RAD-A2C, instatiate stat buffer and load/standardize first observation
+        if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
+            initial_thoughts = dict()
+            for id, ac in self.agents.items():
+                stat_buffers[id] = StatisticStandardization()                
+                stat_buffers[id].update(observations[id][0])   
+                observations[id][0] = stat_buffers[id].standardize(observations[id][0])
+                
+                # Get first location prediction
+                initial_thoughts[id], _ = ac.step(observations, hiddens[id])                
+                pass
+                          
+        
         while run_counter < self.montecarlo_runs:
             # Get agent thoughts on current state. Actor: Compute action and logp (log probability); Critic: compute state-value
             agent_thoughts.clear()
             for id, ac in self.agents.items():
                 with torch.no_grad():
-                    agent_thoughts[id], heatmaps = ac.step(observations=observations, hiddens = hiddens[id])
+                    agent_thoughts[id], heatmaps = ac.step(observations, hiddens = hiddens[id])
                 hiddens[id] = agent_thoughts[id].hiddens # For RAD-A2C - save latest hiddens for use in next steps.
 
             # Create action list to send to environment

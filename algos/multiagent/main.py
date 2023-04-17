@@ -472,7 +472,7 @@ def main() -> None:
                 hidden=[[args.hid_gru]],
                 net_type=args.net_type,
                 batch_s=args.minibatches,
-                seed=args.seed,
+                seed=robust_seed,
                 pad_dim=2
             )
         else:
@@ -550,7 +550,8 @@ def main() -> None:
             env_name = args.env_name,
             test_env_path = './evaluation/test_environments',
             env_kwargs=env_kwargs,
-            model_path='./evaluation/saves/2023-03-02-13:39:06', # Specify model directory (fpath)
+            #model_path='./evaluation/saves/2023-03-02-13:39:06', # Specify model directory (fpath)
+            model_path='./evaluation/saves/2023-04-16-12:20:31', # Specify model directory (fpath)
             episodes=100, # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100, # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture=args.net_type, # Neural network type (control)
@@ -564,7 +565,8 @@ def main() -> None:
             render=args.render,
             save_gif_freq=args.save_gif_freq,
             render_path='.',
-            save_path_for_ac=save_path
+            save_path_for_ac=save_path,
+            seed=robust_seed
         )
 
         simulation = evaluate.evaluate_PPO(eval_kwargs=eval_kwargs)

@@ -235,8 +235,6 @@ class train_PPO:
         if self.actor_critic_architecture == 'rnn' or self.actor_critic_architecture == 'mlp':
             for id in self.agents:
                 self.stat_buffers[id].update(observations[id][0])
-
-            for id in self.agents:
                 self.agents[id].agent.model.eval() # Sets PFGRU model into "eval" mode
 
         print(f"Starting main training loop!", flush=True)

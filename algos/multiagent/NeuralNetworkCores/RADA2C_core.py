@@ -548,7 +548,6 @@ class RNNModelActorCritic(nn.Module):
         #, action_logprob=action_logprob, state_value=state_value, hiddens=hiddens, loc_pred=loc_pred)    
         return ActionChoice(action=a.numpy(), action_logprob=logp_a.numpy(), state_value=v.numpy(), hiddens=_hidden, loc_pred=loc_pred.numpy()), None  
 
-
     def grad_step(
         #self, obs: npt.NDArray[np.float32], act, hidden: tuple[Tensor, Tensor]
         self, obs: Tensor, act: Tensor, hidden: tuple[tuple[Tensor, Tensor], Tensor]
@@ -580,3 +579,13 @@ class RNNModelActorCritic(nn.Module):
         model_hidden = self.model.init_hidden(batch_size)  # PFGRU
         a2c_hidden = self.pi._reset_state()  # Actor
         return (model_hidden, a2c_hidden)
+    
+    def set_mode(mode: str = 'eval'):
+        if mode == 'eval':
+            self.model.eval()
+            self.pi.eval()
+        elif mode == 'train':
+            self.model.train()
+            self.pi.train()    
+        else:
+            raise ValueError(f'Unknown trainning mode {mode}')        

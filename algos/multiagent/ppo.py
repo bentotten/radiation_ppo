@@ -505,9 +505,7 @@ class AgentPPO:
         :param steps_per_epoch: (int) Number of steps of interaction (state-action pairs) for the agent and the environment in each epoch before updating the neural network modules.
         
         :param env_height: (float) Max y axis bound of search area from environment grid. Note that this is only in spawnable coordinates, so likely is shorter than the full grid.
-        
-        :param seed: (int) For random number generator.
-        
+                
         :param actor_critic_args: (dict) Arguments for A2C neural networks for agent.
         
         :param actor_critic_architecture: (string) Short-version indication for what neural network core to use for actor-critic agent.
@@ -565,7 +563,6 @@ class AgentPPO:
     env_height: float
     actor_critic_args: Dict[str, Any]
     actor_critic_architecture: str = field(default="cnn")    
-    #seed: int = field(default= None)
     minibatch: int = field(default=1)    
     train_pi_iters: int = field(default= 40)
     train_v_iters: int = field(default= 40)
