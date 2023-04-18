@@ -18,6 +18,7 @@ import gym  # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 from gym_rad_search.envs import RadSearch  # type: ignore
 
+
 try:
     import train  # type: ignore
     from ppo import BpArgs  # type: ignore
@@ -49,6 +50,7 @@ def log_state(error: Exception):
     tfile.close()
 
 # TODO Implement a load from a config file instead of from cli args
+
 
 @dataclass
 class CliArgs:
@@ -162,6 +164,7 @@ class CliArgs:
     mode: str
 
 
+''' Function to parge command line arguments '''
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
     ''' Function to parge command line arguments
 
@@ -211,7 +214,7 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         mode=args.mode
     )
 
-
+''' Function to generate argument parser '''
 def create_parser() -> argparse.ArgumentParser:
     '''
         Function to generate argument parser
@@ -292,7 +295,7 @@ def create_parser() -> argparse.ArgumentParser:
         type= int, #Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7],
         default=-1,
         help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
-    )
+    )  
     parser.add_argument(
         "--enforce-boundaries", type=bool, default=True, help="Indicate whether or not agents can travel outside of the search area"
     )
@@ -368,6 +371,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hid-gru", type=int, default=24, help="Actor-Critic GRU hidden state size (Embedding Layers)"
     )
+
     parser.add_argument(
         "--l-pol", type=int, default=1, help="Number of layers for Actor MLP (Policy Multi-layer Perceptron)"
     )

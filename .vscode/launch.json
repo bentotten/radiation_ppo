@@ -26,7 +26,6 @@
     {
       "name": "PLOT MULTI",
       "type": "python",
-      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
       "request": "launch",
       "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
       "console": "integratedTerminal",
@@ -108,59 +107,3 @@
     }
   ]
 }
-
-// General parameters for multi-agent
-// help="Number of timesteps per epoch (before updating agent networks)"
-// "--steps-per-epoch", "480",
-// help="Number of total epochs to train the agent"
-// "--steps-per-episode", "120",
-// help="Number of total steps in an episode "
-// "--epochs", "3000",
-// help="Random seed control"
-// "--seed", "2",
-// help="Name of experiment for saving",
-// "--exp-name", "test",
-// help="Render Gif
-// "--render", "False",
-// help="Save frequency for gifs
-// "--sav_gif_freq", "3",
-// help="Save frequency for models
-// "--sav_freq", "500",
-// help="Number of agents"
-// "--agent_count", "1",
-// help="Environment name registered with Gym"
-// "--env-name","gym_rad_search:RadSearchMulti-v1",
-
-// Environment Parameters
-// help="Dimensions of radiation source search area in cm, decreased by area_obs param. to ensure visilibity graph setup is valid. Length by height.",
-// "--dims", "[2700.0, 2700.0]",
-// help="Interval for each obstruction area in cm. This is how much to remove from bounds to make the "visible bounds"",
-// "--area-obs", "[200.0, 500.0]",
-// help="Number of obstructions present in each episode, options: -1 -> random sampling from [1,5], 0 -> no obstructions, [1-7] -> 1 to 7 obstructions",
-// "--obstruct", "-1",
-// help="Indicate whether or not agents can travel outside of the search area"
-// "--enforce_grid_boundaries", "False",
-
-// # Hyperparameters and PPO parameters
-// help="Reward attribution for advantage estimator for PPO updates",
-// "--gamma", "0.99"
-// help="Entropy reward term scaling"
-// "--alpha", "0.1",
-// help="Batches to sample data during actor policy update (k_epochs)"
-// "--minibatches", "1",
-
-// # Parameters for Neural Networks
-// help="Choose between recurrent neural network or MLP Actor-Critic (A2C), option: rnn, mlp",
-// "--net-type", "rnn",
-// help="Actor linear layer size (Policy Hidden Layer Size)"
-// "--hid-pol", "32",
-// help="Critic linear layer size (State-Value Hidden Layer Size)"
-// "--hid-val", "32",
-// help="PFGRU hidden state size (Localization Network)"
-// "--hid-rec", "24",
-// help="Actor-Critic GRU hidden state size (Embedding Layers)"
-// "--hid-gru","24",
-// help="Number of layers for Actor MLP (Policy Multi-layer Perceptron)"
-// "--l-pol", "1",
-// help="Number of layers for Critic MLP (State-Value Multi-layer Perceptron)"
-// "--l-val","1",

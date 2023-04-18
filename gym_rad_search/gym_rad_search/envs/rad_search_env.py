@@ -1502,7 +1502,7 @@ class RadSearch(gym.Env):
                 if os.path.isdir(str(path) + "/gifs/"):
                     fig.savefig(str(path) + f"/gifs/environment.png")
                 else:
-                    os.mkdir(str(path) + "/gifs/")
+                    os.mkdir(str(path) + ".." + "/gifs/")
                     fig.savefig(str(path) + f"/gifs/environment.png")
             else:
                 plt.show()
