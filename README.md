@@ -1,37 +1,19 @@
 # Radiation Source Search Environment
 
-This contains the multi-agent radiation localization architecture created by Totten et al.
+This contains the multi-agent radiation localization architecture created by Ben Totten, loosely based on 
+- The multi-agent architecture created by Alagha et al. and their published [paper](https://www.sciencedirect.com/science/article/abs/pii/S0167739X22002266)
+- The single-agent architecture created by Liu et al. and their published [paper](https://www.mdpi.com/1424-8220/19/4/960)
+- The aingle-agent radiation source search environment created by Proctor et al. and their published [paper](https://www.mdpi.com/2673-4362/2/4/29).
 
-This also contains the radiation source search environment based on the source search environment created by Proctor et al. and their published [paper](https://www.mdpi.com/2673-4362/2/4/29).
-
-This contains the single-agent radiation source search architecture created by Proctor et al. and their published [paper](https://www.mdpi.com/2673-4362/2/4/29).
-
-Below is a demo of a test episode where the trained deep reinforcement learning agent is controlling a radiation detector to search for a gamma radiation source in a non-convex environment (7 obstructions).
-
-![Radiation Source Search - Animated gif demo](demo/demo.gif)
-
-The obstructions (gray rectangles) block line of sight between the detector and gamma source resulting in the detector only measuring background radiation. The left plot shows the detector positions (black triangles) in the environment, the agent's source location prediction (magenta circles), and the gamma source (red star). The middle plot shows the measured gamma radiation intensity at each timestep and the right plot show the cumulative reward that the agent receives from its selected actions during an episode that is used during training to update the neural network weights. The episode terminates if the detector comes within 1.1 m of the gamma source (success) or if the episode length reaches the episode max.
+This also contains an adapted form of the single-agent radiation source search architecture (RAD-A2C) created by Proctor et al. that can be run with multiple independent learners.
 
 # Algorithms
 
-## Multi-Agent PPO
-
-This repository contains the multi-agent radiation localization architecture based on [RAD-A2C](https://github.com/peproctor/radiation_ppo).
-
-## PPO
-
-This contains the RAD-A2C architecture and proximal policy optimization (PPO) for radiation source search from our Base code from OpenAI's [Spinningup](https://github.com/openai/spinningup) repo.
-
-## Simple PPO
-
-This repository provides a Minimal PyTorch implementation of Proximal Policy Optimization (PPO) with clipped objective from Nikhil Barhate's [PPO-PyTorch] (https://github.com/nikhilbarhate99/PPO-PyTorch) repo.
+TBD
 
 ## Files
 
-- `/algo`: contains the PPO implementations and neural network architectures
-- `/demo`: contains demonstrations.
-- `/gym_rad_search`: contains the radiation source search OpenAI gym environment
-- `/unit_testing`: contains unit tests. This functionality is under development
+TBD
 
 ## Documentation
 
