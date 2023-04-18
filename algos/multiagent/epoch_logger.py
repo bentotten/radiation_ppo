@@ -1,15 +1,11 @@
 # Taken largely from https://github.com/peproctor/REU_rl/blob/350797ef99bf8405a95f8b8b7e1be3292ce41d11/rl_tools/rl_tools/logx.py
 """
-
-Some simple logging functionality, inspired by rllab's logging.
-
-Logs to a tab-separated-values file (path/to/output_directory/progress.txt)
-
+Simple logging functionality, inspired by rllab's logging. Logs to a tab-separated-values file (path/to/output_directory/progress.txt)
 """
 from collections import defaultdict
 import json
 from pathlib import Path
-from typing import Any, NamedTuple, Optional, TypedDict
+from typing import Any, NamedTuple, Optional, TypedDict, List, Dict, Union
 import numpy as np
 import numpy.typing as npt
 import pickle
@@ -160,9 +156,9 @@ class Logger:
             print(f"Logging data to {self.output_file.name}")
 
         self.first_row: bool = True
-        self.log_headers: list[str] = []
+        self.log_headers: List[str] = []
         # TODO: Values may not be primitives
-        self.log_current_row: dict[str, str | int | float] = {}
+        self.log_current_row: Dict[str, Union[str, int, float]] = {}
         self.exp_name: Optional[str] = exp_name
 
     def log(self, msg: str) -> None:
@@ -205,7 +201,7 @@ class Logger:
             logger = EpochLogger(**logger_kwargs)
             logger.save_config(locals())
         """
-        config_json: dict[str, Any] = convert_json(config)
+        config_json: Dict[str, Any] = convert_json(config)
         if self.exp_name is not None:
             config_json["exp_name"] = self.exp_name
 
@@ -214,10 +210,10 @@ class Logger:
         )
         print("Saving config:\n")
         print(output)
-        with open(self.output_dir / "config.json", "w+") as out:
+        with open(self.output_dir / "config.json", "w+") as out: # type: ignore
             out.write(output)
 
-    def save_state(self, state_dict: dict[str, Any], itr: Optional[int] = None) -> None:
+    def save_state(self, state_dict: Dict[str, Any], itr: Optional[int] = None) -> None:
         """
         Saves the state of an experiment.
 
@@ -233,7 +229,7 @@ class Logger:
         save, provide unique (increasing) values for 'itr'.
 
         Args:
-            state_dict (dict): Dictionary containing essential elements to
+            state_dict (Dict): Dictionary containing essential elements to
                 describe the current state of training.
 
             itr: An int, or None. Current iteration of training.
@@ -241,7 +237,7 @@ class Logger:
 
         fname = "vars.pkl" if itr is None else f"vars{itr}.pkl"
         try:
-            with open(self.output_dir / fname, "wb+") as f:
+            with open(self.output_dir / fname, "wb+") as f: # type: ignore
                 pickle.dump(state_dict, f, pickle.HIGHEST_PROTOCOL)
         except:
             self.log("Warning: could not pickle state_dict.")
@@ -271,9 +267,9 @@ class Logger:
         assert hasattr(
             self, "pytorch_saver_elements"
         ), "First have to setup saving with self.setup_pytorch_saver"
-        fpath: Path = self.output_dir / "pyt_save"
+        fpath: Path = self.output_dir / "pyt_save" # type: ignore
         fname = f"model{itr if itr is not None else ''}.pt"
-        fname = fpath / fname
+        fname = fpath / fname # type: ignore 
         fpath.mkdir(parents=True, exist_ok=True)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -342,7 +338,7 @@ class EpochLogger(Logger):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self.epoch_dict: dict[str, list[Any]] = defaultdict(list)
+        self.epoch_dict: Dict[str, List[Any]] = defaultdict(list)
 
     def store(self, **kwargs: Any) -> None:
         """

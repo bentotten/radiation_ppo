@@ -1,8 +1,8 @@
-from setuptools import setup
+from setuptools import setup # type: ignore
 
 setup(
     name="gym_rad_search",
-    version="0",
+    version="0.1",
     install_requires=[
         "gym",
         "matplotlib",

@@ -1,14 +1,19 @@
+'''
+Create graph of training or evaluation cycle from saved results in models directory
+'''
 import numpy as np
-import matplotlib.pyplot as plt
-import scipy.signal as signal
+import matplotlib.pyplot as plt # type: ignore
+import scipy.signal as signal # type: ignore
 import json
 import os
 import os.path as osp
-import pandas as pd
+import pandas as pd # type: ignore
+
+from typing import Any, List, Tuple, Union, Literal, NewType, Optional, TypedDict, cast, get_args, Dict, Callable, overload, NamedTuple
 
 # Global vars for tracking and labeling data at load time.
 exp_idx = 0
-units = dict()
+units: Dict = dict()
 
 def get_datasets(logdir, condition=None):
     """
@@ -71,8 +76,8 @@ def trim_axs(axs, N):
 def multi_plot(data,smooth=None,x_axis='Epoch', save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
-    #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']  # 'AverageEpRet' Missing from dataset
-    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','KL', 'LossModel', 'LossV']
+    #lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']  # 'AverageEpRet' Missing from dataset
+    lst = data.columns # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']
     exclude = ['Condition1', 'Condition2', 'AgentID', 'Time', 'Epoch']
     print(len(lst))
     for lab in lst:
@@ -115,7 +120,7 @@ def plot(data,type_=None, smooth = True):
     elif type_ is 'entropy':
         y_ax = 'Entropy'
     elif type_ is 'kl':
-        y_ax = 'KL'
+        y_ax = 'kl_divergence'
     elif type_ is 'len':
         y_ax = 'Episode Length'
     elif type_ is 'loss_v':

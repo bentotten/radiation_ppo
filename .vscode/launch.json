@@ -5,62 +5,23 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python: Module",
-      "type": "python",
+      "name": "Build Docs",
+      "type": "bashdb",
       "request": "launch",
-      "module": "unittest",
-      "justMyCode": true,
-      "args": ["unit_testing/unit_rad_ppo_agent.py"],
-      "cwd": "${workspaceFolder}"
+      "cwd": "${workspaceFolder}",
+      "program": "${workspaceFolder}/build_docs.sh",
+      "args": []
     },
     {
-      "name": "SIMPLE",
+      "name": "RAD-A2C",
       "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/algos/simple_ppo/train.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": [],
-      "cwd": "${workspaceFolder}/algos/simple_ppo"
-    },
-    {
-      "name": "PPO",
-      "type": "python",
+      //"python": "${command:python.interpreterPath}/../multi_ppo_torch", # Specify which interpreter
       "request": "launch",
       "program": "${workspaceFolder}/algos/ppo/main.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--seed", "0", "--exp-name", "exp1", "--render", "True"],
+      "args": ["--debug", "True", "--epochs", "25", "--render", "True"],
       "cwd": "${workspaceFolder}/algos/ppo"
-    },
-    {
-      "name": "MULTI",
-      "type": "python",
-      "request": "launch",
-      "program": "${workspaceFolder}/algos/multiagent/main.py",
-      "console": "integratedTerminal",
-      "justMyCode": false,
-      "args": [
-        "--agent_count",
-        "3",
-        // "--steps-per-epoch",
-        // "2",
-        "--epochs",
-        "5",
-        "--render",
-        "True",
-        //"--obstruct",
-        //"1",
-        "--seed",
-        "2",
-        // "--save_gif_freq",
-        // "0",
-        "--enforce_grid_boundaries",
-        "True",
-        "--exp-name",
-        "multi-ppo"
-      ],
-      "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
       "name": "PLOT MULTI",
@@ -70,11 +31,78 @@
       "program": "${workspaceFolder}/algos/multiagent/plot_results.py",
       "console": "integratedTerminal",
       "justMyCode": false,
+      "args": ["--data_dir", "${workspaceFolder}/models", "--smooth", "10"],
+      "cwd": "${workspaceFolder}/algos/multiagent"
+    },
+    {
+      "name": "Eval MULTI",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/multiagent/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
       "args": [
-        "--data_dir",
-        "${workspaceFolder}/algos/multiagent/",
-        "--smooth",
-        "10"
+        "--mode",
+        "evaluate",
+        "--exp-name",
+        "RAD-TEAM",
+        "--obstruct",
+        "0",
+        "--agent-count",
+        "1",
+        "--net-type",
+        "cnn",
+        // "--seed",
+        // "2",
+        "--enforce-boundaries",
+        "True", // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE,
+        //"--no-global-critic",
+        "--render",
+        "True",
+        "--save-gif-freq",
+        "20"
+      ],
+      "cwd": "${workspaceFolder}/algos/multiagent"
+    },
+    {
+      "name": "Train MULTI",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/multiagent/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [
+        "--agent-count",
+        "1",
+        "--steps-per-epoch",
+        "480",
+        "--steps-per-episode",
+        "120",
+        "--epochs",
+        "2",
+        // "--render",
+        // "True",
+        // "--save-gif-freq",
+        // "10",
+        "--obstruct",
+        "0",
+        // "--seed",
+        // "2",
+        // "--exp-name",
+        // "TEAM-RAD",
+        "--net-type",
+        "cnn",
+        // "--DEBUG",
+        // "True",
+        // "--save-freq",
+        // "25",
+        //"--no-global-critic",
+        // "--dims",
+        // "1200",
+        // "1200",
+        // "--area-obs",
+        // "0.0",
+        // "0.0"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     }
@@ -85,6 +113,8 @@
 // help="Number of timesteps per epoch (before updating agent networks)"
 // "--steps-per-epoch", "480",
 // help="Number of total epochs to train the agent"
+// "--steps-per-episode", "120",
+// help="Number of total steps in an episode "
 // "--epochs", "3000",
 // help="Random seed control"
 // "--seed", "2",

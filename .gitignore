@@ -1,8 +1,18 @@
+# Ray configurations
+*ray*.yaml
+
+# Documentation (should be generated with Sphinx from doc_source directory)
+doc_build/
+
 # Models
 models/
+*.pkl
+data/
 
 # Simple Logs
 *.csv
+profile_cumtime*
+profile_tottime*
 
 # Visuals
 *.gif

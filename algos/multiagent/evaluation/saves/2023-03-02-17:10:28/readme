@@ -1,0 +1,11 @@
+trained on <>
+
+--render True
+--seed 2
+--exp TEAM-RAD
+--net-type cnn
+--enforce-boundaries True
+
+Trained in 71 hours
+
+obstructions with complex data preprocessing
