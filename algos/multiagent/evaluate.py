@@ -263,7 +263,8 @@ class EpisodeRunner:
                 batch_s=1,
                 #seed=self.seed,
                 #pad_dim=2,
-            )            
+            )
+            original_configs['net_type'] = original_configs['lstm']
         else:
             raise ValueError("Unsupported net type")
 
