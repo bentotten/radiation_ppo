@@ -106,7 +106,7 @@
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
-      "name": "Hail Mary - OG project w/MARL env",
+      "name": "Hail Mary - Train OG project w/MARL env",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/algos/test_environment/ppo.py",
@@ -114,6 +114,16 @@
       "justMyCode": false,
       "args": [],
       "cwd": "${workspaceFolder}/algos/test_environment"
-    }    
+    },
+    {
+      "name": "Hail Mary - Eval OG project w/MARL env",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_environment/eval/test_policy.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": ["--fpath", "${workspaceFolder}/models/train/pre_train/rad_a2c/loc24_hid24_pol32_val32_alpha01_tkl07_val01_lam09_npart40_lr3e-4_proc10_obs-1_iter40_blr5e-3_2_tanh_ep3000_steps4800_s1"],
+      "cwd": "${workspaceFolder}/algos/test_environment"
+    }       
   ]
 }

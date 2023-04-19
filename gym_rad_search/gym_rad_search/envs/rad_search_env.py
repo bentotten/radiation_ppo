@@ -618,6 +618,8 @@ class RadSearch(gym.Env):
         ), "Action not integer or a dictionary of actions."
 
         if type(action) is int:
+            if action == -1:
+                action = 8
             assert action in get_args(Action)
         elif type(action) is dict:
             for i, a in action.items():
