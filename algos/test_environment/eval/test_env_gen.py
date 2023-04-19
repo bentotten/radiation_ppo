@@ -1,3 +1,4 @@
+# type: ignore
 import gym
 import numpy as np
 import joblib

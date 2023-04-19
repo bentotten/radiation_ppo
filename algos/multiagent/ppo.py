@@ -18,13 +18,13 @@ import ray
 try:
     import NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
     import NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from epoch_logger import EpochLogger  # type: ignore
+    from rl_tools.epoch_logger import EpochLogger  # type: ignore
     from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
     from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
 except ModuleNotFoundError:
     import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
     import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from algos.multiagent.epoch_logger import EpochLogger
+    from algos.multiagent.rl_tools.epoch_logger import EpochLogger
     from algos.multiagent.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
     from algos.multiagent.rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
 except:

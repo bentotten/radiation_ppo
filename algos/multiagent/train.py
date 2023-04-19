@@ -44,12 +44,12 @@ from gym.utils.seeding import _int_list_from_bigint, hash_seed  # type: ignore
 # PPO and logger
 try:
     from ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
+    from rl_tools.epoch_logger import EpochLogger, EpochLoggerKwargs, setup_logger_kwargs, convert_json  # type: ignore
     from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
     from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
 except ModuleNotFoundError:
     from algos.multiagent.ppo import OptimizationStorage, PPOBuffer, AgentPPO  # type: ignore
-    from algos.multiagent.epoch_logger import (
+    from algos.multiagent.rl_tools.epoch_logger import (
         EpochLogger,
         EpochLoggerKwargs,
         setup_logger_kwargs,
