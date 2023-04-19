@@ -90,6 +90,7 @@
         // "TEAM-RAD",
         "--net-type",
         "cnn",
+        "--no-enforce-boundaries"
         // "--DEBUG",
         // "True",
         // "--save-freq",
@@ -103,6 +104,16 @@
         // "0.0"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
-    }
+    },
+    {
+      "name": "Hail Mary",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_environment/ppo.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      "args": [],
+      "cwd": "${workspaceFolder}/algos/hail_mary"
+    }    
   ]
 }

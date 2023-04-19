@@ -326,7 +326,7 @@ class RadSearch(gym.Env):
     np_random: npr.Generator = field(default_factory=lambda: npr.default_rng(0))
     obstruction_count: Literal[-1, 0, 1, 2, 3, 4, 5, 6, 7] = field(default=0)
     enforce_grid_boundaries: bool = field(default=False)
-    save_gif: bool = field(default=True)
+    save_gif: bool = field(default=False)
     env_ls: List[Polygon] = field(init=False)
     max_dist: float = field(init=False)
     line_segs: List[List[vis.Line_Segment]] = field(init=False)
@@ -363,9 +363,7 @@ class RadSearch(gym.Env):
     metadata: Metadata = field(default_factory=lambda: {"render.modes": ["human"], "video.frames_per_second": FPS})  # type: ignore
     observation_space: spaces.Box = spaces.Box(0, np.inf, shape=(11,), dtype=np.float32)
     coord_noise: bool = False
-    seed: Union[int, None] = field(
-        default=None
-    )  # TODO make env generation work with this
+    #seed: Union[int, None] = field( default=None)  # TODO make env generation work with this
     scale: float = field(init=False)  # Used to deflate and inflate coordinates
     scaled_grid_max: Tuple = field(
         default_factory=lambda: (1, 1)
@@ -425,9 +423,9 @@ class RadSearch(gym.Env):
         self.max_dist: float = dist_p(
             self.search_area[2], self.search_area[1]
         )  # Maximum distance between two points within search area
-        if self.seed != None:
-            np.random.seed(self.seed)
-            self.np_random: npr.Generator = npr.default_rng(self.seed)
+        # if self.seed != None:
+        #     np.random.seed(self.seed)
+        #     self.np_random: npr.Generator = npr.default_rng(self.seed)
         # Sanity Check
         # Assure there is room to spawn detectors and source with proper spacing
         assert (
@@ -1765,6 +1763,9 @@ class RadSearch(gym.Env):
                 self.render_counter += 1
             return
 
+    def get_agent_outOfBounds_count(self, id: int)-> int:
+        return self.agents[id].out_of_bounds_count     
+    
     # TODO make multi-agent
     def FIM_step(
         self, agent: Agent, action: Action, coords: Optional[Point] = None
