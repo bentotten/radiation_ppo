@@ -1,3 +1,4 @@
+# type: ignore
 """
 
 Some simple logging functionality, inspired by rllab's logging.

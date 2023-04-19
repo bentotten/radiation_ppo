@@ -642,14 +642,14 @@ def main() -> None:
         #   Competative = zero-sum reward framework
         #   Individual = No shared observations, individual nnets. Other agents treated as part of environment
 
-        # TODO move to CLI
+        # TODO move to CLI and read from saved config file
         eval_kwargs = dict(
             env_name=args.env_name,
             test_env_path=(lambda: os.getcwd() + "/evaluation/test_environments")(),
             env_kwargs=env_kwargs,
             # model_path='./evaluation/saves/2023-03-02-13:39:06', # Specify model directory (fpath) RAD-TEAM old with bad reset
             # model_path='./evaluation/saves/2023-04-16-12:20:31', # Specify model directory (fpath) RAD-A2C
-            model_path=(lambda: os.getcwd() + "/evaluation/saves/2023-04-17-15:38:48")(),
+            model_path=(lambda: os.getcwd() + "/evaluation/saves/og/")(),
             episodes=100,  # Number of episodes to test on [1 - 1000]
             montecarlo_runs=100,  # Number of Monte Carlo runs per episode (How many times to run/sample each episode setup) (mc_runs)
             actor_critic_architecture=args.net_type,  # Neural network type (control)

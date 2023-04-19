@@ -685,9 +685,8 @@ class RadSearch(gym.Env):
                     aggregate_reward_result[agent_id],
                     aggregate_success_result[agent_id],
                     aggregate_info_result[agent_id],
-                ) = agent_step(
-                    action=action, agent=agent
-                )  # type: ignore
+                ) = agent_step( action=action, agent=agent)  # type: ignore
+                
                 # Calculate team reward
                 if not max_reward:
                     max_reward = aggregate_reward_result[agent_id]
@@ -914,12 +913,10 @@ class RadSearch(gym.Env):
         # Do not return here, to make compatible for future when agents have dimensions
         # TODO make agents have dimensions like obstacles
         if self.enforce_grid_boundaries:
-            if (
-                tentative_coordinates[0] < self.bbox[0][0]
-                or tentative_coordinates[1] < self.bbox[0][1]
+            if ( 
+                tentative_coordinates[0] < self.bbox[0][0] or tentative_coordinates[1] < self.bbox[0][1]
             ) or (
-                self.bbox[2][0] <= tentative_coordinates[0]
-                or self.bbox[2][1] <= tentative_coordinates[1]
+                self.bbox[2][0] <= tentative_coordinates[0] or self.bbox[2][1] <= tentative_coordinates[1]
             ):
                 agent.out_of_bounds = True
                 agent.out_of_bounds_count += 1
@@ -927,10 +924,9 @@ class RadSearch(gym.Env):
 
         # If grid boundaries are not enforced, out of bounds is the search area
         else:
-            if (
-                agent.det_coords < self.search_area[0]
-                or self.search_area[2] < agent.det_coords
-            ):
+            lower_b = agent.det_coords[0] < self.search_area[0][0] or agent.det_coords[1] < self.search_area[0][1]
+            upper_b = self.search_area[2][0] < agent.det_coords[0] or self.search_area[2][1] < agent.det_coords[1]
+            if (lower_b or upper_b):
                 agent.out_of_bounds = True
                 agent.out_of_bounds_count += 1
 

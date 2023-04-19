@@ -1,3 +1,4 @@
+# type: ignore
 #from spinup.user_config import DEFAULT_DATA_DIR, FORCE_DATESTAMP, \
 #                               DEFAULT_SHORTHAND, WAIT_BEFORE_LAUNCH
 from rl_tools.logx import colorize

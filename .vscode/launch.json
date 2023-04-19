@@ -50,10 +50,10 @@
         "--agent-count",
         "1",
         "--net-type",
-        "rnn",
+        "og",
         // "--seed",
         // "2",
-        "--enforce-boundaries",
+        "--no-enforce-boundaries",
         "--no-global-critic",
         // "--render",
         // "True",
@@ -106,7 +106,7 @@
       "cwd": "${workspaceFolder}/algos/multiagent"
     },
     {
-      "name": "Hail Mary",
+      "name": "Hail Mary - OG project w/MARL env",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/algos/test_environment/ppo.py",

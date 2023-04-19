@@ -1,3 +1,5 @@
+# type: ignore
+
 import numpy as np
 import scipy.signal
 import math

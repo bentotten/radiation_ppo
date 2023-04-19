@@ -193,9 +193,7 @@ class EpisodeRunner:
 
     # Initialized elsewhere
     #: Object that holds agents
-    agents: Dict[
-        int, Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic]
-    ] = field(default_factory=lambda: dict())
+    agents: Dict[int, Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic]] = field(default_factory=lambda: dict())
 
     def __post_init__(self) -> None:
         # Change to correct directory
@@ -211,16 +209,15 @@ class EpisodeRunner:
         agent_models = {}
         for child in os.scandir(self.model_path):
             if child.is_dir() and "agent" in child.name:
-                agent_models[
-                    int(child.name[0])
-                ] = (
-                    child.path
-                )  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
+                agent_models[int(child.name[0])] = (child.path)  # Read in model path by id number. NOTE: Important that ID number is the first element of file name
             if child.is_dir() and "general" in child.name:
                 general_config_path = child.path
-        original_configs = list(
-            json.load(open(f"{general_config_path}/config.json"))["self"].values()
-        )[0]["ppo_kwargs"]["actor_critic_args"]
+                
+        obj = json.load(open(f"{general_config_path}/config.json"))
+        if 'self' in obj.keys():
+            original_configs = list(obj["self"].values())[0]["ppo_kwargs"]["actor_critic_args"]
+        else:
+            original_configs = obj["ac_kwargs"] # Original project save format
 
         # Set up static A2C actor-critic args
         if self.actor_critic_architecture == "cnn":
@@ -254,6 +251,19 @@ class EpisodeRunner:
                 seed=self.seed,
                 pad_dim=2,
             )
+        elif self.actor_critic_architecture == "og":
+            actor_critic_args = dict(
+                #obs_dim=self.env.observation_space.shape[0],
+                #act_dim=self.env.detectable_directions,
+                hidden_sizes_pol=[[32]],
+                hidden_sizes_val=[[32]],
+                hidden_sizes_rec=[24],
+                hidden=[[24]],
+                net_type="rnn",
+                batch_s=1,
+                #seed=self.seed,
+                #pad_dim=2,
+            )            
         else:
             raise ValueError("Unsupported net type")
 
@@ -276,34 +286,24 @@ class EpisodeRunner:
                     or type(original_configs[arg]) == float
                     or type(original_configs[arg]) == bool
                 ):
-                    assert (
-                        actor_critic_args[arg] == original_configs[arg]
-                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    assert ( actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is str:
                     if arg == "net_type":
                         assert actor_critic_args[arg] == original_configs[arg]
                     else:
                         to_list = original_configs[arg].strip("][").split(" ")
                         config = np.array([float(x) for x in to_list], dtype=np.float32)
-                        assert np.array_equal(
-                            config, actor_critic_args[arg]
-                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert np.array_equal(config, actor_critic_args[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 elif type(original_configs[arg]) is list:
                     for a, b in zip(original_configs[arg], actor_critic_args[arg]):
-                        assert (
-                            a == b
-                        ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                        assert (a == b), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
                 else:
-                    assert (
-                        actor_critic_args[arg] == original_configs[arg]
-                    ), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
+                    assert (actor_critic_args[arg] == original_configs[arg]), f"Agent argument mismatch: {arg}.\nCurrent: {actor_critic_args[arg]}; Model: {original_configs[arg]}"
 
         # Initialize agents and load agent models
         for i in range(self.number_of_agents):
             if self.actor_critic_architecture == "cnn":
-                self.agents[i] = RADCNN_core.CNNBase(
-                    id=i, **actor_critic_args
-                )  # NOTE: No updates, do not need PPO
+                self.agents[i] = RADCNN_core.CNNBase(id=i, **actor_critic_args)  # NOTE: No updates, do not need PPO
                 self.agents[i].load(checkpoint_path=agent_models[i])
 
                 # Sanity check
@@ -312,13 +312,20 @@ class EpisodeRunner:
             elif self.actor_critic_architecture == "rnn":
                 self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
                 if DELETE_PI_AFTER_NEW_MODEL_TRAINED:
-                    self.agents[i].pi.load_state_dict(
-                        torch.load(f"{agent_models[i]}/pyt_save/model.pt")
-                    )
+                    self.agents[i].pi.load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
                 else:
-                    self.agents[i].load_state_dict(
-                        torch.load(f"{agent_models[i]}/pyt_save/model.pt")
-                    )
+                    self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))
+            elif self.actor_critic_architecture == "og":
+                # Add in needed params
+                actor_critic_args['obs_dim'] = self.env.observation_space.shape[0]
+                actor_critic_args['act_dim'] = self.env.detectable_directions
+                actor_critic_args['seed'] = self.seed
+                actor_critic_args['pad_dim'] = 2
+
+                self.agents[i] = RADA2C_core.RNNModelActorCritic(**actor_critic_args)
+                self.agents[i].load_state_dict(torch.load(f"{agent_models[i]}/pyt_save/model.pt"))         
+                
+                self.actor_critic_architecture = 'rnn' # Should be ok now           
             else:
                 raise ValueError("Unsupported net type")
 
@@ -326,9 +333,7 @@ class EpisodeRunner:
         # Prepare tracking buffers and counters
         episode_return: Dict[int, float] = {id: 0.0 for id in self.agents}
         steps_in_episode: int = 0
-        terminal_counter: Dict[int, int] = {
-            id: 0 for id in self.agents
-        }  # Terminal counter for the epoch (not the episode)
+        terminal_counter: Dict[int, int] = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
         run_counter = 0
 
         # Prepare results buffers
@@ -337,20 +342,14 @@ class EpisodeRunner:
         stat_buffers: Dict[int, StatisticStandardization] = dict()
 
         # Refresh environment with test env parameters
-        observations = self.env.refresh_environment(
-            env_dict=self.env_sets, id=0, num_obs=self.obstruction_count
-        )
+        observations = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
 
         for agent in self.agents.values():
             agent.set_mode("eval")
 
         # Prepare episode variables
         agent_thoughts: Dict[int, RADCNN_core.ActionChoice] = dict()
-        hiddens: Dict[
-            int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]
-        ] = {
-            id: self.agents[id].reset_hidden() for id in self.agents
-        }  # For RAD-A2C compatibility
+        hiddens: Dict[int, Union[Tuple[Tuple[torch.Tensor, torch.Tensor], torch.Tensor], None]] = {id: self.agents[id].reset_hidden() for id in self.agents}  # For RAD-A2C compatibility
 
         # If RAD-A2C, instatiate stat buffer and load/standardize first observation
         if (
@@ -378,21 +377,15 @@ class EpisodeRunner:
                     else:
                         agent_thoughts[id], heatmaps = ac.step(observations, hiddens)
 
-                hiddens[id] = agent_thoughts[
-                    id
-                ].hiddens  # For RAD-A2C - save latest hiddens for use in next steps.
+                hiddens[id] = agent_thoughts[id].hiddens  # For RAD-A2C - save latest hiddens for use in next steps.
 
             # Create action list to send to environment
-            agent_action_decisions = {
-                id: int(agent_thoughts[id].action) for id in agent_thoughts
-            }
+            agent_action_decisions = {id: int(agent_thoughts[id].action) for id in agent_thoughts}
             for action in agent_action_decisions.values():
                 assert 0 <= action and action < int(self.env.number_actions)
 
             # Take step in environment - Note: will be missing last reward, rewards link to previous observation in env
-            observations, rewards, terminals, _ = self.env.step(
-                action=agent_action_decisions
-            )
+            observations, rewards, terminals, _ = self.env.step(action=agent_action_decisions)
 
             if (
                 self.actor_critic_architecture == "rnn"
@@ -400,21 +393,15 @@ class EpisodeRunner:
             ):
                 for id, ac in self.agents.items():
                     stat_buffers[id].update(observations[id][0])
-                    observations[id][0] = stat_buffers[id].standardize(
-                        observations[id][0]
-                    )
+                    observations[id][0] = stat_buffers[id].standardize(observations[id][0])
 
             # Incremement Counters and save new (individual) cumulative returns
             if self.team_mode == "individual":
                 for id in rewards["individual_reward"]:
-                    episode_return[id] += np.array(
-                        rewards["individual_reward"][id], dtype="float32"
-                    ).item()
+                    episode_return[id] += np.array(rewards["individual_reward"][id], dtype="float32").item()
             else:
                 for id in self.agents:
-                    episode_return[id] += np.array(
-                        rewards["team_reward"], dtype="float32"
-                    ).item()  # TODO if saving team reward, no need to keep duplicates for each agent
+                    episode_return[id] += np.array(rewards["team_reward"], dtype="float32").item()  # TODO if saving team reward, no need to keep duplicates for each agent
 
             steps_in_episode += 1
 
@@ -431,12 +418,8 @@ class EpisodeRunner:
             # terminal: bool = terminal_reached_flag or timeout
 
             # Stopping conditions for episode
-            timeout: bool = (
-                steps_in_episode == self.steps_per_episode
-            )  # Max steps per episode reached
-            episode_over: bool = (
-                terminal_reached_flag or timeout
-            )  # Either timeout or terminal found
+            timeout: bool = (steps_in_episode == self.steps_per_episode)  # Max steps per episode reached
+            episode_over: bool = (terminal_reached_flag or timeout)  # Either timeout or terminal found
 
             if episode_over:
                 self.process_render(run_counter=run_counter, id=self.id)
@@ -445,27 +428,19 @@ class EpisodeRunner:
                 if run_counter < 1:
                     if terminal_reached_flag:
                         results.successful.intensity.append(self.env.intensity)
-                        results.successful.background_intensity.append(
-                            self.env.bkg_intensity
-                        )
+                        results.successful.background_intensity.append(self.env.bkg_intensity)
                     else:
                         results.unsuccessful.intensity.append(self.env.intensity)
-                        results.unsuccessful.background_intensity.append(
-                            self.env.bkg_intensity
-                        )
+                        results.unsuccessful.background_intensity.append(self.env.bkg_intensity)
                 results.total_episode_length.append(steps_in_episode)
 
                 if terminal_reached_flag:
                     results.success_counter += 1
                     results.successful.episode_length.append(steps_in_episode)
-                    results.successful.episode_return.append(
-                        episode_return[0]
-                    )  # TODO change for individual mode
+                    results.successful.episode_return.append(episode_return[0])  # TODO change for individual mode
                 else:
                     results.unsuccessful.episode_length.append(steps_in_episode)
-                    results.unsuccessful.episode_return.append(
-                        episode_return[0]
-                    )  # TODO change for individual mode
+                    results.unsuccessful.episode_return.append(episode_return[0])  # TODO change for individual mode
 
                 # Incremenet run counter
                 run_counter += 1
@@ -473,13 +448,9 @@ class EpisodeRunner:
                 # Reset environment without performing an env.reset()
                 episode_return = {id: 0.0 for id in self.agents}
                 steps_in_episode = 0
-                terminal_counter = {
-                    id: 0 for id in self.agents
-                }  # Terminal counter for the epoch (not the episode)
+                terminal_counter = {id: 0 for id in self.agents}  # Terminal counter for the epoch (not the episode)
 
-                observations = self.env.refresh_environment(
-                    env_dict=self.env_sets, id=0, num_obs=self.obstruction_count
-                )
+                observations = self.env.refresh_environment(env_dict=self.env_sets, id=0, num_obs=self.obstruction_count)
 
                 # Reset stat buffer for RAD-A2C
                 if (
@@ -499,9 +470,7 @@ class EpisodeRunner:
 
         results.completed_runs = run_counter
 
-        print(
-            f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}"
-        )
+        print(f"Finished episode {self.id}! Success count: {results.success_counter} out of {self.montecarlo_runs}")
         return results
 
     def create_environment(self) -> RadSearch:
