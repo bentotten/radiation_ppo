@@ -650,7 +650,7 @@ if __name__ == '__main__':
         tot_epoch_steps = args.cpu * args.steps_per_epoch
         args.steps_per_epoch = tot_epoch_steps if tot_epoch_steps > args.steps_per_epoch else args.steps_per_epoch
         print(f'Sys cpus (avail, using): ({os.cpu_count()},{args.cpu}), Steps set to {args.steps_per_epoch}')
-        mpi_fork(args.cpu)  # run parallel code with mpi
+        mpi_fork(args.cpu)  # run parallel code with mpi   
     
     #Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]

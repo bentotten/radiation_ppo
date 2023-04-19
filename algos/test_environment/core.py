@@ -150,11 +150,11 @@ class PFRNNBaseCell(nn.Module):
             tensor -- sample
         """
         std = torch.nn.functional.softplus(var)
-        if torch.cuda.is_available():
-            eps = torch.cuda.FloatTensor(std.shape).normal_()
-        else:
-            eps = torch.FloatTensor(std.shape).normal_()
-
+        # if torch.cuda.is_available():
+        #     eps = torch.cuda.FloatTensor(std.shape).normal_()
+        # else:
+        eps = torch.FloatTensor(std.shape).normal_()
+        
         return mu + eps * std
 
 
@@ -405,6 +405,7 @@ class RNNModelActorCritic(nn.Module):
     def step(self, obs, hidden=None):
         with torch.no_grad():
             obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(0)
+
             loc_pred, hidden_part = self.model(obs_t[:,:3], hidden[0])
             obs_t = torch.cat((obs_t,loc_pred.unsqueeze(0)),dim=1)
             pi, hidden2, v  = self.pi._distribution(obs_t.unsqueeze(0), hidden[1])

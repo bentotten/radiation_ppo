@@ -113,7 +113,7 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       "args": [],
-      "cwd": "${workspaceFolder}/algos/hail_mary"
+      "cwd": "${workspaceFolder}/algos/test_environment"
     }    
   ]
 }
