@@ -50,16 +50,15 @@
         "--agent-count",
         "1",
         "--net-type",
-        "cnn",
+        "rnn",
         // "--seed",
         // "2",
         "--enforce-boundaries",
-        "True", // NOTE: DELETE ENTIRELY OTHERWISE WILL BE TRUE, EVEN IF FALSE WRITTEN HERE,
-        //"--no-global-critic",
-        "--render",
-        "True",
-        "--save-gif-freq",
-        "20"
+        "--no-global-critic",
+        // "--render",
+        // "True",
+        // "--save-gif-freq",
+        // "20"
       ],
       "cwd": "${workspaceFolder}/algos/multiagent"
     },

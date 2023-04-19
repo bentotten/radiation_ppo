@@ -492,10 +492,10 @@ class EpisodeRunner:
                         observations[id][0] = stat_buffers[id].standardize(
                             observations[id][0]
                         )
-
-                # Reset agents
-                for agent in self.agents.values():
-                    agent.reset()
+                else:
+                    # Reset agents
+                    for agent in self.agents.values():
+                        agent.reset()
 
         results.completed_runs = run_counter
 
@@ -640,10 +640,10 @@ class evaluate_PPO:
 
         # Uncomment when ready to run with Ray
         # Initialize ray
-        try:
-            ray.init(address="auto", num_cpus=112, num_gpus=8)
-        except:
-            print("Ray failed to initialize. Running on single server.")
+        # try:
+        #     ray.init(address="auto", num_cpus=112, num_gpus=8)
+        # except:
+        #     print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         """Driver"""
@@ -663,7 +663,7 @@ class evaluate_PPO:
 
         # Uncomment when to run without Ray
         self.runners = {
-            i: EpisodeRunner(id=0, current_dir=os.getcwd(), **self.eval_kwargs)
+            i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
             for i in range(self.eval_kwargs["episodes"])
         }
         full_results = [runner.run() for runner in self.runners.values()]

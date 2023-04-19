@@ -1336,7 +1336,6 @@ class RadSearch(gym.Env):
 
         def update(
             frame_number: int,
-            # data: List,
             ax1: plt.Axes,
             ax2: plt.Axes,
             ax3: plt.Axes,
@@ -1363,7 +1362,8 @@ class RadSearch(gym.Env):
                 )  # Acts as a progress bar
 
             if self.iter_count == 0:
-                raise Warning("Agent must take more than one step to render")
+                print("Agent must take more than one step to render")
+                return
 
             current_index = frame_number % (self.iter_count)
             # global location_estimate # TODO Trying to get out of global scope; this is for source prediction
@@ -1743,7 +1743,6 @@ class RadSearch(gym.Env):
                         ax3,
                         self.src_coords,
                         self.bbox,
-                        measurements,
                         flattened_rewards,
                     ),
                 )

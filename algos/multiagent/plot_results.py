@@ -44,13 +44,14 @@ def get_datasets(logdir, condition=None):
     for root, _, files in os.walk(logdir):
         if "progress.txt" in files:
             exp_name = None
-            try:
-                config_path = open(os.path.join(root, "config.json"))
-                config = json.load(config_path)
-                if "exp_name" in config:
-                    exp_name = config["exp_name"]
-            except:
-                print("No file named config.json")
+            # TODO do we need the config?
+            # try:
+            #     config_path = open(os.path.join(root, "general_s2/config.json"))
+            #     config = json.load(config_path)
+            #     if "exp_name" in config:
+            #         exp_name = config["exp_name"]
+            # except:
+            #     print("No file named config.json")
             condition1 = condition or exp_name or "exp"
             condition2 = condition1 + "-" + str(exp_idx)
             exp_idx += 1
@@ -93,19 +94,23 @@ def multi_plot(data, smooth=None, x_axis="Epoch", save_f=False, file_name="."):
     ref_DF = pd.DataFrame()
 
     # lst = ['AverageEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']  # 'AverageEpRet' Missing from dataset
+    # list = [AgentID	Epoch	MeanVVals	StdVVals	MaxVVals	MinVVals	TotalEnvInteracts	loss_policy	loss_critic	loss_predictor	LocLoss	Entropy	kl_divergence	ClipFrac	OutOfBound	stop_iteration	MeanEpRet	StdEpRet	MaxEpRet	MinEpRet	DoneCount	EpLen	Time]
     lst = (
         data.columns
     )  # ['MeanEpRet','StdEpRet','DoneCount','EpLen','Entropy','kl_divergence', 'loss_predictor', 'loss_critic']
     exclude = ["Condition1", "Condition2", "AgentID", "Time", "Epoch"]
-    print(len(lst))
+    include = ['MeanEpRet',	'StdEpRet',	'MaxEpRet',	'MinEpRet',	'DoneCount', 'EpLen']
+
     for lab in lst:
-        if lab not in exclude and np.any(lab == data.columns):
+        if lab in include and lab not in exclude and np.any(lab == data.columns):
             ref_DF[lab] = data[data.columns[data.columns == lab][0]]
             if np.isnan(ref_DF[lab]).any():
                 ref_DF[np.isnan(ref_DF[lab])] = 0
                 print("NAN found!")
-    iters = ref_DF.iteritems()
-    if (len(lst) - len(exclude)) % 2 == 0:
+    iters = ref_DF.items()
+    #if (len(lst) - len(exclude)) % 2 == 0:
+    print(len(include))
+    if len(include) % 2 == 0:
         div = 2
     else:
         div = 3
@@ -113,7 +118,7 @@ def multi_plot(data, smooth=None, x_axis="Epoch", save_f=False, file_name="."):
     plt.rc("font", size=26)
     fig, axs = plt.subplots(
         div,
-        (len(lst) - len(exclude)) // (div + 1),
+        len(include) // (div),
         figsize=(50, 16),
         constrained_layout=True,
     )
