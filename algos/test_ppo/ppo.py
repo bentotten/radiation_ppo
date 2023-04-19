@@ -1,3 +1,7 @@
+"""
+    NOTE: This is a duplicate PPO for testing purposes only! 
+"""
+
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F

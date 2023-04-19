@@ -271,12 +271,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
     
     new_buffer = NEWPPO(
-                observation_dimension=obs_dim,
-                max_size=self.steps_per_epoch,
-                max_episode_length=self.steps_per_episode,
-                gamma=self.gamma,
-                lam=self.lam,
-                number_agents=self.number_of_agents,
+                observation_dimension = obs_dim,
+                max_size = local_steps_per_epoch,
+                max_episode_length = max_ep_len,
+                gamma = gamma,
+                lam = lam,
+                number_agents = 1
             )
     
     save_gif_freq = epochs // 3
@@ -459,6 +459,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     def update(env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
         data = buf.get(logger=logger)
+        
+        data_to_comp = new_buffer.get()
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
@@ -522,6 +524,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ep_ret_ls.append(ep_ret)
 
             buf.store(obs_std, a, r, v, logp, env.src_coords)
+            new_buffer.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+            
             logger.store(VVals=v)
 
             # Update obs (critical!)
@@ -553,6 +557,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 else:
                     v = 0
                 buf.finish_path(v)
+                new_buffer.GAE_advantage_and_rewardsToGO(v)
+                
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
