@@ -783,6 +783,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             buf.store(obs_std, a, r, v, logp, env.src_coords)
             new_buffer.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
             
+            if TEST_PPO:
+                ac.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)     
+            
             logger.store(VVals=v)
 
             # Update obs (critical!)

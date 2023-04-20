@@ -1373,7 +1373,7 @@ class AgentPPO:
         self.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value=last_state_value)
     
     def store(self, **kwargs)->None:
-        self.ppo_buffer(**kwargs)
+        self.ppo_buffer.store(**kwargs)
         
     def render(
         self,
