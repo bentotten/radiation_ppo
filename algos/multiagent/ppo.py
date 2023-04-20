@@ -706,10 +706,6 @@ class AgentPPO:
         else:
             raise ValueError("Steps per epoch cannot be 0")
         
-        assert self.train_pfgru_iters is not self.agent_optimizer.train_pfgru_iters
-        assert self.train_pi_iters is not self.agent_optimizer.train_pi_iters
-        assert self.train_v_iters is not self.agent_optimizer.train_v_iters
-        
         self.train_pfgru_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
         self.train_pi_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
         self.train_v_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
@@ -1372,6 +1368,9 @@ class AgentPPO:
     def load(self, path: str) -> None:
         """Wrapper for network"""
         self.agent.load(checkpoint_path=path)
+
+    def sync_params(self):
+        sync_params(self.agent)
 
     def render(
         self,

@@ -15,7 +15,7 @@ from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize,
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
 from ppo import PPOBuffer as NEWPPO
-from ppo import OptimizationStorage
+from ppo import OptimizationStorage, AgentPPO
 
 TEST_OPTIMIZER = False 
 
@@ -279,6 +279,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
     # TEST AGENTPPO 
+    ac_kwargs['observation_space'] = env.observation_space
+    ac_kwargs['action_space'] = env.action_space
     bp_args = {
         'bp_decay' : 0.1,
         'l2_weight':1.0, 
@@ -286,6 +288,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         'elbo_weight':1.0,
         'area_scale':env.search_area[2][1]
         }    
+    
     ppo_kwargs = dict(
         observation_space=env.observation_space.shape[0],
         bp_args=bp_args,
@@ -299,21 +302,26 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         train_pi_iters=train_pi_iters,
         train_v_iters=None,
         train_pfgru_iters=train_v_iters,
-        reduce_pfgru_iters=99,
-        actor_learning_rate=args.actor_learning_rate,
-        critic_learning_rate=args.critic_learning_rate,
-        pfgru_learning_rate=args.pfgru_learning_rate,
-        gamma=args.gamma,
-        alpha=args.alpha,
-        clip_ratio=args.clip_ratio,
-        target_kl=args.target_kl,
-        lam=args.lam,
+        actor_learning_rate=pi_lr,
+        critic_learning_rate=None,
+        pfgru_learning_rate=vf_lr,
+        gamma=gamma,
+        alpha=alpha,
+        clip_ratio=clip_ratio,
+        target_kl=target_kl,
+        lam=lam,
         GlobalCriticOptimizer=None,
     )    
-    ac_ppo = AgentPPO(id=0, **self.ppo_kwargs)    
+    ac_ppo = AgentPPO(id=0, **ppo_kwargs)    
     
     # Sync params across processes
     sync_params(ac)
+    
+    ac_ppo.sync_params()
+    
+    state1 = ac.state_dict() 
+    state2 = ac_ppo.agent.state_dict()          
+    assert compare_dicts(state1, state2)    
 
     #PFGRU args, from Ma et al. 2020
     bp_args = {
@@ -346,52 +354,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
-
-    def update_loc_rnn(data, env_sim, loss):
-        """Update for the simple regression GRU"""
-        ep_form= data['ep_form']
-        model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        
-        assert optimization.train_pfgru_iters == train_v_iters
-        
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii,ep in enumerate(ep_form):
-                hidden = ac.model.init_hidden(1)
-                src_tar =  ep[0][:,15:].clone()
-                src_tar[:,:2] = src_tar[:,:2]/env_sim.search_area[2][1]
-                obs_t = torch.as_tensor(ep[0][:,:3], dtype=torch.float32)
-                loc_pred, _ = ac.model(obs_t,hidden,batch=True)
-                model_loss_arr[ii] = loss(loc_pred.squeeze(),src_tar.squeeze())
-            
-            model_loss = model_loss_arr.mean()
-
-            if TEST_OPTIMIZER:
-                state1 = model_optimizer.state_dict() 
-                state2 = optimization.model_optimizer.state_dict()          
-                assert compare_dicts(state1, state2)
-            
-            model_optimizer.zero_grad()
-            
-            if TEST_OPTIMIZER:            
-                optimization.model_optimizer.zero_grad()          
-            
-            model_loss.backward()
-            mpi_avg_grads(ac.model)
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            
-            model_optimizer.step()   
-            
-            if TEST_OPTIMIZER: 
-                optimization.model_optimizer.step()       
-                
-                state1 = model_optimizer.state_dict() 
-                state2 = optimization.model_optimizer.state_dict()          
-                assert compare_dicts(state1, state2)      
-
-        return model_loss
-            
 
     def update_a2c(data, env_sim, minibatch=None,iter=None):
         observation_idx = 11
@@ -485,7 +447,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         source_loc_idx = 15
         o_idx = 3
 
-        assert optimization.train_pfgru_iters == train_v_iters
+        if TEST_OPTIMIZER: 
+            assert optimization.train_pfgru_iters == train_v_iters
 
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
@@ -628,15 +591,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         ac.model.train()
         loss_mod = update_model(data, args, loss=loss_fcn)
 
-        #Update function if using the regression GRU
-        #loss_mod = update_loc_rnn(data,env,loss)
-
         ac.model.eval()
         min_iters = len(data['ep_form'])
         kk = 0; term = False
 
         # Train policy with multiple steps of gradient descent (mini batch)
-        assert optimization.train_pi_iters == train_pi_iters
+        if TEST_OPTIMIZER: 
+            assert optimization.train_pi_iters == train_pi_iters
         while (not term and kk < train_pi_iters):
             #Early stop training if KL-div above certain threshold
             pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
