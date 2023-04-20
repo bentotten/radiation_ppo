@@ -432,7 +432,7 @@ class PPOBuffer:
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1]  # Remove last non-step element
         
-        self.path_start_idx = self.ptr
+        self.path_start_idx = self.ptr # Update start index
 
     def get(self) -> Dict[str, object]:
         """

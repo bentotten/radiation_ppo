@@ -112,7 +112,8 @@
       "program": "${workspaceFolder}/algos/test_ppo/train.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": ["--steps_per_epoch", "3"],
+      //"args": ["--steps_per_epoch", "3"],
+      "args": [],
       "cwd": "${workspaceFolder}/algos/test_environment"
     },
      

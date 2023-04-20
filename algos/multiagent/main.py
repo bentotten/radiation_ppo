@@ -35,7 +35,7 @@ except ModuleNotFoundError:
 except:
     raise Exception
 
-PROFILE = True
+PROFILE = False
 
 
 def log_state(error: Exception) -> None:
@@ -168,8 +168,6 @@ class CliArgs:
 
 
 """ Function to parge command line arguments """
-
-
 def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
     """Function to parge command line arguments
 
@@ -221,8 +219,6 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
 
 
 """ Function to generate argument parser """
-
-
 def create_parser() -> argparse.ArgumentParser:
     """
     Function to generate argument parser
