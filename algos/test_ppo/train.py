@@ -17,6 +17,31 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage
 
+
+def compare_dicts(dict1, dict2):
+    """ Recursively compare all the values of objects """
+    if type(dict1) != type(dict2):
+        return False
+    
+    elif isinstance(dict1, dict):
+        if dict1.keys() != dict2.keys():
+            return False
+        for key in dict1.keys():
+            if not compare_dicts(dict1[key], dict2[key]):
+                return False
+        return True        
+    elif isinstance(dict1, list):
+        for element1, element2 in zip(dict1, dict2):
+            if not compare_dicts(element1, element2):
+                return False
+        return True            
+    else:
+        if isinstance(dict1, torch.Tensor) and isinstance(dict2, torch.Tensor):
+            return torch.equal(dict1, dict2)
+        else:
+            return dict1 == dict2
+
+
 class PPOBuffer:
     """
     A buffer for storing histories experienced by a PPO agent interacting
@@ -362,11 +387,24 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         #Average KL across processes 
         kl = mpi_avg(pi_info['kl'][-1])
         if kl.item() < 1.5 * target_kl:
+            
+            state1 = pi_optimizer.state_dict() 
+            state2 = optimization.pi_optimizer.state_dict()          
+            assert compare_dicts(state1, state2)
+            
             pi_optimizer.zero_grad() 
+            optimization.pi_optimizer.zero_grad()
+            
             loss_pi.backward()
             #Average gradients across processes
             mpi_avg_grads(ac.pi)
             pi_optimizer.step()
+            optimization.pi_optimizer.step()
+            
+            state1 = pi_optimizer.state_dict() 
+            state2 = optimization.pi_optimizer.state_dict()          
+            assert compare_dicts(state1, state2)
+            
             term = False
         else:
             term = True
@@ -645,7 +683,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:
-            optimization.
+            optimization.reduce_pfgru_training()
             train_v_iters = 5
             reduce_v_iters = False
 
