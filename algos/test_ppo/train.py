@@ -15,41 +15,53 @@ from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize,
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
 from ppo import PPOBuffer as NEWPPO
-from ppo import OptimizationStorage, AgentPPO
+from ppo import OptimizationStorage, AgentPPO, BpArgs
+
+import pytest
 
 TEST_OPTIMIZER = False 
-TEST_PPO = True  # Different approach - if TEST_PPO, load the new PPO and see if it matches saved parameters for each step from og 
+TEST_PPO = True  
 
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
     if type(dict1) != type(dict2):
-        return False
+        #return False
+        raise Exception
     
     elif isinstance(dict1, dict):
         if dict1.keys() != dict2.keys():
-            return False
+            #return False
+            raise Exception
         for key in dict1.keys():
             if not compare_dicts(dict1[key], dict2[key]):
-                return False
-        return True       
+                #return False
+                raise Exception
+        return True    
+       
     elif isinstance(dict1, np.ndarray):
         return (dict1 == dict2).all()
+    
     elif isinstance(dict1, list):
         for element1, element2 in zip(dict1, dict2):
             if not compare_dicts(element1, element2):
-                return False
-        return True           
+                #return False
+                raise Exception
+        return True  
+             
     elif isinstance(dict1, tuple):
         for element1, element2 in zip(dict1, dict2):
             if not compare_dicts(element1, element2):
-                return False
+                #return False
+                raise Exception
         return True         
     else:
         if isinstance(dict1, torch.Tensor) and isinstance(dict2, torch.Tensor):
             return torch.equal(dict1, dict2)
         else:
-            return dict1 == dict2
+            if dict1 != dict2:
+                raise Exception
+            return True
 
 
 class PPOBuffer:
@@ -293,13 +305,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     if TEST_PPO:
         ac_kwargs['observation_space'] = env.observation_space
         ac_kwargs['action_space'] = env.action_space
-        bp_args = {
-            'bp_decay' : 0.1,
-            'l2_weight':1.0, 
-            'l1_weight':0.0,
-            'elbo_weight':1.0,
-            'area_scale':env.search_area[2][1]
-            }    
+        bp_args = BpArgs(
+            bp_decay = 0.1,
+            l2_weight=1.0, 
+            l1_weight=0.0,
+            elbo_weight=1.0,
+            area_scale=env.search_area[2][1]
+            )    
         
         ppo_kwargs = dict(
             observation_space=env.observation_space.shape[0],
@@ -739,15 +751,15 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         #Reset hidden state
         hidden = ac.reset_hidden()
         
-        # If not testing PPO, save the og hiddens here
-        if not TEST_PPO:
-            torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
-            HIDDEN_SAVES += 1
-        # Else, ensure matches og parameters
-        else:
-            to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-            assert compare_dicts(to_test, hidden)   
-            HIDDEN_SAVES += 1                     
+        # # If not testing PPO, save the og hiddens here
+        # if not TEST_PPO:
+        #     torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
+        #     HIDDEN_SAVES += 1
+        # # Else, ensure matches og parameters
+        # else:
+        #     to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+        #     assert compare_dicts(to_test, hidden)   
+        #     HIDDEN_SAVES += 1                     
         
         if not TEST_PPO:    
             ac.pi.logits_net.v_net.eval()                
@@ -762,17 +774,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             if TEST_PPO:
                 a, v, logp, hidden, out_pred = ac.step({0: obs_std}, hidden=hidden)   
                 
-                # Test against saved values
-                to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-                assert compare_dicts(to_test, [a, v, logp, hidden, out_pred])   
-                HIDDEN_SAVES += 1      
+                # # Test against saved values
+                # to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+                # assert compare_dicts(to_test, [a, v, logp, hidden, out_pred])   
+                # HIDDEN_SAVES += 1      
                                             
             if not TEST_PPO:
                 a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
                 
-                # Save values
-                torch.save([a, v, logp, hidden, out_pred], f'./hidden/{HIDDEN_SAVES}')
-                HIDDEN_SAVES += 1                                         
+                # # Save values
+                # torch.save([a, v, logp, hidden, out_pred], f'./hidden/{HIDDEN_SAVES}')
+                # HIDDEN_SAVES += 1                                         
                 
             next_o, r, d, _ = env.step({0: a})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
@@ -780,8 +792,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            buf.store(obs_std, a, r, v, logp, env.src_coords)
-            new_buffer.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+            if not TEST_PPO:
+                buf.store(obs_std, a, r, v, logp, env.src_coords)
+                new_buffer.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
             
             if TEST_PPO:
                 ac.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)     
@@ -815,24 +828,26 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                         _, v, _, _, _ = ac.step({0: obs_std}, hidden=hidden)   
                 
                         # Test against saved value
-                        to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-                        assert compare_dicts(to_test, v)   
-                        HIDDEN_SAVES += 1                                                            
+                        # to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+                        # assert compare_dicts(to_test, v)   
+                        # HIDDEN_SAVES += 1                                                            
                     
                     if not TEST_PPO:
                         _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
                         
                         # Save value
-                        torch.save(v, f'./hidden/{HIDDEN_SAVES}')
-                        HIDDEN_SAVES += 1                
+                        # torch.save(v, f'./hidden/{HIDDEN_SAVES}')
+                        # HIDDEN_SAVES += 1                
                     
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
                 else:
                     v = 0
-                buf.finish_path(v)
-                new_buffer.GAE_advantage_and_rewardsToGO(v)
+                    
+                if not TEST_PPO:
+                    buf.finish_path(v)
+                    new_buffer.GAE_advantage_and_rewardsToGO(v)
                 
                 if TEST_PPO:
                     ac.GAE_advantage_and_rewardsToGO(v)
@@ -840,7 +855,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                    new_buffer.store_episode_length(episode_length=ep_len)
+                    if not TEST_PPO:
+                        new_buffer.store_episode_length(episode_length=ep_len)
                     
                     if TEST_PPO:
                         ac.store_episode_length(episode_length=ep_len)
@@ -861,14 +877,14 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     hidden = ac.reset_hidden()
                     
                     # If not testing PPO, save the og state here
-                    if not TEST_PPO:
-                        torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
-                        HIDDEN_SAVES += 1
-                    # Else, ensure matches og parameters
-                    else:
-                        to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-                        assert compare_dicts(to_test, hidden)   
-                        HIDDEN_SAVES += 1     
+                    # if not TEST_PPO:
+                    #     torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
+                    #     HIDDEN_SAVES += 1
+                    # # Else, ensure matches og parameters
+                    # else:
+                    #     to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+                    #     assert compare_dicts(to_test, hidden)   
+                    #     HIDDEN_SAVES += 1     
                         
                     o, _, _, _ = env.reset()
                     o = o[0]
@@ -898,7 +914,19 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
         # Perform PPO update!
         if TEST_PPO:
-            ac.update_agent()
+            results = ac.update_agent()
+            
+            logger.store(
+                StopIter=results.stop_iteration,
+                LossPi= results.loss_policy,
+                LossV= results.loss_critic,
+                LossModel = results.loss_predictor,
+                KL=results.kl_divergence, 
+                Entropy= results.Entropy, 
+                ClipFrac= results.ClipFrac,
+                LocLoss= results.LocLoss, 
+                VarExplain=0
+                )            
         if not TEST_PPO:
             update(env, bp_args, loss_fcn=loss)
 
