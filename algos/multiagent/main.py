@@ -162,7 +162,6 @@ class CliArgs:
     train_pi_iters: float
     train_v_iters: float
     train_pfgru_iters: float
-    reduce_pfgru_iters: float
     DEBUG: bool
     mode: str
 
@@ -212,7 +211,6 @@ def parse_args(parser: argparse.ArgumentParser) -> CliArgs:
         train_pi_iters=args.train_pi_iters,
         train_v_iters=args.train_v_iters,
         train_pfgru_iters=args.train_pfgru_iters,
-        reduce_pfgru_iters=args.reduce_pfgru_iters,
         DEBUG=args.DEBUG,
         mode=args.mode,
     )
@@ -401,12 +399,6 @@ def create_parser() -> argparse.ArgumentParser:
         default=15,
         help="Maximum number of gradient descent steps to take for source localization neural network (the PFGRU unit).",
     )
-    parser.add_argument(
-        "--reduce_pfgru_iters",
-        type=bool,
-        default=True,
-        help="Reduce PFGRU training after a certain number of iterations when further along to speed up training.",
-    )
 
     # Parameters for RAD-A2C
     parser.add_argument(
@@ -579,7 +571,7 @@ def main() -> None:
                 save_path=save_path,
             )
 
-        # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here
+        # Set up static PPO args. NOTE: Shared data structure between agents, do not add dynamic data here!
         ppo_kwargs = dict(
             observation_space=env.observation_space.shape[0],
             bp_args=bp_args,
@@ -593,7 +585,6 @@ def main() -> None:
             train_pi_iters=args.train_pi_iters,
             train_v_iters=args.train_v_iters,
             train_pfgru_iters=args.train_pfgru_iters,
-            reduce_pfgru_iters=args.reduce_pfgru_iters,
             actor_learning_rate=args.actor_learning_rate,
             critic_learning_rate=args.critic_learning_rate,
             pfgru_learning_rate=args.pfgru_learning_rate,
