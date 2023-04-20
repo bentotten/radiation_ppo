@@ -17,7 +17,7 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage
 
-TEST_OPTIMIZER = True # TODO change to false before resuming testing, or model will be updated twice
+TEST_OPTIMIZER = False 
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
@@ -278,6 +278,40 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     #Instantiate A2C
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
+    # TEST AGENTPPO 
+    bp_args = {
+        'bp_decay' : 0.1,
+        'l2_weight':1.0, 
+        'l1_weight':0.0,
+        'elbo_weight':1.0,
+        'area_scale':env.search_area[2][1]
+        }    
+    ppo_kwargs = dict(
+        observation_space=env.observation_space.shape[0],
+        bp_args=bp_args,
+        steps_per_epoch=steps_per_epoch,
+        steps_per_episode=120,
+        number_of_agents=1,
+        env_height=env.search_area[2][1],
+        actor_critic_args=ac_kwargs,
+        actor_critic_architecture='rnn',
+        minibatch=1,
+        train_pi_iters=train_pi_iters,
+        train_v_iters=None,
+        train_pfgru_iters=train_v_iters,
+        reduce_pfgru_iters=99,
+        actor_learning_rate=args.actor_learning_rate,
+        critic_learning_rate=args.critic_learning_rate,
+        pfgru_learning_rate=args.pfgru_learning_rate,
+        gamma=args.gamma,
+        alpha=args.alpha,
+        clip_ratio=args.clip_ratio,
+        target_kl=args.target_kl,
+        lam=args.lam,
+        GlobalCriticOptimizer=None,
+    )    
+    ac_ppo = AgentPPO(id=0, **self.ppo_kwargs)    
+    
     # Sync params across processes
     sync_params(ac)
 
@@ -287,7 +321,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         'l2_weight':1.0, 
         'l1_weight':0.0,
         'elbo_weight':1.0,
-        'area_scale':env.search_area[2][1]}
+        'area_scale':env.search_area[2][1]
+        }
 
     # Count variables
     var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])

@@ -554,8 +554,6 @@ class AgentPPO:
 
     :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit).
 
-    :param reduce_pfgru_iters: (bool) Reduces PFGRU training iteration when further along to speed up training.
-
     :param GlobalCriticOptimizer: (torch.optim.Optimizer) Optimizer for global critic. Defaults to none.
 
     :param actor_learning_rate: (float) For actor/policy. When updating neural networks, indicates how large of a learning step to take. Larger means a bigger update, and vise versa. This should be
@@ -597,7 +595,6 @@ class AgentPPO:
     train_pi_iters: int = field(default=40)
     train_v_iters: int = field(default=40)
     train_pfgru_iters: int = field(default=15)
-    reduce_pfgru_iters: bool = field(default=True)
     GlobalCriticOptimizer: Union[torch.optim.Optimizer, None] = field(default=None)
     actor_learning_rate: float = field(default=3e-4)
     critic_learning_rate: float = field(default=1e-3)
@@ -612,8 +609,13 @@ class AgentPPO:
     agent: Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic] = field(
         init=False
     )
+    #: (bool) Reduces PFGRU training iteration when further along to speed up training.
+    reduce_pfgru_iters: bool = field(init=False)
 
     def __post_init__(self):
+        
+        self.reduce_pfgru_iters = True
+        
         """Initialize Agent's neural network architecture"""
 
         ################################## set device ##################################
