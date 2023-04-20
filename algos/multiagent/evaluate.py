@@ -115,7 +115,7 @@ class Distribution:
 
 
 # Uncomment when ready to run with Ray
-# @ray.remote(num_cpus=2, num_gpus=0.08)
+@ray.remote
 @dataclass
 class EpisodeRunner:
     """
@@ -610,33 +610,33 @@ class evaluate_PPO:
 
         # Uncomment when ready to run with Ray
         # Initialize ray
-        # try:
-        #     ray.init(address="auto", num_cpus=112, num_gpus=8)
-        # except:
-        #     print("Ray failed to initialize. Running on single server.")
+        try:
+            ray.init(address="auto")
+        except:
+            print("Ray failed to initialize. Running on single server.")
 
     def evaluate(self):
         """Driver"""
         start_time = time.time()
         # Uncomment when ready to run with Ray
-        # runners = {i: EpisodeRunner
-        #            .remote(
-        #                 id=i,
-        #                 current_dir=os.getcwd(),
-        #                 **self.eval_kwargs
-        #             )
-        #         for i in range(self.eval_kwargs['episodes'])
-        #     }
+        runners = {i: EpisodeRunner
+                   .remote(
+                        id=i,
+                        current_dir=os.getcwd(),
+                        **self.eval_kwargs
+                    )
+                for i in range(self.eval_kwargs['episodes'])
+            }
 
-        # full_results = ray.get([runner.run.remote() for runner in runners.values()])
+        full_results = ray.get([runner.run.remote() for runner in runners.values()])
         # print(full_results)
 
         # Uncomment when to run without Ray
-        self.runners = {
-            i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
-            for i in range(self.eval_kwargs["episodes"])
-        }
-        full_results = [runner.run() for runner in self.runners.values()]
+        # self.runners = {
+        #     i: EpisodeRunner(id=i, current_dir=os.getcwd(), **self.eval_kwargs)
+        #     for i in range(self.eval_kwargs["episodes"])
+        # }
+        # full_results = [runner.run() for runner in self.runners.values()]
 
         print("Runtime: {}", time.time() - start_time)
 

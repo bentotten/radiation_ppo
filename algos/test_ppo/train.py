@@ -15,6 +15,7 @@ from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize,
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar,mpi_statistics_vector, num_procs, mpi_min_max_scalar # type: ignore
 
 from ppo import PPOBuffer as NEWPPO
+from ppo import OptimizationStorage
 
 class PPOBuffer:
     """
@@ -289,6 +290,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         """Update for the simple regression GRU"""
         ep_form= data['ep_form']
         model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
+        
+        assert optimization.train_pfgru_iters == train_v_iters
+        
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
             model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
@@ -381,6 +385,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         source_loc_idx = 15
         o_idx = 3
 
+        assert optimization.train_pfgru_iters == train_v_iters
+
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
             model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
@@ -454,6 +460,16 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
     model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
     loss = torch.nn.MSELoss(reduction='mean')
+    
+    optimization = OptimizationStorage(
+                train_pi_iters=train_pi_iters,
+                train_v_iters=None,
+                train_pfgru_iters=train_v_iters,
+                pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+                critic_optimizer=None, 
+                model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
+                MSELoss=torch.nn.MSELoss(reduction="mean"),
+            )
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
@@ -485,8 +501,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 print(data[key])
                 not_match_list.append(key)
                 
-        print('Not match: ' + str(not_match_list))
         if len(not_match_list) > 0:
+            print('Not match: ' + str(not_match_list))        
             raise Exception("Data from buffer not matching")
         ################################################
 
@@ -502,6 +518,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         kk = 0; term = False
 
         # Train policy with multiple steps of gradient descent (mini batch)
+        assert optimization.train_pi_iters == train_pi_iters
         while (not term and kk < train_pi_iters):
             #Early stop training if KL-div above certain threshold
             pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
@@ -628,6 +645,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:
+            optimization.
             train_v_iters = 5
             reduce_v_iters = False
 

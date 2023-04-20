@@ -194,9 +194,9 @@ class OptimizationStorage:
     pi_optimizer: torch.optim.Optimizer
     critic_optimizer: Union[torch.optim.Optimizer, None]
     model_optimizer: torch.optim.Optimizer
-    clip_ratio: float
-    alpha: float
-    target_kl: float
+    # clip_ratio: float
+    # alpha: float
+    # target_kl: float
 
     # Initialized elsewhere
     #: Schedules gradient steps for actor
@@ -225,6 +225,8 @@ class OptimizationStorage:
         else:
             self.critic_scheduler = None  # RAD-A2C has critic embeded in pi
 
+    def reduce_pfgru_training(self):
+        self.train_pfgru_iters = 5
 
 @dataclass
 class PPOBuffer:
@@ -478,7 +480,7 @@ class PPOBuffer:
             )
         )
 
-        # Save in a giant tensor
+        # Save in a giant tensor for RAD-A2C
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
 
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
@@ -654,9 +656,9 @@ class AgentPPO:
                     self.agent.model.parameters(), lr=self.pfgru_learning_rate
                 ),
                 MSELoss=torch.nn.MSELoss(reduction="mean"),
-                clip_ratio=self.clip_ratio,
-                alpha=self.alpha,
-                target_kl=self.target_kl,
+                # clip_ratio=self.clip_ratio,
+                # alpha=self.alpha,
+                # target_kl=self.target_kl,
             )
         # Gated recurrent architecture for RAD-A2C
         elif (
@@ -682,9 +684,9 @@ class AgentPPO:
                     self.agent.model.parameters(), lr=self.pfgru_learning_rate
                 ),
                 MSELoss=torch.nn.MSELoss(reduction="mean"),
-                clip_ratio=self.clip_ratio,
-                alpha=self.alpha,
-                target_kl=self.target_kl,
+                # clip_ratio=self.clip_ratio,
+                # alpha=self.alpha,
+                # target_kl=self.target_kl,
             )
         else:
             raise ValueError("Unsupported Neural Network type requested")
@@ -703,9 +705,9 @@ class AgentPPO:
             raise ValueError("Steps per epoch cannot be 0")
 
     def reduce_pfgru_training(self):
-        """Reduce localization module training iterations after some number of epochs to speed up training"""
+        """ Reduce localization module training iterations after some number of epochs to speed up training """
         if self.reduce_pfgru_iters:
-            self.train_pfgru_iters = 5
+            self.agent_optimizer.reduce_pfgru_training()
             self.reduce_pfgru_iters = False
 
     def step(

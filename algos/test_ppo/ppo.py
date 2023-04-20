@@ -26,7 +26,7 @@ PRIO_MEMORY = False
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
-
+# Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     """
     This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for numpy.zeros() or tensor creation).
@@ -53,7 +53,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(Tuple[int, Any], shape)
         return (length, *shape)
 
-
+# Ok via unit testing
 def discount_cumsum(
     x: npt.NDArray[np.float64], discount: float
 ) -> npt.NDArray[np.float64]:
@@ -78,64 +78,6 @@ def discount_cumsum(
 
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
-
-
-# NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
-def generalized_advantage_estimate(gamma, lamb, done, rewards, values):
-    """
-    gamma: trajectory discount (scalar)
-    lamda: exponential mean discount (scalar)
-    values: value function results for each step
-    rewards: rewards for each step
-    done: flag for end of episode (ensures advantage only calculated for single epsiode, when multiple episodes are present)
-
-    Thank you to https://nn.labml.ai/rl/ppo/gae.html
-    """
-    batch_size = done.shape[0]
-
-    advantages = np.zeros(batch_size + 1)
-
-    last_advantage = 0
-    last_value = values[-1]
-
-    for t in reversed(range(batch_size)):
-        # Make mask to filter out values by episode
-        mask = 1.0 - done[t]  # convert bools into variable to multiply by
-
-        # Apply terminal mask to values and advantages
-        last_value = last_value * mask
-        last_advantage = last_advantage * mask
-
-        # Calculate deltas
-        delta = rewards[t] + gamma * last_value - values[t]
-
-        # Get last advantage and add to proper element in advantages array
-        last_advantage = delta + gamma * lamb * last_advantage
-        advantages[t] = last_advantage
-
-        # Get new last value
-        last_value = values[t]
-
-    return advantages
-
-
-# NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
-def rewards_to_go(batch_rews, gamma):
-    """
-    Calculate the rewards to go. Gamma is the discount factor.
-    Thank you to https://medium.com/swlh/coding-ppo-from-scratch-with-pytorch-part-2-4-f9d8b8aa938a
-    """
-    # The rewards-to-go (rtg) per episode per batch to return and the shape will be (num timesteps per episode).
-    batch_rtgs = []
-
-    # Iterate through each episode backwards to maintain same order in batch_rtgs
-    discounted_reward = 0  # The discounted reward so far
-
-    for rew in reversed(batch_rews):
-        discounted_reward = rew + discounted_reward * gamma
-        batch_rtgs.insert(0, discounted_reward)
-
-    return batch_rtgs
 
 
 class UpdateResult(NamedTuple):
@@ -189,9 +131,9 @@ class OptimizationStorage:
     pi_optimizer: torch.optim.Optimizer
     critic_optimizer: Union[torch.optim.Optimizer, None]
     model_optimizer: torch.optim.Optimizer
-    clip_ratio: float
-    alpha: float
-    target_kl: float
+    # clip_ratio: float
+    # alpha: float
+    # target_kl: float
 
     # Initialized elsewhere
     #: Schedules gradient steps for actor
@@ -219,8 +161,12 @@ class OptimizationStorage:
             )
         else:
             self.critic_scheduler = None  # RAD-A2C has critic embeded in pi
+    
+    def reduce_pfgru_training(self):
+        self.train_pfgru_iters = 5
+        
 
-
+# Ok now
 @dataclass
 class PPOBuffer:
     """
@@ -645,9 +591,9 @@ class AgentPPO:
                     self.agent.model.parameters(), lr=self.pfgru_learning_rate
                 ),
                 MSELoss=torch.nn.MSELoss(reduction="mean"),
-                clip_ratio=self.clip_ratio,
-                alpha=self.alpha,
-                target_kl=self.target_kl,
+                # clip_ratio=self.clip_ratio,
+                # alpha=self.alpha,
+                # target_kl=self.target_kl,
             )
         else:
             raise ValueError("Unsupported Neural Network type requested")
@@ -668,7 +614,7 @@ class AgentPPO:
     def reduce_pfgru_training(self):
         """Reduce localization module training iterations after some number of epochs to speed up training"""
         if self.reduce_pfgru_iters:
-            self.train_pfgru_iters = 5
+            self.agent_optimizer.reduce_pfgru_training()
             self.reduce_pfgru_iters = False
 
     def step(
