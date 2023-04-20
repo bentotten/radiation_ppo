@@ -109,10 +109,10 @@
       "name": "Hail Mary - Train OG project w/MARL PPO",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/algos/test_ppo/ppo.py",
+      "program": "${workspaceFolder}/algos/test_ppo/train.py",
       "console": "integratedTerminal",
       "justMyCode": false,
-      "args": [],
+      "args": ["--steps_per_epoch", "3"],
       "cwd": "${workspaceFolder}/algos/test_environment"
     },
      

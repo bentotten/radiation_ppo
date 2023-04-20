@@ -15,20 +15,11 @@ from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Di
 import scipy.signal  # type: ignore
 import ray
 
-try:
-    import NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from rl_tools.epoch_logger import EpochLogger  # type: ignore
-    from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
-    from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
-except ModuleNotFoundError:
-    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from algos.multiagent.rl_tools.epoch_logger import EpochLogger
-    from algos.multiagent.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
-    from algos.multiagent.rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
-except:
-    raise Exception
+import core as RADA2C_core  # type: ignore
+from rl_tools.logx import EpochLogger # type: ignore
+from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
+from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
+
 
 # If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements, but greatly slows down training.
 PRIO_MEMORY = False
@@ -358,7 +349,7 @@ class PPOBuffer:
         logp: float,
         src: npt.NDArray[np.float32],
         full_observation: Dict[int, npt.NDArray],
-        heatmap_stacks: RADCNN_core.HeatMaps,
+        heatmap_stacks: None,
         terminal: bool,
     ) -> None:
         """
@@ -419,12 +410,9 @@ class PPOBuffer:
 
         # Choose only relevant section of buffers
         path_slice: slice = slice(self.path_start_idx, self.ptr)
-        rews: npt.NDArray[np.float64] = np.append(
-            self.rew_buf[path_slice], last_state_value
-        )  # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
-        vals: npt.NDArray[np.float64] = np.append(
-            self.val_buf[path_slice], last_state_value
-        )  # size steps + 1. If epoch was 10 steps, this will hold 10 values plus the last states state_value (or 0 if terminal)
+        # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
+        rews: npt.NDArray[np.float64] = np.append(self.rew_buf[path_slice], last_state_value)
+        vals: npt.NDArray[np.float64] = np.append(self.val_buf[path_slice], last_state_value)
 
         # GAE-Lambda advantage calculation. Gamma determines scale of value function, introduces bias regardless of VF accuracy (similar to discount) and
         # lambda introduces bias when VF is inaccurate
@@ -435,6 +423,8 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1]  # Remove last non-step element
+        
+        self.path_start_idx = self.ptr
 
     def get(self) -> Dict[str, object]:
         """
@@ -592,7 +582,7 @@ class AgentPPO:
     number_of_agents: int  # Number of agents
     env_height: float
     actor_critic_args: Dict[str, Any]
-    actor_critic_architecture: str = field(default="cnn")
+    actor_critic_architecture: str = field(default="rnn")
     minibatch: int = field(default=1)
     train_pi_iters: int = field(default=40)
     train_v_iters: int = field(default=40)
@@ -609,7 +599,7 @@ class AgentPPO:
     lam: float = field(default=0.9)
 
     # Initialized elsewhere
-    agent: Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic] = field(
+    agent: RADA2C_core.RNNModelActorCritic = field(
         init=False
     )
 
@@ -632,36 +622,7 @@ class AgentPPO:
             "============================================================================================"
         )
 
-        # Simple Feed Forward Network
-        if self.actor_critic_architecture == "cnn":
-            self.agent = RADCNN_core.CNNBase(id=self.id, **self.actor_critic_args)
-
-            if not self.GlobalCriticOptimizer:
-                CriticOptimizer = Adam(
-                    self.agent.critic.parameters(), lr=self.critic_learning_rate
-                )
-            else:
-                CriticOptimizer = self.GlobalCriticOptimizer
-
-            # Initialize learning opitmizers
-            self.agent_optimizer = OptimizationStorage(
-                train_pi_iters=self.train_pi_iters,
-                train_v_iters=self.train_v_iters,
-                train_pfgru_iters=self.train_pfgru_iters,
-                pi_optimizer=Adam(
-                    self.agent.pi.parameters(), lr=self.actor_learning_rate
-                ),
-                critic_optimizer=CriticOptimizer,  # Allows for global optimizer
-                model_optimizer=Adam(
-                    self.agent.model.parameters(), lr=self.pfgru_learning_rate
-                ),
-                MSELoss=torch.nn.MSELoss(reduction="mean"),
-                clip_ratio=self.clip_ratio,
-                alpha=self.alpha,
-                target_kl=self.target_kl,
-            )
-        # Gated recurrent architecture for RAD-A2C
-        elif (
+        if (
             self.actor_critic_architecture == "rnn"
             or self.actor_critic_architecture == "mlp"
         ):
@@ -715,7 +676,7 @@ class AgentPPO:
         observations: Dict[int, List[Any]],
         hiddens: Union[None, List[torch.Tensor]] = None,
         message: Union[None, Dict] = None,
-    ) -> RADCNN_core.ActionChoice:
+    ) -> Any:
         """
         Wrapper for neural network action selection
 
@@ -733,14 +694,6 @@ class AgentPPO:
             results, heatmaps = self.agent.step(
                 obs=observations[self.id], hidden=hiddens
             )
-            # results = RADCNN_core.ActionChoice(
-            #     id= self.id,
-            #     action= a,
-            #     action_logprob= logp,
-            #     state_value= v,
-            #     loc_pred= out_pred,
-            #     hiddens= hidden
-            #     )
         else:
             results, heatmaps = self.agent.select_action(
                 observations, self.id

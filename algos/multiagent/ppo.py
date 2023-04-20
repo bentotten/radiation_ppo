@@ -431,6 +431,8 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1]  # Remove last non-step element
+        
+        self.path_start_idx = self.ptr
 
     def get(self) -> Dict[str, object]:
         """
@@ -506,7 +508,7 @@ class PPOBuffer:
                 np.copy(self.obs_win_std), dtype=torch.float32
             ),  # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(np.copy(total_episode_length), dtype=torch.float32),
-            ep_form=episode_form,
+            ep_form=episode_form, # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
         )
 
         return data
@@ -784,7 +786,7 @@ class AgentPPO:
 
         # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get()
-        min_iterations = len(data["ep_form"])
+        min_iterations = len(data["ep_form"]) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
         kk = 0
         term = False
 
@@ -987,7 +989,7 @@ class AgentPPO:
             * logp: (tensor) batch of action logprobabilities.
             * loc_pred: (tensor) batch of predicted location by PFGRU.
             * ep_len: (tensor[int]) single dimension int of length of episode.
-            * ep_form: (tensor) Episode form
+            * ep_form: (List) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
         :param index: (int) If doing a single observation at a time, index for data[]
         """
         # NOTE: Not using observation tensor, using internal map buffer
@@ -1076,7 +1078,7 @@ class AgentPPO:
         """Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details)"""
         # Initial values and compatability
         args: BpArgs = self.bp_args
-        ep_form = data["ep_form"]
+        ep_form = data["ep_form"] # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
         source_loc_idx = 15  # src_tar is location estimate
         o_idx = 3
 
@@ -1087,7 +1089,7 @@ class AgentPPO:
             model_loss_arr: torch.Tensor = torch.autograd.Variable(
                 torch.tensor([], dtype=torch.float32)
             )
-            for ep in ep_form:
+            for ep in ep_form: # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
                 sl = len(ep[0])
                 hidden = self.reset_hidden()[0]  # type: ignore
                 # src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
@@ -1196,7 +1198,7 @@ class AgentPPO:
         return_idx = 12
         source_loc_idx = 15
 
-        ep_form: List[torch.tensor] = data["ep_form"]  # type: ignore
+        ep_form: List[torch.tensor] = data["ep_form"]  # type: ignore # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
 
         # Policy info buffer
         # KL is for KL divergence
@@ -1209,7 +1211,7 @@ class AgentPPO:
         ep_select = np.random.choice(
             np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
         )
-        ep_form = [ep_form[idx] for idx in ep_select]
+        ep_form = [ep_form[idx] for idx in ep_select] # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
 
         # Loss storage buffer(s)
         loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)

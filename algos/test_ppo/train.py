@@ -1,4 +1,6 @@
 # type: ignore
+''' OG: ppo.py'''
+
 import numpy as np
 import torch
 from torch.optim import Adam
@@ -461,6 +463,32 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         data = buf.get(logger=logger)
         
         data_to_comp = new_buffer.get()
+        
+        ####### TODO compare results from buffer #######
+        not_match_list = []
+        for key in data.keys():
+            if key == 'ep_form':
+                i=0
+                for new_ep, ep in zip(data_to_comp[key], data[key]):
+                    if not torch.equal(ep[0], new_ep[0]):
+                        print('Epform did not match')
+                        print(new_ep)
+                        print('############ versus #############')
+                        print(ep)
+                        not_match_list.append(f'Episode {i}')             
+                    i += 1       
+                
+            elif not torch.equal(data_to_comp[key], data[key]):
+                print(key + ' did not match')
+                print(data_to_comp[key])
+                print('############ versus #############')
+                print(data[key])
+                not_match_list.append(key)
+                
+        print('Not match: ' + str(not_match_list))
+        if len(not_match_list) > 0:
+            raise Exception("Data from buffer not matching")
+        ################################################
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
@@ -562,6 +590,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
+                    new_buffer.store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
@@ -664,7 +693,7 @@ if __name__ == '__main__':
         "enforce_grid_boundaries": False
         }
 
-    max_ep_step = 120
+    max_ep_step = 120 if args.steps_per_epoch != 3 else 3
     if args.cpu > 1:
         #max cpus, steps in batch must be greater than the max eps steps times num. of cpu
         tot_epoch_steps = args.cpu * args.steps_per_epoch
