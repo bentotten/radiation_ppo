@@ -710,14 +710,8 @@ class AgentPPO:
         self.train_pi_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
         self.train_v_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
         
-        # TODO check if passthrough works ok
-        # self.train_pfgru_iters = lambda: self.agent_optimizer.train_pfgru_iters
-        # self.train_pi_iters = lambda: self.agent_optimizer.train_pi_iters
-        # self.train_v_iters = lambda: self.agent_optimizer.train_v_iters
-        
-        # assert self.train_pfgru_iters is self.agent_optimizer.train_pfgru_iters
-        # assert self.train_pi_iters is self.agent_optimizer.train_pi_iters
-        # assert self.train_v_iters is self.agent_optimizer.train_v_iters        
+        # Set to eval mode
+        self.agent.set_mode(mode="eval")
 
     def reduce_pfgru_training(self):
         """ Reduce localization module training iterations after some number of epochs to speed up training """

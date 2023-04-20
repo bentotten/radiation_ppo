@@ -612,7 +612,10 @@ class AgentPPO:
         
         self.train_pfgru_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
         self.train_pi_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
-        self.train_v_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))     
+        self.train_v_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))    
+        
+        # Set to eval mode
+        self.agent.set_mode(mode="eval")         
 
     def reduce_pfgru_training(self):
         """Reduce localization module training iterations after some number of epochs to speed up training"""

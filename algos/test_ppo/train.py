@@ -374,6 +374,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         for ii,ep in enumerate(ep_form):
             #For each set of episodes per process from an epoch, compute loss 
             trajectories = ep[0]
+            
             hidden = ac.reset_hidden()
             obs, act, logp_old, adv, ret, src_tar = trajectories[:,:observation_idx], trajectories[:,action_idx],trajectories[:,logp_old_idx], \
                                                      trajectories[:,advantage_idx], trajectories[:,return_idx,None], trajectories[:,source_loc_idx:].clone()
@@ -541,6 +542,31 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
     loss = torch.nn.MSELoss(reduction='mean')
     
+    # test pi optimizer
+    state1 = pi_optimizer.state_dict() 
+    state2 = ac_ppo.agent_optimizer.pi_optimizer.state_dict()          
+    assert compare_dicts(state1, state2)
+    
+    # test model_optimizer
+    state1 = model_optimizer.state_dict() 
+    state2 = ac_ppo.agent_optimizer.model_optimizer.state_dict()          
+    assert compare_dicts(state1, state2)    
+    
+    # test pi_scheduler
+    state1 = pi_scheduler.state_dict() 
+    state2 = ac_ppo.agent_optimizer.pi_scheduler.state_dict()          
+    assert compare_dicts(state1, state2)        
+    
+    # test model_scheduler
+    state1 = model_scheduler.state_dict() 
+    state2 = ac_ppo.agent_optimizer.pfgru_scheduler.state_dict()          
+    assert compare_dicts(state1, state2)       
+    
+    # test loss
+    state1 = loss.state_dict() 
+    state2 = ac_ppo.agent_optimizer.MSELoss.state_dict()          
+    assert compare_dicts(state1, state2)        
+    
     if TEST_OPTIMIZER:
         optimization = OptimizationStorage(
                     train_pi_iters=train_pi_iters,
@@ -649,6 +675,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     oob = 0
     reduce_v_iters = True
     ac.model.eval()
+    
+    assert ac.model.training == ac_ppo.agent.model.training
+    
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
@@ -750,6 +779,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
         # Perform PPO update!
         update(env, bp_args, loss_fcn=loss)
+        
+        # TEST UPDATE! 
+        ac_ppo.update_agent(logger)
+        state1 = ac.state_dict() 
+        state2 = ac_ppo.agent.state_dict()          
+        assert compare_dicts(state1, state2)    
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)

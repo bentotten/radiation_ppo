@@ -434,4 +434,13 @@ class RNNModelActorCritic(nn.Module):
         model_hidden = self.model.init_hidden(batch_size)
         a2c_hidden = self.pi._reset_state()
         return (model_hidden, a2c_hidden)
-
+    
+    def set_mode(self, mode: str = 'eval'):
+        if mode == 'eval':
+            self.model.eval()
+            self.pi.eval()
+        elif mode == 'train':
+            self.model.train()
+            self.pi.train()    
+        else:
+            raise ValueError(f'Unknown trainning mode {mode}')        
