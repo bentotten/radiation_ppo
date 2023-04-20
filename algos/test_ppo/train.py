@@ -35,7 +35,12 @@ def compare_dicts(dict1, dict2):
         for element1, element2 in zip(dict1, dict2):
             if not compare_dicts(element1, element2):
                 return False
-        return True            
+        return True           
+    elif isinstance(dict1, tuple):
+        for element1, element2 in zip(dict1, dict2):
+            if not compare_dicts(element1, element2):
+                return False
+        return True         
     else:
         if isinstance(dict1, torch.Tensor) and isinstance(dict2, torch.Tensor):
             return torch.equal(dict1, dict2)
@@ -683,7 +688,15 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     for epoch in range(epochs):
         #Reset hidden state
         hidden = ac.reset_hidden()
-        ac.pi.logits_net.v_net.eval()
+        hidden_ppo = ac_ppo.reset_hidden()
+        
+        state1 = hidden 
+        state2 = hidden_ppo  
+        assert compare_dicts(state1, state2)            
+        
+        ac.pi.logits_net.v_net.eval()        
+        assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
+        
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o

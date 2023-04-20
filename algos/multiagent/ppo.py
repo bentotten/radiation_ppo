@@ -711,7 +711,7 @@ class AgentPPO:
         self.train_v_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
         
         # Set to eval mode
-        self.agent.set_mode(mode="eval")
+        self.agent.set_mode(mode="eval") # TODO investigate if needs to be ac_ppo.agent.pi.logits_net.v_net.eval() or if pi is ok for RAD-A2C
 
     def reduce_pfgru_training(self):
         """ Reduce localization module training iterations after some number of epochs to speed up training """
