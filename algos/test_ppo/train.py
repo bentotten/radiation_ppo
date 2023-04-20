@@ -32,7 +32,9 @@ def compare_dicts(dict1, dict2):
         for key in dict1.keys():
             if not compare_dicts(dict1[key], dict2[key]):
                 return False
-        return True        
+        return True       
+    elif isinstance(dict1, np.ndarray):
+        return (dict1 == dict2).all()
     elif isinstance(dict1, list):
         for element1, element2 in zip(dict1, dict2):
             if not compare_dicts(element1, element2):
@@ -716,8 +718,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      LocLoss=loc_loss, VarExplain=0)
 
-
-    
     # Prepare for interaction with environment
     start_time = time.time()
     o, _, _, _ = env.reset()
@@ -749,9 +749,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             assert compare_dicts(to_test, hidden)   
             HIDDEN_SAVES += 1                     
         
-        ac.pi.logits_net.v_net.eval()        
-        
         if not TEST_PPO:    
+            ac.pi.logits_net.v_net.eval()                
             assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
         
         for t in range(local_steps_per_epoch):
@@ -760,22 +759,20 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
             
             #compute action and logp (Actor), compute value (Critic)
-            a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-            
-            # # If not testing PPO, save the og state here
-            # if not TEST_PPO:
-            #     torch.save(ac, f'./hidden/{HIDDEN_SAVES}')
-            #     HIDDEN_SAVES += 1
-            # # Else, ensure matches og parameters
-            # else:
-            #     to_test = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-            #     to_test.load_state_dict(torch.load(f'./hidden/{HIDDEN_SAVES}'))
+            if TEST_PPO:
+                a, v, logp, hidden, out_pred = ac.step({0: obs_std}, hidden=hidden)   
                 
-            #     state1 = to_test.state_dict()
-            #     state2 = ac.state_dict()
-            #     assert compare_dicts(state1, state2)  
-            #     HIDDEN_SAVES += 1
-                                           
+                # Test against saved values
+                to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+                assert compare_dicts(to_test, [a, v, logp, hidden, out_pred])   
+                HIDDEN_SAVES += 1      
+                                            
+            if not TEST_PPO:
+                a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
+                
+                # Save values
+                torch.save([a, v, logp, hidden, out_pred], f'./hidden/{HIDDEN_SAVES}')
+                HIDDEN_SAVES += 1                                         
                 
             next_o, r, d, _ = env.step({0: a})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
@@ -810,7 +807,22 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
                     obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                    _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
+                    
+                    if TEST_PPO:
+                        _, v, _, _, _ = ac.step({0: obs_std}, hidden=hidden)   
+                
+                        # Test against saved value
+                        to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+                        assert compare_dicts(to_test, v)   
+                        HIDDEN_SAVES += 1                                                            
+                    
+                    if not TEST_PPO:
+                        _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
+                        
+                        # Save value
+                        torch.save(v, f'./hidden/{HIDDEN_SAVES}')
+                        HIDDEN_SAVES += 1                
+                    
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
@@ -876,20 +888,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             reduce_v_iters = False
 
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=loss)
-        
-        # # TEST UPDATE! 
-        # if not TEST_PPO:
-        #     torch.save(ac, f'./hidden/{HIDDEN_SAVES}')
-        #     HIDDEN_SAVES += 1
-        # # Else, ensure matches og parameters
-        # else:
-        #     to_test = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-        #     to_test.load_state_dict(torch.load(f'./hidden/{HIDDEN_SAVES}'))
-            
-        #     state1 = to_test.state_dict()
-        #     state2 = ac.state_dict()
-        #     assert compare_dicts(state1, state2)    
+        if TEST_PPO:
+            ac.update_agent()
+        if not TEST_PPO:
+            update(env, bp_args, loss_fcn=loss)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
