@@ -552,6 +552,8 @@ class AgentPPO:
     def __post_init__(self):
         
         self.reduce_pfgru_iters = True
+        #torch.manual_seed(seed)
+
         
         """Initialize Agent's neural network architecture"""
 

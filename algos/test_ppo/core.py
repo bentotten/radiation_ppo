@@ -82,7 +82,7 @@ class PFRNNBaseCell(nn.Module):
     """parent class for PFRNNs
     """
     def __init__(self, num_particles, input_size, hidden_size, resamp_alpha,
-            use_resampling, activation):
+            use_resampling, activation, initialize = 'rand'):
         """init function
         
         Arguments:
@@ -101,7 +101,7 @@ class PFRNNBaseCell(nn.Module):
         self.resamp_alpha = resamp_alpha
         self.use_resampling = use_resampling
         self.activation = activation
-        self.initialize = 'rand'
+        self.initialize = initialize
         if activation == 'relu':
              self.batch_norm = nn.BatchNorm1d(self.num_particles, track_running_stats=False)
 
@@ -161,9 +161,9 @@ class PFRNNBaseCell(nn.Module):
 
 
 class PFGRUCell(PFRNNBaseCell):
-    def __init__(self, num_particles, input_size, obs_size, hidden_size, resamp_alpha, use_resampling, activation):
+    def __init__(self, num_particles, input_size, obs_size, hidden_size, resamp_alpha, use_resampling, activation, initialize):
         super().__init__(num_particles, input_size, hidden_size, resamp_alpha,
-                use_resampling, activation)
+                use_resampling, activation, initialize)
 
         self.fc_z = nn.Linear(self.h_dim + self.input_size, self.h_dim)
         self.fc_r = nn.Linear(self.h_dim + self.input_size, self.h_dim)
@@ -334,8 +334,9 @@ class Actor(nn.Module):
 
 class MLPCategoricalActor(Actor):
     
-    def __init__(self, input_dim, act_dim, hidden_sizes, activation,net_type=None,batch_s=1):
+    def __init__(self, input_dim, act_dim, hidden_sizes, activation,net_type=None,batch_s=1, initialize='rand'):
         super().__init__()
+        self.initialize=initialize
         if net_type == 'rnn':
             self.logits_net = RecurrentNet(input_dim,act_dim, hidden_sizes, activation, batch_s=batch_s,rec_type='rnn')
         else:
@@ -357,7 +358,11 @@ class MLPCategoricalActor(Actor):
 
     def _get_init_states(self):
         std = 1.0 / math.sqrt(self.logits_net.hs)
-        init_weights = torch.FloatTensor(1,1,self.logits_net.hs).uniform_(-std,std)
+        if self.initialize == 'rand':
+            init_weights = torch.FloatTensor(1,1,self.logits_net.hs).uniform_(-std,std)
+        else:
+            # For testing purposes, make this predictable
+            init_weights = torch.linspace(start=-std, end=std, steps=self.logits_net.hs).resize(1,1,self.logits_net.hs)
         return init_weights[0,:,None]
 
 
@@ -383,7 +388,7 @@ class RecurrentNet(nn.Module):
 class RNNModelActorCritic(nn.Module):
     def __init__(self, observation_space, action_space, hidden = (32,),
                  hidden_sizes_pol=(64,), hidden_sizes_val=(64,64), hidden_sizes_rec=(64,),
-                 activation=nn.Tanh,net_type=None, pad_dim=2,batch_s=1, seed=0):
+                 activation=nn.Tanh,net_type=None, pad_dim=2,batch_s=1, seed=0, initialize='rand'):
         super().__init__()
         self.seed_gen = torch.manual_seed(seed)
         obs_dim = observation_space.shape[0]# + pad_dim
@@ -394,15 +399,15 @@ class RNNModelActorCritic(nn.Module):
         hidden_sizes = hidden + hidden_sizes_pol + hidden_sizes_val
         
         if hidden_sizes_pol[0][0] == 1:
-            self.pi = MLPCategoricalActor(self.pi_hs, action_space.n, None, activation, net_type=net_type,batch_s=batch_s)
+            self.pi = MLPCategoricalActor(self.pi_hs, action_space.n, None, activation, net_type=net_type,batch_s=batch_s, initialize=initialize)
         else:
-            self.pi = MLPCategoricalActor(obs_dim + pad_dim , action_space.n, hidden_sizes, activation, net_type=net_type,batch_s=batch_s)
+            self.pi = MLPCategoricalActor(obs_dim + pad_dim , action_space.n, hidden_sizes, activation, net_type=net_type,batch_s=batch_s, initialize=initialize)
 
         self.num_particles = 40
         self.alpha = 0.7
         
         #self.model   = SeqLoc(obs_dim-8,[hidden_sizes_rec]+[[24]],1)
-        self.model  = PFGRUCell(self.num_particles,obs_dim-8,obs_dim-8,self.bpf_hsize,self.alpha,True, 'tanh') #obs_dim, hidden_sizes_pol[0]
+        self.model  = PFGRUCell(self.num_particles,obs_dim-8,obs_dim-8,self.bpf_hsize,self.alpha,True, 'tanh', initialize) #obs_dim, hidden_sizes_pol[0]
 
     def step(self, obs, hidden=None):
         with torch.no_grad():

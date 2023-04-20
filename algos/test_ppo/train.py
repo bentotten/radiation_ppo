@@ -18,6 +18,7 @@ from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage, AgentPPO
 
 TEST_OPTIMIZER = False 
+TEST_PPO = True # Sets up PFGRU to init hidden with zeros; should be turned off if seeing if AGENTPPO can train in old environment
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
@@ -690,9 +691,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         hidden = ac.reset_hidden()
         hidden_ppo = ac_ppo.reset_hidden()
         
-        state1 = hidden 
-        state2 = hidden_ppo  
-        assert compare_dicts(state1, state2)            
+        if TEST_PPO:
+            state1 = hidden 
+            state2 = hidden_ppo  
+            assert compare_dicts(state1, state2)            
         
         ac.pi.logits_net.v_net.eval()        
         assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
@@ -875,10 +877,26 @@ if __name__ == '__main__':
     from rl_tools.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
+    if TEST_PPO:
+        pfrgu_init = 'zeros'
+    else:
+        pfrgu_init = 'rand'
+    
     #Run ppo training function
-    ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
-        ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
-        hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
-        seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False)
+    ppo(
+        lambda : gym.make(args.env,**init_dims), 
+        actor_critic=core.RNNModelActorCritic,
+        ac_kwargs= dict(
+            hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
+            hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch, initialize=pfrgu_init
+            ), 
+        gamma=args.gamma, 
+        alpha=args.alpha,
+        seed=robust_seed, 
+        steps_per_epoch=args.steps_per_epoch, 
+        epochs=args.epochs,
+        dims= init_dims,
+        logger_kwargs=logger_kwargs,
+        render=False, 
+        save_gif=False)
     
