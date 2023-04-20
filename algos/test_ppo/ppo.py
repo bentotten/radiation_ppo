@@ -111,10 +111,7 @@ class OptimizationStorage:
     ensuring a destructively large policy update doesn't happen, an entropy parameter for randomness/entropy, and the target kl divergence
     for early stopping.
 
-    :param train_pi_iters: (int) Maximum number of gradient descent steps to take on actor policy loss per epoch. (Early stopping may cause
-        optimizer to take fewer than this.)
-    :param train_v_iters: (int) Number of gradient descent steps to take on critic state-value function per epoch.
-    :param train_pfgru_iters: (int) Number of gradient descent steps to take for source localization neural network (the PFGRU unit)
+    :param critic_flag: (bool) Indicate if there is a critic
     :param {*}_optimizer: (torch.optim) Pytorch Optimizer with learning rate decay [Torch]
     :param clip_ratio: (float) Hyperparameter for clipping in the policy objective. Roughly: how far can the new policy go from the old policy
         while still profiting (improving the objective function)? The new policy can still go farther than the clip_ratio says, but it doesn't
@@ -124,16 +121,10 @@ class OptimizationStorage:
     :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used
         for early stopping. It's usually small, 0.01 or 0.05.
     """
-
-    train_pi_iters: int
-    train_v_iters: Union[int, None]
-    train_pfgru_iters: int
+    critic_flag: bool
     pi_optimizer: torch.optim.Optimizer
     critic_optimizer: Union[torch.optim.Optimizer, None]
     model_optimizer: torch.optim.Optimizer
-    # clip_ratio: float
-    # alpha: float
-    # target_kl: float
 
     # Initialized elsewhere
     #: Schedules gradient steps for actor
@@ -155,15 +146,12 @@ class OptimizationStorage:
             self.model_optimizer, step_size=100, gamma=0.99
         )
 
-        if self.train_v_iters and self.critic_optimizer:
+        if self.critic_flag:
             self.critic_scheduler = torch.optim.lr_scheduler.StepLR(
                 self.critic_optimizer, step_size=100, gamma=0.99
             )
         else:
             self.critic_scheduler = None  # RAD-A2C has critic embeded in pi
-    
-    def reduce_pfgru_training(self):
-        self.train_pfgru_iters = 5
         
 
 # Ok now
@@ -370,7 +358,7 @@ class PPOBuffer:
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1]  # Remove last non-step element
         
-        self.path_start_idx = self.ptr
+        self.path_start_idx = self.ptr # Update start index
 
     def get(self) -> Dict[str, object]:
         """
@@ -416,7 +404,7 @@ class PPOBuffer:
             )
         )
 
-        # Save in a giant tensor
+        # Save in a giant tensor for RAD-A2C
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
 
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
@@ -552,8 +540,6 @@ class AgentPPO:
     def __post_init__(self):
         
         self.reduce_pfgru_iters = True
-        #torch.manual_seed(seed)
-
         
         """Initialize Agent's neural network architecture"""
 
@@ -581,9 +567,7 @@ class AgentPPO:
 
             # Initialize learning opitmizers
             self.agent_optimizer = OptimizationStorage(
-                train_pi_iters=self.train_pi_iters,
-                train_v_iters=None,  # Critic is embeded in policy for RAD-A2C
-                train_pfgru_iters=self.train_pfgru_iters,
+                critic_flag = False,
                 pi_optimizer=Adam(
                     self.agent.pi.parameters(), lr=self.actor_learning_rate
                 ),
@@ -592,9 +576,6 @@ class AgentPPO:
                     self.agent.model.parameters(), lr=self.pfgru_learning_rate
                 ),
                 MSELoss=torch.nn.MSELoss(reduction="mean"),
-                # clip_ratio=self.clip_ratio,
-                # alpha=self.alpha,
-                # target_kl=self.target_kl,
             )
         else:
             raise ValueError("Unsupported Neural Network type requested")
@@ -612,17 +593,13 @@ class AgentPPO:
         else:
             raise ValueError("Steps per epoch cannot be 0")
         
-        self.train_pfgru_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
-        self.train_pi_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))
-        self.train_v_iters = lambda: (_ for _ in ()).throw(Exception("Calling PPO iters instead of optimizer storage! Make a passthrouh! "))    
-        
         # Set to eval mode
-        self.agent.set_mode(mode="eval")         
+        self.agent.set_mode(mode="eval") # TODO investigate if needs to be ac_ppo.agent.pi.logits_net.v_net.eval() or if pi is ok for RAD-A2C
 
     def reduce_pfgru_training(self):
-        """Reduce localization module training iterations after some number of epochs to speed up training"""
+        """ Reduce localization module training iterations after some number of epochs to speed up training"""
         if self.reduce_pfgru_iters:
-            self.agent_optimizer.reduce_pfgru_training()
+            self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False
 
     def step(
@@ -895,7 +872,7 @@ class AgentPPO:
             * logp: (tensor) batch of action logprobabilities.
             * loc_pred: (tensor) batch of predicted location by PFGRU.
             * ep_len: (tensor[int]) single dimension int of length of episode.
-            * ep_form: (tensor) Episode form
+            * ep_form: (List) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
         :param index: (int) If doing a single observation at a time, index for data[]
         """
         # NOTE: Not using observation tensor, using internal map buffer
@@ -1258,7 +1235,7 @@ class AgentPPO:
         """Wrapper for network"""
         self.agent.load(checkpoint_path=path)
 
-    def sync_params(self):
+    def sync_params(self)->None:
         sync_params(self.agent)
 
     def store_episode_length(self, episode_length: int)-> None:

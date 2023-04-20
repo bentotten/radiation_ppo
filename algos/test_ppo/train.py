@@ -834,10 +834,16 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 buf.finish_path(v)
                 new_buffer.GAE_advantage_and_rewardsToGO(v)
                 
+                if TEST_PPO:
+                    ac.GAE_advantage_and_rewardsToGO(v)
+                
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
                     new_buffer.store_episode_length(episode_length=ep_len)
+                    
+                    if TEST_PPO:
+                        ac.store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
