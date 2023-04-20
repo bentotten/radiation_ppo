@@ -751,6 +751,7 @@ class AgentPPO:
 
         :param logger: (EpochLogger) Logger used for RAD-A2C updates.
         """
+
         def sample(self, data, minibatch=None):
             """Get sample indexes of episodes to train on"""
             if not minibatch:
@@ -765,7 +766,7 @@ class AgentPPO:
 
         # Put agents in train mode
         self.agent.set_mode(mode="train")
-        
+
         # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get()
         min_iterations = len(data["ep_form"]) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
@@ -818,6 +819,8 @@ class AgentPPO:
         else:
             # TODO get PFGRU working with RAD-TEAM
             model_loss = torch.tensor(0)
+
+
 
             # Get mapstacks from buffer or inflate from logs, if in max-memory mode
             if PRIO_MEMORY:
@@ -905,10 +908,10 @@ class AgentPPO:
                     VarExplain=0,
                 )
 
-        # Put agents in train mode
-        self.agent.set_mode(mode="eval")
-        
-        return results
+        # Take agents out of train mode
+        self.agent.set_mode(mode="eval")    
+        # Log changes from update
+        return results            
 
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch=None):
         """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""

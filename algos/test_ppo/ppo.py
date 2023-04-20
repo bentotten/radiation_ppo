@@ -668,6 +668,9 @@ class AgentPPO:
                 indexes, size=number_of_samples, replace=False
             )  # Uniform
 
+        # Put agents in train mode
+        self.agent.set_mode(mode="train")
+
         # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get()
         min_iterations = len(data["ep_form"])
@@ -705,7 +708,7 @@ class AgentPPO:
             self.agent_optimizer.pfgru_scheduler.step()
 
             # Log changes from update
-            return UpdateResult(
+            results = UpdateResult(
                 stop_iteration=kk,
                 loss_policy=update_results["pi_l"].item(),  # type: ignore
                 loss_critic=update_results["pi_info"]["val_loss"].item(),  # type: ignore
@@ -810,11 +813,10 @@ class AgentPPO:
                     VarExplain=0,
                 )
 
-            # Take agents out of train mode
-            self.agent.set_mode(mode="eval")
-
-            # Log changes from update
-            return results
+        # Put agents in train mode
+        self.agent.set_mode(mode="eval")
+        
+        return results
 
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch=None):
         """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""

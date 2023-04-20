@@ -907,11 +907,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
         
         #Reduce localization module training iterations after 100 epochs to speed up training
-        if reduce_v_iters and epoch > 99:
-            optimization.reduce_pfgru_training()
-            train_v_iters = 5
-            reduce_v_iters = False
-
+        if TEST_PPO:
+            ac.reduce_pfgru_training()
+        if not TEST_PPO:
+            if reduce_v_iters and epoch > 99:        
+                train_v_iters = 5
+                reduce_v_iters = False        
+       
         # Perform PPO update!
         if TEST_PPO:
             results = ac.update_agent()
