@@ -773,6 +773,7 @@ class AgentPPO:
         kk = 0
         term = False
 
+        results: UpdateResult
         # Train RAD-A2C framework
         if (
             self.actor_critic_architecture == "rnn"
@@ -859,8 +860,6 @@ class AgentPPO:
             # self.agent_optimizer.pfgru_scheduler.step()
             # Reduce pfgru learning rate
 
-            results: UpdateResult
-
             # If local critic, do Value function learning here
             # For global critic, only first agent performs the update
             if not self.GlobalCriticOptimizer or self.id == 0:
@@ -909,7 +908,7 @@ class AgentPPO:
                 )
 
         # Take agents out of train mode
-        self.agent.set_mode(mode="eval")    
+        self.agent.set_mode(mode="eval")
         # Log changes from update
         return results            
 

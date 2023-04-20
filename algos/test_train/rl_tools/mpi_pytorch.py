@@ -1,15 +1,11 @@
+# type: ignore
 import multiprocessing
 import numpy as np
 import os
 import torch
 import time
 from mpi4py import MPI
-try:
-    from rl_tools.mpi_tools import broadcast, mpi_avg, num_procs, proc_id, mpi_sum  # type: ignore
-except ModuleNotFoundError:
-    from algos.multiagent.rl_tools.mpi_tools import broadcast, mpi_avg, num_procs, proc_id, mpi_sum
-except: 
-    raise Exception
+from rl_tools.mpi_tools import broadcast, mpi_avg, num_procs, proc_id, mpi_sum
 
 def setup_pytorch_for_mpi():
     """
@@ -141,7 +137,7 @@ def plot_mu(x_mu,x_sig):
         #print('Plot mu',x_mu)
         #import sys
         #sys.exit()
-        import matplotlib.pyplot as plt # type: ignore
+        import matplotlib.pyplot as plt
         plt.figure()
         plt.subplot(121)
         plt.plot(range(len(x_mu)),x_mu)

@@ -896,7 +896,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     done_count = 0; oob = 0
                     o, _, _, _ = env.reset()
                     o = o[0]
-                    ep_ret, ep_len, a = 0, 0, -1                       
+                    ep_ret, ep_len, a = 0, 0, -1
 
                 stat_buff.update(o[0])
 
@@ -908,7 +908,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         
         #Reduce localization module training iterations after 100 epochs to speed up training
         if TEST_PPO:
-            ac.reduce_pfgru_training()
+            if epoch > 99:                    
+                ac.reduce_pfgru_training()
         if not TEST_PPO:
             if reduce_v_iters and epoch > 99:        
                 train_v_iters = 5
@@ -935,6 +936,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
         logger.log_tabular('EpRet', with_min_and_max=True)
+        logger.log_tabular('OutOfBound', average_only=True)     
+        logger.log_tabular('StopIter', average_only=True)           
         logger.log_tabular('EpLen', average_only=True)
         logger.log_tabular('VVals', with_min_and_max=True)
         logger.log_tabular('TotalEnvInteracts', (epoch+1)*steps_per_epoch)
@@ -946,8 +949,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         logger.log_tabular('KL', average_only=True)
         logger.log_tabular('ClipFrac', average_only=True)
         logger.log_tabular('DoneCount', sum_only=True)
-        logger.log_tabular('OutOfBound', average_only=True)
-        logger.log_tabular('StopIter', average_only=True)
         logger.log_tabular('Time', time.time()-start_time)
         logger.dump_tabular()
 
@@ -991,13 +992,13 @@ if __name__ == '__main__':
         "enforce_grid_boundaries": False
         }
 
-    max_ep_step = 120 if args.steps_per_epoch != 3 else 3
+    max_ep_step = 120
     if args.cpu > 1:
         #max cpus, steps in batch must be greater than the max eps steps times num. of cpu
         tot_epoch_steps = args.cpu * args.steps_per_epoch
         args.steps_per_epoch = tot_epoch_steps if tot_epoch_steps > args.steps_per_epoch else args.steps_per_epoch
         print(f'Sys cpus (avail, using): ({os.cpu_count()},{args.cpu}), Steps set to {args.steps_per_epoch}')
-        mpi_fork(args.cpu)  # run parallel code with mpi   
+        mpi_fork(args.cpu)  # run parallel code with mpi
     
     #Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]

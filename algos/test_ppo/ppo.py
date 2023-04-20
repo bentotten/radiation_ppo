@@ -724,9 +724,6 @@ class AgentPPO:
             # TODO get PFGRU working with RAD-TEAM
             model_loss = torch.tensor(0)
 
-            # Put agents in train mode
-            self.agent.set_mode(mode="train")
-
             # Get mapstacks from buffer or inflate from logs, if in max-memory mode
             if PRIO_MEMORY:
                 actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
@@ -813,7 +810,7 @@ class AgentPPO:
                     VarExplain=0,
                 )
 
-        # Put agents in train mode
+        # Put agents in eval mode
         self.agent.set_mode(mode="eval")
         
         return results

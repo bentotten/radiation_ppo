@@ -214,35 +214,31 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     # Prepare for interaction with environment
     start_time = time.time()
-    
-    o, _, _, _ = env.reset() # TODO needs multi-agent
+    o, _, _, _ = env.reset()
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    
     stat_buff = core.StatBuff()
     stat_buff.update(o[0])
     ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
-    ac.model.eval()
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
         #Reset hidden state
         hidden = ac.reset_hidden()
-        ac.pi.logits_net.v_net.eval()
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
             obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
             #compute action and logp (Actor), compute value (Critic)
-            a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-            next_o, r, d, _ = env.step(a)
+            next_o, r, d, _ = env.step({0: a})
+            next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
             ep_ret += r
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            buf.store(obs_std, a, r, v, logp, env.src_coords)
+            ac.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)     
             logger.store(VVals=v)
 
             # Update obs (critical!)
@@ -258,7 +254,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             if terminal or epoch_ended:
                 if d and not timeout:
                     done_count += 1
-                if env.oob:
+                if env.get_agent_outOfBounds_count(id=0) > 0:
                     #Log if agent went out of bounds
                     oob += 1
                 if epoch_ended and not(terminal):
@@ -267,16 +263,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
                     obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                    _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
+                    
+                    _, v, _, _, _ = ac.step({0: obs_std}, hidden=hidden) 
                     if epoch_ended:
                         #Set flag to sample new environment parameters
                         env.epoch_end = True
                 else:
                     v = 0
-                buf.finish_path(v)
+                ac.GAE_advantage_and_rewardsToGO(v)
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
-                    logger.store(EpRet=ep_ret, EpLen=ep_len)
+                    ac.store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
@@ -289,13 +286,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
-                    o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    o, _, _, _ = env.reset()
+                    o = o[0]
+                    ep_ret, ep_len, a = 0, 0, -1                    
                 else:
                     #Sample new environment parameters, log epoch results
-                    oob += env.oob_count
+                    oob += env.get_agent_outOfBounds_count(id=0)
                     logger.store(DoneCount=done_count, OutOfBound=oob)
                     done_count = 0; oob = 0
-                    o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    o, _, _, _ = env.reset()
+                    o = o[0]
+                    ep_ret, ep_len, a = 0, 0, -1
 
                 stat_buff.update(o[0])
 
@@ -311,7 +312,20 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             reduce_v_iters = False
 
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=loss)
+        #update(env, bp_args, loss_fcn=loss)
+        results = ac.update_agent()
+        
+        logger.store(
+            StopIter=results.stop_iteration,
+            LossPi= results.loss_policy,
+            LossV= results.loss_critic,
+            LossModel = results.loss_predictor,
+            KL=results.kl_divergence, 
+            Entropy= results.Entropy, 
+            ClipFrac= results.ClipFrac,
+            LocLoss= results.LocLoss, 
+            VarExplain=0
+            )         
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -335,7 +349,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='gym_rad_search:RadSearch-v0')
+    parser.add_argument('--env', type=str, default='gym_rad_search:RadSearchMulti-v1')
     parser.add_argument('--hid_gru', type=int, default=[24],help='A2C GRU hidden state size')
     parser.add_argument('--hid_pol', type=int, default=[32],help='Actor linear layer size') 
     parser.add_argument('--hid_val', type=int, default=[32],help='Critic linear layer size') 
@@ -364,8 +378,14 @@ if __name__ == '__main__':
     args.env_name = 'bpf'
     args.exp_name = ('loc'+str(args.hid_rec[0])+'_hid' + str(args.hid_gru[0]) + '_pol'+str(args.hid_pol[0]) +'_val'
                     +str(args.hid_val[0])+'_'+args.exp_name + f'_ep{args.epochs}'+f'_steps{args.steps_per_epoch}')
-    init_dims = {'bbox':args.dims,'area_obs':args.area_obs, 
-                 'obstruct':args.obstruct}
+    init_dims = {
+        'bbox':args.dims,
+        'observation_area':args.area_obs, 
+        'obstruction_count':args.obstruct,
+        "number_agents": 1, # TODO change for MARL
+        "enforce_grid_boundaries": False
+        }
+
     max_ep_step = 120
     if args.cpu > 1:
         #max cpus, steps in batch must be greater than the max eps steps times num. of cpu
@@ -377,16 +397,27 @@ if __name__ == '__main__':
     #Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]
     rng = np.random.default_rng(robust_seed)
-    init_dims['seed'] = rng
+    init_dims['np_random'] = rng
 
     #Setup logger for tracking training metrics
     from rl_tools.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
     
     #Run ppo training function
-    ppo(lambda : gym.make(args.env,**init_dims), actor_critic=core.RNNModelActorCritic,
-        ac_kwargs=dict(hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
-        hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch), gamma=args.gamma, alpha=args.alpha,
-        seed=robust_seed, steps_per_epoch=args.steps_per_epoch, epochs=args.epochs,dims= init_dims,
-        logger_kwargs=logger_kwargs,render=False, save_gif=False)
+    ppo(
+        lambda : gym.make(args.env,**init_dims), 
+        actor_critic=core.RNNModelActorCritic,
+        ac_kwargs= dict(
+            hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
+            hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch
+            ), 
+        gamma=args.gamma, 
+        alpha=args.alpha,
+        seed=robust_seed, 
+        steps_per_epoch=args.steps_per_epoch, 
+        epochs=args.epochs,
+        dims= init_dims,
+        logger_kwargs=logger_kwargs,
+        render=False, 
+        save_gif=False)
     

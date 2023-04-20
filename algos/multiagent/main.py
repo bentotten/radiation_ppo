@@ -475,7 +475,6 @@ def main() -> None:
     exp_name: str = args.exp_name + "_agents" + str(args.agent_count)
 
     # Generate a large random seed and random generator object for reproducibility
-    # Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1 + proc_id()) * args.seed))[0]
     rng = npr.default_rng(robust_seed)
 
@@ -690,8 +689,8 @@ def main() -> None:
     #         simulation.evaluate()
     #     except Exception as err:
     #         log_state(err)
-    else:
-        raise Exception("Unknown mode specified. Acceptable modes: train, evaluate")
+    
+    print('Complete')
 
 
 if __name__ == "__main__":
