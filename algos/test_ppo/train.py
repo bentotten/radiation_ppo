@@ -17,6 +17,7 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage
 
+TEST_OPTIMIZER = True # TODO change to false before resuming testing, or model will be updated twice
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
@@ -330,11 +331,29 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 model_loss_arr[ii] = loss(loc_pred.squeeze(),src_tar.squeeze())
             
             model_loss = model_loss_arr.mean()
+
+            if TEST_OPTIMIZER:
+                state1 = model_optimizer.state_dict() 
+                state2 = optimization.model_optimizer.state_dict()          
+                assert compare_dicts(state1, state2)
+            
             model_optimizer.zero_grad()
+            
+            if TEST_OPTIMIZER:            
+                optimization.model_optimizer.zero_grad()          
+            
             model_loss.backward()
             mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            model_optimizer.step()    
+            
+            model_optimizer.step()   
+            
+            if TEST_OPTIMIZER: 
+                optimization.model_optimizer.step()       
+                
+                state1 = model_optimizer.state_dict() 
+                state2 = optimization.model_optimizer.state_dict()          
+                assert compare_dicts(state1, state2)      
 
         return model_loss
             
@@ -375,6 +394,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ent = pi.entropy().detach().mean().item()
             val_loss = loss(val,ret)
             
+            if TEST_OPTIMIZER:
+                assert optimization.MSELoss(val, ret) == val_loss
+            
             loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
             loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
             
@@ -388,22 +410,27 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         kl = mpi_avg(pi_info['kl'][-1])
         if kl.item() < 1.5 * target_kl:
             
-            state1 = pi_optimizer.state_dict() 
-            state2 = optimization.pi_optimizer.state_dict()          
-            assert compare_dicts(state1, state2)
+            if TEST_OPTIMIZER:
+                state1 = pi_optimizer.state_dict() 
+                state2 = optimization.pi_optimizer.state_dict()          
+                assert compare_dicts(state1, state2)
             
             pi_optimizer.zero_grad() 
-            optimization.pi_optimizer.zero_grad()
+            
+            if TEST_OPTIMIZER:
+                optimization.pi_optimizer.zero_grad()
             
             loss_pi.backward()
             #Average gradients across processes
             mpi_avg_grads(ac.pi)
             pi_optimizer.step()
-            optimization.pi_optimizer.step()
             
-            state1 = pi_optimizer.state_dict() 
-            state2 = optimization.pi_optimizer.state_dict()          
-            assert compare_dicts(state1, state2)
+            if TEST_OPTIMIZER:
+                optimization.pi_optimizer.step()
+            
+                state1 = pi_optimizer.state_dict() 
+                state2 = optimization.pi_optimizer.state_dict()          
+                assert compare_dicts(state1, state2)
             
             term = False
         else:
@@ -481,7 +508,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 model_loss_arr[ii] = total_loss
             
             model_loss = model_loss_arr.mean()
+            
+            if TEST_OPTIMIZER:            
+                state1 = model_optimizer.state_dict() 
+                state2 = optimization.model_optimizer.state_dict()          
+                assert compare_dicts(state1, state2)
+                                        
             model_optimizer.zero_grad()
+            
+            if TEST_OPTIMIZER:
+                optimization.model_optimizer.zero_grad()
+            
             model_loss.backward()
 
             #Average gradients across the processes
@@ -489,6 +526,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
             
             model_optimizer.step() 
+            
+            if TEST_OPTIMIZER:
+                optimization.model_optimizer.step()
+                state1 = model_optimizer.state_dict() 
+                state2 = optimization.model_optimizer.state_dict()          
+                assert compare_dicts(state1, state2)
+                                    
         
         return model_loss
     
@@ -499,15 +543,16 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
     loss = torch.nn.MSELoss(reduction='mean')
     
-    optimization = OptimizationStorage(
-                train_pi_iters=train_pi_iters,
-                train_v_iters=None,
-                train_pfgru_iters=train_v_iters,
-                pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-                critic_optimizer=None, 
-                model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
-                MSELoss=torch.nn.MSELoss(reduction="mean"),
-            )
+    if TEST_OPTIMIZER:
+        optimization = OptimizationStorage(
+                    train_pi_iters=train_pi_iters,
+                    train_v_iters=None,
+                    train_pfgru_iters=train_v_iters,
+                    pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+                    critic_optimizer=None, 
+                    model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
+                    MSELoss=torch.nn.MSELoss(reduction="mean"),
+                )
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
@@ -562,9 +607,29 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
             kk += 1
         
+        if TEST_OPTIMIZER:
+            state1 = pi_scheduler.state_dict() 
+            state2 = optimization.pi_scheduler.state_dict()          
+            assert compare_dicts(state1, state2)
+            state1 = model_scheduler.state_dict() 
+            state2 = optimization.pfgru_scheduler.state_dict()          
+            assert compare_dicts(state1, state2)                    
+        
         #Reduce learning rate
         pi_scheduler.step()
         model_scheduler.step()
+        
+        if TEST_OPTIMIZER:
+            optimization.pi_scheduler.step()
+            optimization.pfgru_scheduler.step()
+
+            state1 = pi_scheduler.state_dict() 
+            state2 = optimization.pi_scheduler.state_dict()          
+            assert compare_dicts(state1, state2)
+            state1 = model_scheduler.state_dict() 
+            state2 = optimization.pfgru_scheduler.state_dict()          
+            assert compare_dicts(state1, state2)            
+            
 
         logger.store(StopIter=kk)
 
