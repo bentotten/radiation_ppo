@@ -1261,6 +1261,15 @@ class AgentPPO:
     def sync_params(self):
         sync_params(self.agent)
 
+    def store_episode_length(self, episode_length: int)-> None:
+        self.ppo_buffer.store_episode_length(episode_length=episode_length)
+        
+    def GAE_advantage_and_rewardsToGO(self, last_state_value: float = 0.0) -> None:
+        self.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value=last_state_value)
+    
+    def store(self, **kwargs)->None:
+        self.ppo_buffer(**kwargs)
+
     def render(
         self,
         savepath: str = ".",

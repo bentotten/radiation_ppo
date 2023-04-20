@@ -413,7 +413,7 @@ class train_PPO:
                         reward = rewards["team_reward"]
 
                     # Store in PPO Buffer
-                    ac.ppo_buffer.store(
+                    ac.store(
                         obs=observations[id],
                         rew=reward,
                         act=agent_action_decisions[id],
@@ -487,7 +487,7 @@ class train_PPO:
 
                     # Finish the trajectory and compute advantages.
                     for id, ac in self.agents.items():
-                        ac.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value)
+                        ac.GAE_advantage_and_rewardsToGO(last_state_value)
 
                     # If the episode is over, save episode returns and episode length.
                     if episode_over:
@@ -495,7 +495,7 @@ class train_PPO:
                             self.loggers[id].store(
                                 EpRet=episode_return[id], EpLen=steps_in_episode
                             )
-                            ac.ppo_buffer.store_episode_length(
+                            ac.store_episode_length(
                                 episode_length=steps_in_episode
                             )
 
