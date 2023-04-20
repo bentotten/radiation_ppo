@@ -628,14 +628,14 @@ class AgentPPO:
     def step(
         self,
         observations: Dict[int, List[Any]],
-        hiddens: Union[None, List[torch.Tensor]] = None,
+        hidden: Union[None, Tuple[torch.Tensor]] = None,
         message: Union[None, Dict] = None,
     ) -> Any:
         """
         Wrapper for neural network action selection
 
         :param observations: (Dict) Observations from all agents.
-        :param hiddens: (Dict) Hidden layer values for each agent. Only compatible with RAD-A2C.
+        :param hiddens: (Tuple) Hidden layer values for individual agent. Only compatible with RAD-A2C.
         :param message: (Dict) Information from the episode.
 
         """
@@ -645,14 +645,11 @@ class AgentPPO:
             or self.actor_critic_architecture == "mlp"
         ):
             # a, v, logp, hidden, out_pred = self.agent.step(obs=observations[self.id], hidden=hiddens) # type: ignore
-            results, heatmaps = self.agent.step(
-                obs=observations[self.id], hidden=hiddens
+            a, v, logp, hidden, out_pred = self.agent.step(
+                obs=observations[self.id], hidden=hidden
             )
-        else:
-            results, heatmaps = self.agent.select_action(
-                observations, self.id
-            )  # TODO add in hidden layer shenanagins for PFGRU use
-        return results, heatmaps
+
+        return a, v, logp, hidden, out_pred
 
     def reset_agent(self) -> None:
         """

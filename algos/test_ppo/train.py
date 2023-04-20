@@ -18,7 +18,9 @@ from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage, AgentPPO
 
 TEST_OPTIMIZER = False 
-TEST_PPO = True # Sets up PFGRU to init hidden with zeros; should be turned off if seeing if AGENTPPO can train in old environment
+TEST_PPO = False  # Different approach - if TEST_PPO, load the new PPO and see if it matches saved parameters for each step from og 
+
+HIDDEN_SAVES = 0
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
@@ -284,50 +286,84 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     #Instantiate A2C
     ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
-    # TEST AGENTPPO 
-    ac_kwargs['observation_space'] = env.observation_space
-    ac_kwargs['action_space'] = env.action_space
-    bp_args = {
-        'bp_decay' : 0.1,
-        'l2_weight':1.0, 
-        'l1_weight':0.0,
-        'elbo_weight':1.0,
-        'area_scale':env.search_area[2][1]
-        }    
-    
-    ppo_kwargs = dict(
-        observation_space=env.observation_space.shape[0],
-        bp_args=bp_args,
-        steps_per_epoch=steps_per_epoch,
-        steps_per_episode=120,
-        number_of_agents=1,
-        env_height=env.search_area[2][1],
-        actor_critic_args=ac_kwargs,
-        actor_critic_architecture='rnn',
-        minibatch=1,
-        train_pi_iters=train_pi_iters,
-        train_v_iters=None,
-        train_pfgru_iters=train_v_iters,
-        actor_learning_rate=pi_lr,
-        critic_learning_rate=None,
-        pfgru_learning_rate=vf_lr,
-        gamma=gamma,
-        alpha=alpha,
-        clip_ratio=clip_ratio,
-        target_kl=target_kl,
-        lam=lam,
-        GlobalCriticOptimizer=None,
-    )    
-    ac_ppo = AgentPPO(id=0, **ppo_kwargs)    
+    # TEST AGENTPPO as actual decision-makers
+    if TEST_PPO:
+        ac_kwargs['observation_space'] = env.observation_space
+        ac_kwargs['action_space'] = env.action_space
+        bp_args = {
+            'bp_decay' : 0.1,
+            'l2_weight':1.0, 
+            'l1_weight':0.0,
+            'elbo_weight':1.0,
+            'area_scale':env.search_area[2][1]
+            }    
+        
+        ppo_kwargs = dict(
+            observation_space=env.observation_space.shape[0],
+            bp_args=bp_args,
+            steps_per_epoch=steps_per_epoch,
+            steps_per_episode=120,
+            number_of_agents=1,
+            env_height=env.search_area[2][1],
+            actor_critic_args=ac_kwargs,
+            actor_critic_architecture='rnn',
+            minibatch=1,
+            train_pi_iters=train_pi_iters,
+            train_v_iters=None,
+            train_pfgru_iters=train_v_iters,
+            actor_learning_rate=pi_lr,
+            critic_learning_rate=None,
+            pfgru_learning_rate=vf_lr,
+            gamma=gamma,
+            alpha=alpha,
+            clip_ratio=clip_ratio,
+            target_kl=target_kl,
+            lam=lam,
+            GlobalCriticOptimizer=None,
+        )    
+        ac = AgentPPO(id=0, **ppo_kwargs)
+    # Otherwise, just test that initialization matches decision maker
+    else:
+        ac_kwargs['observation_space'] = env.observation_space
+        ac_kwargs['action_space'] = env.action_space
+        bp_args = {
+            'bp_decay' : 0.1,
+            'l2_weight':1.0, 
+            'l1_weight':0.0,
+            'elbo_weight':1.0,
+            'area_scale':env.search_area[2][1]
+            }    
+        
+        ppo_kwargs = dict(
+            observation_space=env.observation_space.shape[0],
+            bp_args=bp_args,
+            steps_per_epoch=steps_per_epoch,
+            steps_per_episode=120,
+            number_of_agents=1,
+            env_height=env.search_area[2][1],
+            actor_critic_args=ac_kwargs,
+            actor_critic_architecture='rnn',
+            minibatch=1,
+            train_pi_iters=train_pi_iters,
+            train_v_iters=None,
+            train_pfgru_iters=train_v_iters,
+            actor_learning_rate=pi_lr,
+            critic_learning_rate=None,
+            pfgru_learning_rate=vf_lr,
+            gamma=gamma,
+            alpha=alpha,
+            clip_ratio=clip_ratio,
+            target_kl=target_kl,
+            lam=lam,
+            GlobalCriticOptimizer=None,
+        )    
+        ac_ppo = AgentPPO(id=0, **ppo_kwargs)        
     
     # Sync params across processes
-    sync_params(ac)
-    
-    ac_ppo.sync_params()
-    
-    state1 = ac.state_dict() 
-    state2 = ac_ppo.agent.state_dict()          
-    assert compare_dicts(state1, state2)    
+    if not TEST_PPO:
+        sync_params(ac)
+    else:
+        ac.sync_params()
 
     #PFGRU args, from Ma et al. 2020
     bp_args = {
@@ -548,30 +584,31 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
     loss = torch.nn.MSELoss(reduction='mean')
     
-    # test pi optimizer
-    state1 = pi_optimizer.state_dict() 
-    state2 = ac_ppo.agent_optimizer.pi_optimizer.state_dict()          
-    assert compare_dicts(state1, state2)
-    
-    # test model_optimizer
-    state1 = model_optimizer.state_dict() 
-    state2 = ac_ppo.agent_optimizer.model_optimizer.state_dict()          
-    assert compare_dicts(state1, state2)    
-    
-    # test pi_scheduler
-    state1 = pi_scheduler.state_dict() 
-    state2 = ac_ppo.agent_optimizer.pi_scheduler.state_dict()          
-    assert compare_dicts(state1, state2)        
-    
-    # test model_scheduler
-    state1 = model_scheduler.state_dict() 
-    state2 = ac_ppo.agent_optimizer.pfgru_scheduler.state_dict()          
-    assert compare_dicts(state1, state2)       
-    
-    # test loss
-    state1 = loss.state_dict() 
-    state2 = ac_ppo.agent_optimizer.MSELoss.state_dict()          
-    assert compare_dicts(state1, state2)        
+    if not TEST_PPO:
+        # test pi optimizer
+        state1 = pi_optimizer.state_dict() 
+        state2 = ac_ppo.agent_optimizer.pi_optimizer.state_dict()          
+        assert compare_dicts(state1, state2)
+        
+        # test model_optimizer
+        state1 = model_optimizer.state_dict() 
+        state2 = ac_ppo.agent_optimizer.model_optimizer.state_dict()          
+        assert compare_dicts(state1, state2)    
+        
+        # test pi_scheduler
+        state1 = pi_scheduler.state_dict() 
+        state2 = ac_ppo.agent_optimizer.pi_scheduler.state_dict()          
+        assert compare_dicts(state1, state2)        
+        
+        # test model_scheduler
+        state1 = model_scheduler.state_dict() 
+        state2 = ac_ppo.agent_optimizer.pfgru_scheduler.state_dict()          
+        assert compare_dicts(state1, state2)       
+        
+        # test loss
+        state1 = loss.state_dict() 
+        state2 = ac_ppo.agent_optimizer.MSELoss.state_dict()          
+        assert compare_dicts(state1, state2)        
     
     if TEST_OPTIMIZER:
         optimization = OptimizationStorage(
@@ -682,29 +719,52 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     reduce_v_iters = True
     ac.model.eval()
     
-    assert ac.model.training == ac_ppo.agent.model.training
+    if not TEST_PPO:
+        assert ac.model.training == ac_ppo.agent.model.training
     
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
         #Reset hidden state
         hidden = ac.reset_hidden()
-        hidden_ppo = ac_ppo.reset_hidden()
         
-        if TEST_PPO:
-            state1 = hidden 
-            state2 = hidden_ppo  
+        # If not testing PPO, save the og hiddens here
+        if not TEST_PPO:
+            torch.save(hidden, f'./hidden_{HIDDEN_SAVES}')
+            HIDDEN_SAVES += 1
+        # Else, ensure matches og parameters
+        else:
+            to_test = load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
+            state1 = to_test.state_dict()
+            state2 = ac.reset_hidden()
             assert compare_dicts(state1, state2)            
         
         ac.pi.logits_net.v_net.eval()        
-        assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
+        
+        if not TEST_PPO:    
+            assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
         
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
             obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            
             #compute action and logp (Actor), compute value (Critic)
             a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
+            
+            # # If not testing PPO, save the og state here
+            # if not TEST_PPO:
+            #     torch.save(ac, f'./hidden_{HIDDEN_SAVES}')
+            #     HIDDEN_SAVES += 1
+            # # Else, ensure matches og parameters
+            # else:
+            #     to_test = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+            #     to_test.load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
+                
+            #     state1 = to_test.state_dict()
+            #     state2 = ac.state_dict()
+            #     assert compare_dicts(state1, state2)                                 
+                
             next_o, r, d, _ = env.step({0: a})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
             ep_ret += r
@@ -766,6 +826,18 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
+                    
+                    # If not testing PPO, save the og state here
+                    if not TEST_PPO:
+                        torch.save(hidden, f'./hidden_{HIDDEN_SAVES}')
+                        HIDDEN_SAVES += 1
+                    # Else, ensure matches og parameters
+                    else:
+                        to_test = load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
+                        state1 = to_test.state_dict()
+                        state2 = ac.reset_hidden()
+                        assert compare_dicts(state1, state2)                         
+                    
                     o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1                    
@@ -795,11 +867,18 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         # Perform PPO update!
         update(env, bp_args, loss_fcn=loss)
         
-        # TEST UPDATE! 
-        ac_ppo.update_agent(logger)
-        state1 = ac.state_dict() 
-        state2 = ac_ppo.agent.state_dict()          
-        assert compare_dicts(state1, state2)    
+        # # TEST UPDATE! 
+        # if not TEST_PPO:
+        #     torch.save(ac, f'./hidden_{HIDDEN_SAVES}')
+        #     HIDDEN_SAVES += 1
+        # # Else, ensure matches og parameters
+        # else:
+        #     to_test = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+        #     to_test.load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
+            
+        #     state1 = to_test.state_dict()
+        #     state2 = ac.state_dict()
+        #     assert compare_dicts(state1, state2)    
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -876,11 +955,6 @@ if __name__ == '__main__':
     #Setup logger for tracking training metrics
     from rl_tools.run_utils import setup_logger_kwargs
     logger_kwargs = setup_logger_kwargs(args.exp_name, args.seed,data_dir='../../models/train',env_name=args.env_name)
-    
-    if TEST_PPO:
-        pfrgu_init = 'zeros'
-    else:
-        pfrgu_init = 'rand'
     
     #Run ppo training function
     ppo(

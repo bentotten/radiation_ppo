@@ -735,7 +735,7 @@ class Test_PPOAgent:
         # Test CNN
         AgentPPO = PPO.AgentPPO(**init_parameters)    
         
-        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
         
         assert heatmaps.actor.shape == torch.Size([1, 5, 28, 28])
         assert heatmaps.critic.shape == torch.Size([1, 4, 28, 28])
@@ -753,7 +753,7 @@ class Test_PPOAgent:
         
         AgentPPO = PPO.AgentPPO(**rada2c_params)    
         
-        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        agent_thoughts, heatmaps = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
         
         assert heatmaps == None
         assert agent_thoughts.action_logprob != None
@@ -779,7 +779,7 @@ class Test_PPOAgent:
         
         # Test CNN
         AgentPPO = PPO.AgentPPO(**init_parameters)    
-        _  = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        _  = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
         assert AgentPPO.agent.reset_flag == 0
         assert AgentPPO.agent.maps.reset_flag == 1
         assert AgentPPO.agent.maps.tools.reset_flag == 1
@@ -796,7 +796,7 @@ class Test_PPOAgent:
         rada2c_params['actor_critic_args'] = rad_a2c_kwargs        
         
         AgentPPO = PPO.AgentPPO(**rada2c_params)    
-        _ = AgentPPO.step(observations=observations, hiddens=hiddens, message=message)
+        _ = AgentPPO.step(observations=observations, hidden=hiddens, message=message)
         # TODO add check for RAD-A2C
 
 

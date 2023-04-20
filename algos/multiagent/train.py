@@ -344,7 +344,7 @@ class train_PPO:
                 agent_thoughts.clear()
                 for id, ac in self.agents.items():
                     agent_thoughts[id], heatmaps = ac.step(
-                        observations=observations, hiddens=hiddens[id], message=infos
+                        observations=observations, hidden=hiddens[id], message=infos
                     )
                     hiddens[id] = agent_thoughts[
                         id
@@ -474,7 +474,7 @@ class train_PPO:
                         # used in that place.
                         for id, ac in self.agents.items():
                             bootstrap_results, _ = ac.step(
-                                observations, hiddens=hiddens[id]
+                                observations, hidden=hiddens[id]
                             )
                             last_state_value = bootstrap_results.state_value
 
