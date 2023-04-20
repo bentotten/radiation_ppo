@@ -114,7 +114,7 @@
       "justMyCode": false,
       //"args": ["--steps_per_epoch", "3"],
       "args": [],
-      "cwd": "${workspaceFolder}/algos/test_environment"
+      "cwd": "${workspaceFolder}/algos/test_ppo"
     },
      
   ]

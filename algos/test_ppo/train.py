@@ -18,9 +18,8 @@ from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage, AgentPPO
 
 TEST_OPTIMIZER = False 
-TEST_PPO = False  # Different approach - if TEST_PPO, load the new PPO and see if it matches saved parameters for each step from og 
+TEST_PPO = True  # Different approach - if TEST_PPO, load the new PPO and see if it matches saved parameters for each step from og 
 
-HIDDEN_SAVES = 0
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
@@ -266,6 +265,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     """
 
+    HIDDEN_SAVES = 0
+
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
     # Set up logger and save configuration
@@ -320,8 +321,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             target_kl=target_kl,
             lam=lam,
             GlobalCriticOptimizer=None,
-        )    
+        ) 
+        
         ac = AgentPPO(id=0, **ppo_kwargs)
+
     # Otherwise, just test that initialization matches decision maker
     else:
         ac_kwargs['observation_space'] = env.observation_space
@@ -375,8 +378,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         }
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])
-    logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
+    if TEST_PPO:
+        var_counts = tuple(core.count_vars(module) for module in [ac.agent.pi, ac.agent.model])
+        logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)        
+    else:
+        var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])
+        logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
@@ -577,14 +584,14 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         
         return model_loss
     
-    # Set up optimizers and learning rate decay for policy and localization module
-    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-    pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
-    model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
-    loss = torch.nn.MSELoss(reduction='mean')
-    
     if not TEST_PPO:
+        # Set up optimizers and learning rate decay for policy and localization module
+        pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
+        model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
+        pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
+        model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
+        loss = torch.nn.MSELoss(reduction='mean')
+                
         # test pi optimizer
         state1 = pi_optimizer.state_dict() 
         state2 = ac_ppo.agent_optimizer.pi_optimizer.state_dict()          
@@ -622,7 +629,11 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 )
 
     # Set up model saving
-    logger.setup_pytorch_saver(ac)
+    if TEST_PPO:
+        logger.setup_pytorch_saver(ac.agent) 
+        loss = ac.agent_optimizer.MSELoss           
+    else:
+        logger.setup_pytorch_saver(ac)
 
     def update(env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
@@ -717,9 +728,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
-    ac.model.eval()
     
     if not TEST_PPO:
+        ac.model.eval()
         assert ac.model.training == ac_ppo.agent.model.training
     
     # Main loop: collect experience in env and update/log each epoch
@@ -730,14 +741,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         
         # If not testing PPO, save the og hiddens here
         if not TEST_PPO:
-            torch.save(hidden, f'./hidden_{HIDDEN_SAVES}')
+            torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
             HIDDEN_SAVES += 1
         # Else, ensure matches og parameters
         else:
-            to_test = load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
-            state1 = to_test.state_dict()
-            state2 = ac.reset_hidden()
-            assert compare_dicts(state1, state2)            
+            to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+            assert compare_dicts(to_test, hidden)   
+            HIDDEN_SAVES += 1                     
         
         ac.pi.logits_net.v_net.eval()        
         
@@ -754,16 +764,18 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             
             # # If not testing PPO, save the og state here
             # if not TEST_PPO:
-            #     torch.save(ac, f'./hidden_{HIDDEN_SAVES}')
+            #     torch.save(ac, f'./hidden/{HIDDEN_SAVES}')
             #     HIDDEN_SAVES += 1
             # # Else, ensure matches og parameters
             # else:
             #     to_test = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-            #     to_test.load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
+            #     to_test.load_state_dict(torch.load(f'./hidden/{HIDDEN_SAVES}'))
                 
             #     state1 = to_test.state_dict()
             #     state2 = ac.state_dict()
-            #     assert compare_dicts(state1, state2)                                 
+            #     assert compare_dicts(state1, state2)  
+            #     HIDDEN_SAVES += 1
+                                           
                 
             next_o, r, d, _ = env.step({0: a})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
@@ -829,15 +841,14 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     
                     # If not testing PPO, save the og state here
                     if not TEST_PPO:
-                        torch.save(hidden, f'./hidden_{HIDDEN_SAVES}')
+                        torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
                         HIDDEN_SAVES += 1
                     # Else, ensure matches og parameters
                     else:
-                        to_test = load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
-                        state1 = to_test.state_dict()
-                        state2 = ac.reset_hidden()
-                        assert compare_dicts(state1, state2)                         
-                    
+                        to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
+                        assert compare_dicts(to_test, hidden)   
+                        HIDDEN_SAVES += 1     
+                        
                     o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1                    
@@ -869,12 +880,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         
         # # TEST UPDATE! 
         # if not TEST_PPO:
-        #     torch.save(ac, f'./hidden_{HIDDEN_SAVES}')
+        #     torch.save(ac, f'./hidden/{HIDDEN_SAVES}')
         #     HIDDEN_SAVES += 1
         # # Else, ensure matches og parameters
         # else:
         #     to_test = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
-        #     to_test.load_state_dict(torch.load(f'./hidden_{HIDDEN_SAVES}'))
+        #     to_test.load_state_dict(torch.load(f'./hidden/{HIDDEN_SAVES}'))
             
         #     state1 = to_test.state_dict()
         #     state2 = ac.state_dict()
@@ -962,7 +973,7 @@ if __name__ == '__main__':
         actor_critic=core.RNNModelActorCritic,
         ac_kwargs= dict(
             hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
-            hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch, initialize=pfrgu_init
+            hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch
             ), 
         gamma=args.gamma, 
         alpha=args.alpha,
