@@ -770,7 +770,8 @@ class AgentPPO:
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get()
         min_iterations = len(data["ep_form"]) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
         kk = 0
-        term = False
+        kl_reached = False
+        results: UpdateResult
 
         # Train RAD-A2C framework
         if (
@@ -785,11 +786,11 @@ class AgentPPO:
 
             # Train Actor-Critic policy with multiple steps of gradient descent
             # Early stop training if KL divergence above certain threshold
-            while not term and kk < self.train_pi_iters:
+            while not kl_reached and kk < self.train_pi_iters:
                 (
                     policy_loss_sum_new,
                     policy_result,
-                    term,
+                    kl_reached,
                     predictor_loss,
                 ) = self.update_rada2c(data, min_iterations, logger=logger)
                 kk += 1
@@ -812,9 +813,6 @@ class AgentPPO:
             )
         # Train RAD-TEAM framework
         else:
-            # TODO get PFGRU working with RAD-TEAM
-            model_loss = torch.tensor(0)
-
             # Get mapstacks from buffer or inflate from logs, if in max-memory mode
             if PRIO_MEMORY:
                 actor_maps_buffer, critic_maps_buffer = self.generate_mapstacks()
@@ -823,7 +821,8 @@ class AgentPPO:
                 critic_maps_buffer = self.ppo_buffer.heatmap_buffer["critic"]
 
             # Train Actor policy with multiple steps of gradient descent. train_pi_iters == k_epochs
-            for k_epoch in range(self.train_pi_iters):
+            # for k_epoch in range(self.train_pi_iters):            
+            while not kl_reached and kk < self.train_pi_iters:            
                 # Reset gradients
                 self.agent_optimizer.pi_optimizer.zero_grad()
 
@@ -843,16 +842,16 @@ class AgentPPO:
 
                     self.agent_optimizer.pi_optimizer.step()
                 else:
-                    break  # Skip remaining training
+                    kl_reached = True
+                kk += 1
 
             # Reduce learning rate
             self.agent_optimizer.pi_scheduler.step()
 
-            # TODO Uncomment after implementing PFGRU
+            # TODO get PFGRU working with RAD-TEAM
+            model_loss = torch.tensor(0)           
+            #model_loss = self.update_model(data)             
             # self.agent_optimizer.pfgru_scheduler.step()
-            # Reduce pfgru learning rate
-
-            results: UpdateResult
 
             # If local critic, do Value function learning here
             # For global critic, only first agent performs the update
@@ -865,39 +864,35 @@ class AgentPPO:
                         map_buffer_maps=critic_maps_buffer,
                     )
                     critic_loss_results["critic_loss"].backward()
-                    mpi_avg_grads(
-                        self.agent.critic
-                    )  # Average gradients across processes
+                    
+                    # Average gradients across processes                    
+                    mpi_avg_grads(self.agent.critic)
                     self.agent_optimizer.critic_optimizer.step()
 
                 # Reduce learning rate
                 self.agent_optimizer.critic_scheduler.step()
 
                 results = UpdateResult(
-                    stop_iteration=k_epoch,
+                    stop_iteration = kk,
                     loss_policy=actor_loss_results["pi_loss"].item(),
                     loss_critic=critic_loss_results["critic_loss"].item(),
                     loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
                     kl_divergence=actor_loss_results["kl"],
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
-                    LocLoss=torch.tensor(
-                        0
-                    ),  # TODO implement when PFGRU is working for CNN
+                    LocLoss=torch.tensor(0),  
                     VarExplain=0,
                 )
             else:
                 results = UpdateResult(
-                    stop_iteration=k_epoch,
+                    stop_iteration = kk,
                     loss_policy=actor_loss_results["pi_loss"].item(),
                     loss_critic=None,
                     loss_predictor=model_loss.item(),  # TODO implement when PFGRU is working for CNN
                     kl_divergence=actor_loss_results["kl"],
                     Entropy=actor_loss_results["entropy"],
                     ClipFrac=actor_loss_results["clip_fraction"],
-                    LocLoss=torch.tensor(
-                        0
-                    ),  # TODO implement when PFGRU is working for CNN
+                    LocLoss=torch.tensor(0),  
                     VarExplain=0,
                 )
 
@@ -930,6 +925,7 @@ class AgentPPO:
             clip_fraction_list.append(single_pi_info["clip_fraction"])
 
         # take mean of everything for batch update
+        # TODO Check if better to just take a gradient step with every sample
         results = {
             "pi_loss": torch.stack(pi_loss_list).mean(),
             "kl": np.mean(kl_list),
@@ -1157,7 +1153,7 @@ class AgentPPO:
         min_iterations: int,
         logger: EpochLogger,
         minibatch: Union[int, None] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, Union[npt.NDArray, list]], bool, torch.Tensor]:
+    ) -> Tuple[torch.Tensor, Dict[str, npt.NDArray], bool, torch.Tensor]:
         """RAD-A2C Actor and Critic updates"""
         # Start update
         if not minibatch:
@@ -1239,9 +1235,9 @@ class AgentPPO:
         
         # For clarity
         loss_pi: torch.Tensor  = mean_loss
-        approx_kl = means[0].detach()
+        approx_kl = means[0].detach() # type: ignore
         ent = means[1].detach()
-        clipfrac = means[2].detach()
+        clipfrac = means[2].detach() # type: ignore
         loss_val = means[3].detach()    
         
         # TODO make a named tuple

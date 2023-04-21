@@ -472,22 +472,23 @@ class train_PPO:
 
                         # Get prediction of next reward to bootstrap with. Because the rewards are applied to the actions taken prior, this means our last action will be without a reward. This estimate is
                         # used in that place.
+                        last_state_value = []
                         for id, ac in self.agents.items():
                             bootstrap_results, _ = ac.step(
                                 observations, hidden=hiddens[id]
                             )
-                            last_state_value = bootstrap_results.state_value
+                            last_state_value.append(bootstrap_results.state_value)
 
                         if epoch_ended:
                             # Set flag to reset/sample new environment parameters. If epoch has not ended, keep training on the same environment.
                             self.env.epoch_end = True
                     else:
                         # State value. This should be 0 if the trajectory ended because the agent reached a terminal state (found source/timeout) [for use in the GAE() function]
-                        last_state_value = 0
+                        last_state_value = [0 for _ in self.agents]
 
                     # Finish the trajectory and compute advantages.
                     for id, ac in self.agents.items():
-                        ac.GAE_advantage_and_rewardsToGO(last_state_value)
+                        ac.GAE_advantage_and_rewardsToGO(last_state_value[id])
 
                     # If the episode is over, save episode returns and episode length.
                     if episode_over:
