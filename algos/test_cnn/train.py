@@ -233,7 +233,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
 
-    def update_a2c(data, env_sim, minibatch=None,iter=None):
+    def update_a2c(id, data, env_sim, minibatch=None, iter=None):
         observation_idx = 11
         action_idx = 14
         logp_old_idx = 13
@@ -242,9 +242,21 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         source_loc_idx = 15
         
         ep_form= data['ep_form']
+        pi_ep_form = data['actor_heatmaps_ep_form']
+        v_ep_form = data['critic_heatmaps_ep_form']
+        
+        assert len(ep_form) == len(pi_ep_form)
+        assert len(ep_form) == len(v_ep_form)
+        
         pi_info = dict(kl=[], ent=[], cf=[], val= np.array([]), val_loss = [])
+        
+        # Randomly sample epsiodes
         ep_select = np.random.choice(np.arange(0,len(ep_form)),size=int(minibatch),replace=False)
         ep_form = [ep_form[idx] for idx in ep_select]
+        pi_ep_form = [pi_ep_form[idx] for idx in ep_select]
+        v_ep_form = [v_ep_form[idx] for idx in ep_select]
+        
+        # Storage and buffers
         loss_sto = torch.zeros((len(ep_form),4),dtype=torch.float32)
         loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
         loss_arr = torch.autograd.Variable(loss_arr_buff)
@@ -253,11 +265,21 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             #For each set of episodes per process from an epoch, compute loss 
             trajectories = ep[0]
             
-            hidden = ac.reset_hidden()
-            obs, act, logp_old, adv, ret, src_tar = trajectories[:,:observation_idx], trajectories[:,action_idx],trajectories[:,logp_old_idx], \
-                                                     trajectories[:,advantage_idx], trajectories[:,return_idx,None], trajectories[:,source_loc_idx:].clone()
-            #Calculate new log prob.
-            pi, val, logp, loc = ac.grad_step(obs, act, hidden=hidden)
+            ac.reset() # Clear stored maps
+            hidden = ac.reset_hidden() # Get hidden layers for pfgru
+            
+            obs = trajectories[:,:observation_idx]
+            act = trajectories[:,action_idx]
+            logp_old = trajectories[:,logp_old_idx]
+            adv = trajectories[:,advantage_idx]
+            ret = trajectories[:,return_idx,None]
+            src_tar = trajectories[:,source_loc_idx:].clone()
+            
+            # Calculate new log prob.
+            #pi, val, logp, loc = ac.step_with_gradient(obs, act, hidden=hidden)
+            pi, val, logp, loc = ac.step_with_gradient(obs, act, hidden=hidden)
+            
+            # PPO-Clip starts here
             logp_diff = logp_old - logp 
             ratio = torch.exp(logp - logp_old)
 
@@ -410,7 +432,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             
         while (not term and kk < train_pi_iters):
             #Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
+            pi_l, pi_info, term, loc_loss = update_a2c(id=0, data=data, env_sim=env, minibatch=min_iters, iter=kk)
             kk += 1              
         
         #Reduce learning rate
@@ -520,6 +542,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     hidden = ac.reset_hidden()  
+                    ac.reset()
                         
                     o, _, _, _ = env.reset()
                     o = o[0]

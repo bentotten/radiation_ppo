@@ -1395,7 +1395,6 @@ class EmptyCritic:
         return True
 
 
-# TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFRNNBaseCell(nn.Module):
     """Parent class for Particle Filter Recurrent Neural Networks"""
@@ -1511,7 +1510,6 @@ class PFRNNBaseCell(nn.Module):
         return mean + eps * std
 
 
-# TODO Add to new map
 # Developed from RAD-A2C https://github.com/peproctor/radiation_ppo
 class PFGRUCell(PFRNNBaseCell):
     """Particle Filter Gated Recurrent Unit"""
@@ -1952,6 +1950,42 @@ class CNNBase:
     ) -> Tuple[ActionChoice, HeatMaps]:
         """Alias for select_action"""
         return self.select_action(state_observation=state_observation, id=self.id, hidden=hidden)
+
+    def step_with_gradient(
+        self, 
+        id: int,
+        state_observation: Dict[int, npt.NDArray], 
+        action_taken: torch.Tensor,
+        hidden: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Identical to select_action, however stores the gradient for a gradient update and returns different information.
+
+        :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
+        :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
+        :param hidden: hidden layers for PFGRU.
+        """
+        
+        with torch.no_grad():
+            obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
+            obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
+
+            location_prediction, new_hidden = self.model(obs_tensor, hidden)
+            
+            # Process data and create maps
+            batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
+                id = id,
+                state_observation = state_observation,
+                location_prediction = tuple(location_prediction.tolist())
+            )
+
+        # Get action logprobs and entroy WITH gradient
+        action_logprobs, dist_entropy = self.pi.get_action_information(state_map_stack=batched_actor_mapstack, action=action_taken)
+
+        state_value: torch.Tensor = self.critic.forward(batched_critic_mapstack)
+        
+        return action_logprobs, dist_entropy, state_value
+
 
     def reset_hidden(self, batch_size=1) -> Tuple[torch.Tensor, torch.Tensor]:
         """For compatibility - returns nothing"""
