@@ -89,15 +89,12 @@ class ActionChoice(NamedTuple):
     state_value: Union[float, None]  # size(1)
     #: Coordinates predicted by the location prediction model (PFGRU).
     loc_pred: Union[torch.Tensor, None] = None
-
-    # For compatibility with RAD-PPO
     #: Hidden state (for compatibility with RAD-PPO)
-    hiddens: Union[torch.Tensor, None] = None
+    hidden: torch.Tensor = None
 
 
 class HeatMaps(NamedTuple):
     """Named Tuple - Stores actor and critic heatmaps for a step"""
-
     actor: torch.Tensor
     critic: torch.Tensor
 
@@ -1814,6 +1811,7 @@ class CNNBase:
             # Convert map to tensor
             actor_map_stack: torch.Tensor = torch.stack(
                 [
+                    torch.tensor(prediction_map),                    
                     torch.tensor(location_map),
                     torch.tensor(others_locations_map),
                     torch.tensor(readings_map),
@@ -1879,12 +1877,17 @@ class CNNBase:
             state_value_item = state_value.item()
         else:
             state_value_item = None
-        return ActionChoice(
-            id=id,
-            action=action.item(),
-            action_logprob=action_logprob.item(),
-            state_value=state_value_item,
-        ), HeatMaps(batched_actor_mapstack, batched_critic_mapstack)
+        return (
+            ActionChoice(
+                id=id,
+                action=action.item(),
+                action_logprob=action_logprob.item(),
+                state_value=state_value_item,
+                loc_pred = location_prediction,
+                hidden = new_hidden
+            ), 
+            HeatMaps(batched_actor_mapstack, batched_critic_mapstack), 
+        )
 
     def get_map_dimensions(self) -> Tuple[int, int]:
         return self.maps.map_dimensions
