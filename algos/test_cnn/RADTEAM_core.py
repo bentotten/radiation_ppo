@@ -1984,7 +1984,13 @@ class CNNBase:
         # Get action logprobs and entroy WITH gradient
         action_logprobs, dist_entropy = self.pi.get_action_information(state_map_stack=actor_mapstack, action=action_taken) 
 
-        state_value = self.critic.forward(critic_mapstack)
+        # Only update the global critic if the first agent
+        if not self.GlobalCritic or self.id == 0:
+            state_value = self.critic.forward(critic_mapstack)
+        else:
+            with torch.no_grad():
+                state_value = self.critic.forward(critic_mapstack)                
+            
         
         return action_logprobs, state_value, dist_entropy # type: ignore
 
