@@ -509,7 +509,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             obs_std = o
             
             #compute action and logp (Actor), compute value (Critic)
-            a, v, logp, hidden, out_pred = ac.step({0: obs_std}, hidden=hidden)                                   
+            result, heatmap_stack = ac.step({0: obs_std}, hidden=hidden)                                   
                 
             next_o, r, d, _ = env.step({0: a})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]

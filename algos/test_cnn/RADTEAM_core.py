@@ -529,7 +529,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: npt.NDArray) -> MapStack:
+    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -698,7 +698,7 @@ class MapsBuffer:
         :param singe_observation: (np.ndarray, tuple) single observation state from a single agent observation OR single pair of deflated coordinates
         :return: (Tuple[int, int]) Inflated coordinates
         """
-        # Calculate current agent inflated location
+        # Calculate inflated coordinates
         result: Tuple[int, int]
         if isinstance(single_observation, np.ndarray):
             result = (
@@ -1796,7 +1796,7 @@ class CNNBase:
                 "Invalid mode set for Agent. Agent remains in their original training mode"
             )
 
-    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: npt.NDArray):
+    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple):
         with torch.no_grad():
             (
                 prediction_map,
@@ -1859,7 +1859,7 @@ class CNNBase:
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
                 id = id,
                 state_observation = state_observation,
-                location_prediction = location_prediction.numpy()
+                location_prediction = tuple(location_prediction.tolist())
             )
 
             # Get actions and values
