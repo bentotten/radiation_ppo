@@ -1,5 +1,5 @@
 # type: ignore
-''' OG: ppo.py'''
+''' OG: ppo.py '''
 
 import numpy as np
 import torch
@@ -16,8 +16,6 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 
 from ppo import PPOBuffer as NEWPPO
 from ppo import OptimizationStorage, AgentPPO, BpArgs
-
-import pytest
 
 TEST_OPTIMIZER = False 
 TEST_PPO = True  
@@ -951,6 +949,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         logger.log_tabular('DoneCount', sum_only=True)
         logger.log_tabular('Time', time.time()-start_time)
         logger.dump_tabular()
+
 
 if __name__ == '__main__':
     import argparse

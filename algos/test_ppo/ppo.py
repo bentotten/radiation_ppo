@@ -1091,79 +1091,72 @@ class AgentPPO:
         pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
 
         # Sample a random tensor
-        ep_select = np.random.choice(
-            np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
-        )
+        ep_select = np.random.choice(np.arange(0, len(ep_form)), size=int(min_iterations), replace=False)
         ep_form = [ep_form[idx] for idx in ep_select]
 
         # Loss storage buffer(s)
-        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
-        loss_arr: torch.Tensor = torch.autograd.Variable(
-            torch.tensor([], dtype=torch.float32)
-        )
-
-        for ep in ep_form:
+        loss_array_buffer = torch.zeros((len(ep_form), 1),dtype=torch.float32) # Prefilling is fast with numpy
+        loss_buffer = torch.autograd.Variable(loss_array_buffer)
+        loss_storage = torch.zeros((len(ep_form),4),dtype=torch.float32)
+        
+        for index, ep in enumerate(ep_form):
             # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]  # type: ignore
+            trajectories = ep[0]  
+            
             hidden = self.reset_hidden()
-            obs, act, logp_old, adv, ret, src_tar = (
-                trajectories[:, :observation_idx],
-                trajectories[:, action_idx],
-                trajectories[:, logp_old_idx],
-                trajectories[:, advantage_idx],
-                trajectories[:, return_idx, None],
-                trajectories[:, source_loc_idx:].clone(),
-            )
+            
+            # Pull data from episode
+            obs = trajectories[:, :observation_idx]
+            act = trajectories[:, action_idx]
+            logp_old = trajectories[:, logp_old_idx]
+            adv = trajectories[:, advantage_idx]
+            ret = trajectories[:, return_idx, None],
+            src_tar = trajectories[:, source_loc_idx:].clone()
 
             # Calculate new action log probabilities
-
-            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)  # type: ignore
-
+            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
+            
+            # PPO-Clip
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
-            clip_adv = (
-                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
-            )
+            clip_adv = (torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv)
             clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
 
             # Useful extra info
-            clipfrac = (
-                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            )
+            clipfrac = (torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item())
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-
             val_loss = self.agent_optimizer.MSELoss(val, ret)  # MSE critc loss
 
-            # TODO: More descriptive name
-            new_loss: torch.Tensor = -(
+            loss_buffer[index] = -(
                 torch.min(ratio * adv, clip_adv).mean()  # Policy loss
                 - 0.01 * val_loss
                 + self.alpha * ent
             )
-            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
+            
+            loss_storage[ii,0] = approx_kl; 
+            loss_storage[ii,1] = ent; 
+            loss_storage[ii,2] = clipfrac; 
+            loss_storage[ii,3] = val_loss.detach()
 
-            new_loss_sto: torch.Tensor = torch.tensor(
-                [approx_kl, ent, clipfrac, val_loss.detach()]
-            )
-            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
+        # Get means
+        mean_loss = loss_buffer.mean()
+        means = loss_storage.mean(axis=0)
+        
+        # For clarity
+        loss_pi = mean_loss
+        approx_kl = means[0].detach()
+        ent = means[1].detach()
+        clipfrac = means[2].detach()
+        loss_val = means[3].detach()    
+        
+        # TODO make a named tuple
+        pi_info["kl"].append(approx_kl) 
+        pi_info["ent"].append(ent)  
+        pi_info["cf"].append(clipfrac) 
+        pi_info["val_loss"].append(loss_val)  
 
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)  # type: ignore
-        loss_pi, approx_kl, ent, clipfrac, loss_val = (
-            mean_loss,
-            means[0].detach(),
-            means[1].detach(),
-            means[2].detach(),
-            means[3].detach(),
-        )
-        pi_info["kl"].append(approx_kl)  # type: ignore
-        pi_info["ent"].append(ent)  # type: ignore
-        pi_info["cf"].append(clipfrac)  # type: ignore
-        pi_info["val_loss"].append(loss_val)  # type: ignore
-
-        # kl = pi_info["kl"][-1].mean()  # type: ignore
         # Average KL across processes
         kl = mpi_avg(pi_info["kl"][-1])  # MPI
 
@@ -1177,20 +1170,25 @@ class AgentPPO:
             term = False
         else:
             term = True
+            if proc_id() == 0:
+                logger.log('Terminated update at %d gradient steps due to reaching max kl.'%iter)            
 
-        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-            pi_info["kl"][0].numpy(),  # type: ignore
-            pi_info["ent"][0].numpy(),  # type: ignore
-            pi_info["cf"][0].numpy(),  # type: ignore
-            pi_info["val_loss"][0].numpy(),  # type: ignore
-        )
-        loss_sum_new = loss_pi
+        policy_result = dict()
+        policy_result["kl"] =  pi_info["kl"][0].numpy()
+        policy_result["ent"] = pi_info["ent"][0].numpy()
+        policy_result["cf"] = pi_info["cf"][0].numpy()
+        policy_result["val_loss"] = pi_info["val_loss"][0].numpy()
+        
+        policy_loss_sum_new = loss_pi
+        
+        predictor_loss = (self.env_height * loc - (src_tar)).square().mean().sqrt()
+        
         return (
-            loss_sum_new,
-            pi_info,
+            policy_loss_sum_new,
+            policy_result,
             term,
-            (self.env_height * loc - (src_tar)).square().mean().sqrt(),
-        )  # type: ignore
+            predictor_loss,
+        )
 
     def generate_mapstacks(self):
         """Generate a list of inflated maps from buffer"""
