@@ -126,6 +126,17 @@
       //"args": ["--steps_per_epoch", "3"],
       "args": [],
       "cwd": "${workspaceFolder}/algos/test_ppo"
-    },    
+    },  
+    {
+      "name": "Hail Mary - Train OG project w/CNN ",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_cnn/train.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      //"args": ["--steps_per_epoch", "3"],
+      "args": [],
+      "cwd": "${workspaceFolder}/algos/test_ppo"
+    },        
   ]
 }

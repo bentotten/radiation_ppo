@@ -64,7 +64,7 @@ def compare_dicts(dict1, dict2):
             return True
 
 
-def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
+def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
         target_kl=0.07, logger_kwargs=dict(), save_freq=500, render= False,dims=None):
@@ -201,8 +201,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch
             )
     
-    ac_kwargs['seed'] = seed
-    ac_kwargs['pad_dim'] = 2
+    #ac_kwargs['seed'] = seed
+    #ac_kwargs['pad_dim'] = 2
+    ac_kwargs['id'] = 0
     ac_kwargs['action_space'] = env.detectable_directions # Usually 8
     ac_kwargs['observation_space']= env.observation_space.shape[0]  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
     ac_kwargs['detector_step_size'] = env.step_size # Usually 100 cm
@@ -780,8 +781,9 @@ if __name__ == '__main__':
         "enforce_grid_boundaries": False
         }
     
-    timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d-%H:%M:%S")
-    exp_name = timestamp + "_" + exp_name
+    save_dir_name: str = args.exp_name
+    timestamp = "og_plus_cnn_test" #datetime.now().replace(microsecond=0).strftime("%Y-%m-%d-%H:%M:%S")
+    exp_name = timestamp # + "_" + exp_name
     save_dir_name = save_dir_name + "/" + timestamp    
 
     max_ep_step = 120
