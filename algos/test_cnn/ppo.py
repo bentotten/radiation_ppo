@@ -363,8 +363,8 @@ class PPOBuffer:
 
     def get(self) -> Dict[str, object]:
         """
-        Call this at the end of an epoch to get all of the data from buffers. Advantages are normalized/shifted to have mean zero and std one).
-        Buffer pointers and episode_lengths are reset to start over. NOTE: full observations are not stored here, they need to be converted to mapstacks.
+        Call this at the end of an epoch to get all of the data from buffers (except full_observation buffer). Advantages are normalized/shifted to have mean zero and std one).
+        Buffer pointers and episode_lengths are reset to start over.
         """
         # Make sure buffers are full
         assert self.ptr == self.max_size
@@ -405,24 +405,24 @@ class PPOBuffer:
             )
         )
 
-        # Save in a giant tensor for RAD-A2C
+        # Data is currently stored per-step for the entire epoch. This divides the data into a per-episode form
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-
+        actor_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
+        critic_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]        
+        
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         slice_b: int = 0
         slice_f: int = 0
         jj: int = 0
         for ep_i in episode_lengths:
             slice_f += ep_i
-            episode_form[jj].append(
-                torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
-            )
+            episode_form[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)) # Take readings from slice_b to slice_f. Slice_f marks the episode offset
+            actor_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['actor'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
+            critic_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['critic'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor            
             slice_b += ep_i
             jj += 1
         if slice_f != len(self.obs_buf):
-            episode_form[jj].append(
-                torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
-            )
+            episode_form[jj].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
 
         # Convert to tensors
         data = dict(
@@ -436,6 +436,8 @@ class PPOBuffer:
             ),  # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(np.copy(total_episode_length), dtype=torch.float32),
             ep_form=episode_form,
+            actor_heatmaps_ep_form = actor_heatmaps_in_episode_form,
+            critic_heatmaps_ep_form = critic_heatmaps_in_episode_form
         )
 
         return data
