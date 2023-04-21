@@ -295,12 +295,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 logp, val, ent = ac.step_with_gradient(actor_mapstack=actor_mapstacks[step], critic_mapstack=critic_mapstacks[step], action_taken=act[step])
                 logp_buffer.append(logp)
                 value_buffer.append(value_buffer)
-                entropy_buffer.append(entropy_buffer)
-                
-                # TODO UPDATE CRITIC
-                                  
+                entropy_buffer.append(entropy_buffer)                                  
             
-            # TODO CONVERT TO STACKED TENSOR
+            # Convert into a single tensor
+            logp = torch.tensor(logp_buffer)
+            val = torch.tensor(value_buffer)
+            ent = torch.tensor(entropy_buffer).mean().item()
             
             # PPO-Clip starts here
             logp_diff = logp_old - logp 
@@ -322,12 +322,10 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             src_target_buffer[ii] = src_tar
             loc_prediction_buffer[ii] = loc_pred     
             
-
         mean_loss = loss_arr.mean()
         means = loss_sto.mean(axis=0)
         loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
         pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
-        
         
         #Average KL across processes for policy
         kl = mpi_avg(pi_info['kl'][-1])
