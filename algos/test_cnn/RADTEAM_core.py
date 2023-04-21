@@ -374,7 +374,7 @@ class ConversionTools:
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
     last_coords: Dict[int, Tuple[int, int]] = field(init=False, default_factory=lambda: dict())
     #: Stores coordinates of last predicted source location
-    last_prediction: Union[list, npt.NDarray] = field(init=False, default_factory=lambda: list())
+    last_prediction: Tuple = field(init=False, default_factory=lambda: tuple())
     #: An intensity estimator class that samples every reading and estimates what the true intensity value is
     readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
     #: Statistics class for standardizing intensity readings from samples from the environment
@@ -388,7 +388,7 @@ class ConversionTools:
     def reset(self) -> None:
         """Method to reset and clear all members"""
         self.last_coords = dict()
-        self.last_prediction = list()
+        self.last_prediction = tuple()
         self.readings.reset()
         self.standardizer.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
@@ -532,7 +532,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(self, observation: Dict[int, npt.NDarray], id: int, loc_prediciton: npt.NDarray) -> MapStack:
+    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: npt.NDArray) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -560,7 +560,7 @@ class MapsBuffer:
             
             self.locations_matrix.append(inflated_agent_coordinates)
             
-            last_prediction: Union[npt.NDArray, List] = self.tools.last_prediction        
+            last_prediction: Tuple = self.tools.last_prediction        
 
             # Update Prediction maps
             if PFGRU:
@@ -750,7 +750,7 @@ class MapsBuffer:
     def _update_prediction_map(
         self,  
         current_prediction: Tuple[int, int],
-        last_prediction: Union[npt.NDArray, List],
+        last_prediction:Tuple,
     ) -> None:
         """
         Method to update the current agents location observation map. If prior location exists, this is reset to zero.
@@ -966,7 +966,7 @@ class Actor(nn.Module):
         self,
         map_dim: Tuple[int, int],
         batches: int = 1,
-        map_count: int = 5,
+        map_count: int = 6,
         action_dim: int = 8,
     ) -> None:
         super(Actor, self).__init__()
