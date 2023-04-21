@@ -511,19 +511,25 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             #compute action and logp (Actor), compute value (Critic)
             result, heatmap_stack = ac.step({0: obs_std}, hidden=hidden)                                   
                 
-            next_o, r, d, _ = env.step({0: a})
+            next_o, r, d, _ = env.step({0: result.action})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
             ep_ret += r
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            if not TEST_PPO:
-                new_buffer.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+            new_buffer.store(
+                obs=obs_std, 
+                act=result.action, 
+                val=result.state_value, 
+                logp=result.action_logprob, 
+                rew=r, 
+                src=env.src_coords, 
+                full_observation={0: obs_std}, # TODO CHANGE FOR MULTI
+                heatmap_stacks=heatmap_stack, 
+                terminal=d
+                )
             
-            if TEST_PPO:
-                ac.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)     
-            
-            logger.store(VVals=v)
+            logger.store(VVals=result.state_value)
 
             # Update obs (critical!)
             o = next_o
@@ -544,11 +550,8 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    if TEST_PPO:
-                        _, v, _, _, _ = ac.step({0: obs_std}, hidden=hidden)                                                        
-                    
-                    if not TEST_PPO:
-                        _, v, _, _, _ = ac.step(obs_std, hidden=hidden)             
+                    result, _ = ac.step({0: obs_std}, hidden=hidden)         
+                    v = result.state_value                   
                     
                     if epoch_ended:
                         #Set flag to sample new environment parameters
@@ -556,20 +559,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 else:
                     v = 0
                     
-                if not TEST_PPO:
-                    new_buffer.GAE_advantage_and_rewardsToGO(v)
-                
-                if TEST_PPO:
-                    ac.GAE_advantage_and_rewardsToGO(v)
+                new_buffer.GAE_advantage_and_rewardsToGO(v)
                 
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                    if not TEST_PPO:
-                        new_buffer.store_episode_length(episode_length=ep_len)
-                    
-                    if TEST_PPO:
-                        ac.store_episode_length(episode_length=ep_len)
+                    new_buffer.store_episode_length(episode_length=ep_len)
 
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
@@ -613,22 +608,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 reduce_v_iters = False        
        
         # Perform PPO update!
-        if TEST_PPO:
-            results = ac.update_agent()
-            
-            logger.store(
-                StopIter=results.stop_iteration,
-                LossPi= results.loss_policy,
-                LossV= results.loss_critic,
-                LossModel = results.loss_predictor,
-                KL=results.kl_divergence, 
-                Entropy= results.Entropy, 
-                ClipFrac= results.ClipFrac,
-                LocLoss= results.LocLoss, 
-                VarExplain=0
-                )            
-        if not TEST_PPO:
-            update(env, bp_args, loss_fcn=loss)
+        update(env, bp_args, loss_fcn=optimization.MSELoss)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
@@ -686,7 +666,7 @@ if __name__ == '__main__':
         'observation_area':args.area_obs, 
         'obstruction_count':args.obstruct,
         "number_agents": 1, # TODO change for MARL
-        "enforce_grid_boundaries": False
+        "enforce_grid_boundaries": True
         }
     
     save_dir_name: str = args.exp_name
