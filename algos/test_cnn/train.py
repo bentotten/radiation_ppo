@@ -425,17 +425,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
     # loss = torch.nn.MSELoss(reduction='mean')    
     
     optimization = OptimizationStorage(
-                train_pi_iters=train_pi_iters,
-                train_v_iters=None,
-                train_pfgru_iters=train_v_iters,
                 pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-                critic_optimizer=None, 
-                model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
+                critic_optimizer= Adam(ac.critic.parameters(), lr=pi_lr), # TODO change this to own learning rate
+                model_optimizer=Adam(ac.model.parameters(), lr=vf_lr), # TODO change this to correct name (for PFGRU)
                 MSELoss=torch.nn.MSELoss(reduction="mean"),
+                critic_flag=True
             )
-
-    # Set up model saving
-    logger.setup_pytorch_saver(ac)
 
     def update(env, args, loss_fcn):
         """Update for the localization and A2C modules"""
@@ -502,49 +497,19 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
     reduce_v_iters = True
     
     ac.set_mode('eval')
-    if not TEST_PPO:
-        ac.model.eval()
-        assert ac.model.training == ac_ppo.agent.model.training
     
     # Main loop: collect experience in env and update/log each epoch
     print(f'Proc id: {proc_id()} -> Starting main training loop!', flush=True)
     for epoch in range(epochs):
         #Reset hidden state
-        hidden = ac.reset_hidden()
-        
-        # # If not testing PPO, save the og hiddens here
-        # if not TEST_PPO:
-        #     torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
-        #     HIDDEN_SAVES += 1
-        # # Else, ensure matches og parameters
-        # else:
-        #     to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-        #     assert compare_dicts(to_test, hidden)   
-        #     HIDDEN_SAVES += 1                     
-        
-        if not TEST_PPO:    
-            ac.pi.logits_net.v_net.eval()                
-            assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
+        hidden = ac.reset_hidden()                
         
         for t in range(local_steps_per_epoch):
             # Artifact - standardization done inside CNN
             obs_std = o
             
             #compute action and logp (Actor), compute value (Critic)
-            if TEST_PPO:
-                a, v, logp, hidden, out_pred = ac.step({0: obs_std}, hidden=hidden)   
-                
-                # # Test against saved values
-                # to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-                # assert compare_dicts(to_test, [a, v, logp, hidden, out_pred])   
-                # HIDDEN_SAVES += 1      
-                                            
-            if not TEST_PPO:
-                a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-                
-                # # Save values
-                # torch.save([a, v, logp, hidden, out_pred], f'./hidden/{HIDDEN_SAVES}')
-                # HIDDEN_SAVES += 1                                         
+            a, v, logp, hidden, out_pred = ac.step({0: obs_std}, hidden=hidden)                                   
                 
             next_o, r, d, _ = env.step({0: a})
             next_o, r, d = next_o[0], r['individual_reward'][0], d[0]
@@ -618,17 +583,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 ep_ret_ls = []
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
-                    hidden = ac.reset_hidden()
-                    
-                    # If not testing PPO, save the og state here
-                    # if not TEST_PPO:
-                    #     torch.save(hidden, f'./hidden/{HIDDEN_SAVES}')
-                    #     HIDDEN_SAVES += 1
-                    # # Else, ensure matches og parameters
-                    # else:
-                    #     to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-                    #     assert compare_dicts(to_test, hidden)   
-                    #     HIDDEN_SAVES += 1     
+                    hidden = ac.reset_hidden()  
                         
                     o, _, _, _ = env.reset()
                     o = o[0]
@@ -644,7 +599,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            logger.save_state(None, None)
+            ac.save(logger.output_dir)
             pass
 
         

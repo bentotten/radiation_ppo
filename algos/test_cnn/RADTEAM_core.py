@@ -36,13 +36,15 @@ import matplotlib.pyplot as plt  # type: ignore
 import warnings
 import json
 
+PFGRU = True # If wanting to use the PFGRU TODO turn this into a parameter
+
 # Maps
 #: [New Type] Array indicies to access a GridSquare (x, y). Type: Tuple[float, float]
 Point = NewType("Point", Tuple[Union[float, int], Union[float, int]])
 #: [New Type] Heatmap - a two dimensional array that holds heat values for each gridsquare. Note: the number of gridsquares is scaled with a resolution accuracy variable. Type: numpy.NDArray[np.float32]
 Map = NewType("Map", npt.NDArray[np.float32])
 #: [New Type] Mapstack - a Tuple of all existing maps.
-MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map, Map])
+MapStack = NewType("MapStack", Tuple[Map, Map, Map, Map, Map, Map, Map])
 #: [New Type] Tracks last known coordinates of all agents in order to update them on the current-location and others-locations heatmaps. Type: Dict[str, Dict[int, Point]]
 CoordinateStorage = NewType("CoordinateStorage", Dict[int, Point])
 
@@ -370,17 +372,13 @@ class ConversionTools:
     """
 
     #: Stores last coordinates for all agents. This is used to update current-locations heatmaps.
-    last_coords: Dict[int, Tuple[int, int]] = field(
-        init=False, default_factory=lambda: dict()
-    )
+    last_coords: Dict[int, Tuple[int, int]] = field(init=False, default_factory=lambda: dict())
+    #: Stores coordinates of last predicted source location
+    last_prediction: Union[list, npt.NDarray] = field(init=False, default_factory=lambda: list())
     #: An intensity estimator class that samples every reading and estimates what the true intensity value is
-    readings: IntensityEstimator = field(
-        init=False, default_factory=lambda: IntensityEstimator()
-    )
+    readings: IntensityEstimator = field(init=False, default_factory=lambda: IntensityEstimator())
     #: Statistics class for standardizing intensity readings from samples from the environment
-    standardizer: StatisticStandardization = field(
-        init=False, default_factory=lambda: StatisticStandardization()
-    )
+    standardizer: StatisticStandardization = field(init=False, default_factory=lambda: StatisticStandardization())
     #: Normalization class for adjusting data to be between 0 and 1
     normalizer: Normalizer = field(init=False, default_factory=lambda: Normalizer())
 
@@ -390,6 +388,7 @@ class ConversionTools:
     def reset(self) -> None:
         """Method to reset and clear all members"""
         self.last_coords = dict()
+        self.last_prediction = list()
         self.readings.reset()
         self.standardizer.reset()
         self.reset_flag += 1 if self.reset_flag < 100 else 1
@@ -464,7 +463,9 @@ class MapsBuffer:
     # Blank Maps
     #: Number of maps
     map_count: int = field(init=False, default=6)
-    # Combined Location Map: a 2D matrix showing all agent locations. Used for the critic
+    #: Source prediction map
+    prediction_map: Map = field(init=False)
+    #: Combined Location Map: a 2D matrix showing all agent locations. Used for the critic
     combined_location_map: Map = field(init=False)
     #: Location Map: a 2D matrix showing the individual agent's location.
     location_map: Map = field(init=False)
@@ -531,9 +532,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(
-        self, observation: Dict[int, np.ndarray], id: int
-    ) -> MapStack:
+    def observation_to_map(self, observation: Dict[int, npt.NDarray], id: int, loc_prediciton: npt.NDarray) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -550,17 +549,25 @@ class MapsBuffer:
 
         for agent_id in observation:
             # Fetch scaled coordinates
-            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(
-                single_observation=observation[agent_id]
-            )
-            # inflated_last_coordinates: Union[Tuple[int, int], None] = self._inflate_coordinates(single_observation=self.tools.last_coords[agent_id]) if agent_id in self.tools.last_coords.keys() else None
+            inflated_agent_coordinates: Tuple[int, int] = self._inflate_coordinates(single_observation=observation[agent_id])
+            inflated_prediction: Tuple[int, int] = self._inflate_coordinates(single_observation=loc_prediciton)
+
             last_coordinates: Union[Tuple[int, int], None] = (
                 self.tools.last_coords[agent_id]
                 if agent_id in self.tools.last_coords.keys()
                 else None
             )
+            
             self.locations_matrix.append(inflated_agent_coordinates)
+            
+            last_prediction: Union[npt.NDArray, List] = self.tools.last_prediction        
 
+            # Update Prediction maps
+            if PFGRU:
+                self._update_prediction_map(
+                    current_prediction=inflated_prediction,
+                    last_prediction=last_prediction,
+                )
             # Update Locations maps
             if id == agent_id:
                 self._update_current_agent_location_map(
@@ -596,11 +603,12 @@ class MapsBuffer:
                 )
 
             # Update last coordinates
-            # self.tools.last_coords[agent_id] = Point((observation[agent_id][1], observation[agent_id][2]))
             self.tools.last_coords[agent_id] = inflated_agent_coordinates
+            self.tools.last_prediction = inflated_prediction
 
         return MapStack(
             (
+                self.prediction_map,
                 self.location_map,
                 self.others_locations_map,
                 self.readings_map,
@@ -621,7 +629,7 @@ class MapsBuffer:
                 self.combined_location_map[inflated_last_coordinates] = 0
                 self.location_map[inflated_last_coordinates] = 0
                 self.others_locations_map[inflated_last_coordinates] = 0
-
+            
             # Reinitialize non-sparse matrices
             self.readings_map: Map = Map(
                 np.zeros(
@@ -647,22 +655,23 @@ class MapsBuffer:
                 self.readings_map[k] = 0
                 self.obstacles_map[k] = 0
                 self.visit_counts_map[k] = 0
+                
+        self.prediction_map[self.tools.last_prediction] = 0
+                
 
         assert self.obstacles_map.max() == 0 and self.obstacles_map.min() == 0
         assert self.readings_map.max() == 0 and self.readings_map.min() == 0
-        assert (
-            self.others_locations_map.max() == 0
-            and self.others_locations_map.min() == 0
-        )
+        assert (self.others_locations_map.max() == 0 and self.others_locations_map.min() == 0)
         assert self.location_map.max() == 0 and self.location_map.min() == 0
-        assert (
-            self.combined_location_map.max() == 0
-            and self.combined_location_map.min() == 0
-        )
+        assert (self.combined_location_map.max() == 0 and self.combined_location_map.min() == 0)
         assert self.visit_counts_map.max() == 0 and self.visit_counts_map.min() == 0
+        assert self.prediction_map.max() == 0 and self.prediction_map.min() == 0
 
     def _reset_maps(self) -> None:
         """Fully reinstatiate maps"""
+        self.prediction_map: Map = Map(
+            np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
+        )        
         self.combined_location_map: Map = Map(
             np.zeros(shape=(self.x_limit_scaled, self.y_limit_scaled), dtype=np.float32)
         )
@@ -737,6 +746,27 @@ class MapsBuffer:
         else:
             raise ValueError("Unsupported type for observation parameter")
         return result
+
+    def _update_prediction_map(
+        self,  
+        current_prediction: Tuple[int, int],
+        last_prediction: Union[npt.NDArray, List],
+    ) -> None:
+        """
+        Method to update the current agents location observation map. If prior location exists, this is reset to zero.
+
+        :param current_coordinates: (Tuple[int, int]) Inflated current location of agent
+        :param last_coordindates: (Tuple[int, int]) Inflated previous location of agent. Note: These must be ints.
+        :return: None
+        """
+        if len(last_prediction) > 0:
+            self.prediction_map[last_prediction[0]][last_prediction[1]] -= 1
+            assert self.prediction_map[last_prediction[0]][last_prediction[1]] > -1, "source prediction grid coordinate reset where nothing present. The map location that was reset was already at 0."  # type: ignore # Type will already be a float
+        else:
+            assert (self.prediction_map.max() == 0.0), "Location exists on map however no last coordinates buffer passed for processing."
+
+        self.prediction_map[current_prediction[0]][current_prediction[1]] = 1
+        assert (self.prediction_map.max() == 1), "Location was updated twice for single coordinate"
 
     def _update_combined_agent_locations_map(
         self,
@@ -1769,16 +1799,17 @@ class CNNBase:
                 "Invalid mode set for Agent. Agent remains in their original training mode"
             )
 
-    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int):
+    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: npt.NDArray):
         with torch.no_grad():
             (
+                prediction_map,
                 location_map,
                 others_locations_map,
                 readings_map,
                 visit_counts_map,
                 obstacles_map,
                 combo_location_map,
-            ) = self.maps.observation_to_map(state_observation, id)
+            ) = self.maps.observation_to_map(state_observation, id, location_prediction)
 
             # Convert map to tensor
             actor_map_stack: torch.Tensor = torch.stack(
@@ -1807,7 +1838,9 @@ class CNNBase:
         return batched_actor_mapstack, batched_critic_mapstack
 
     def select_action(
-        self, state_observation: Dict[int, npt.NDArray], id: int
+        self, state_observation: Dict[int, npt.NDArray], 
+        id: int,
+        hidden: torch.Tensor
     ) -> Tuple[ActionChoice, HeatMaps]:
         """
         Method to take a multi-agent observation and convert it to maps and store to a buffer. Then uses the actor network to select an
@@ -1816,10 +1849,19 @@ class CNNBase:
         :param state_observation: (Dict[int, npt.NDArray]) Dictionary with each agent's observation. The agent id is the key.
         :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         """
-        # try:
         with torch.no_grad():
+
+            # Extract all observations for PFGRU
+            obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
+            obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
+
+            location_prediction, new_hidden = self.model(obs_tensor, hidden)
+            
+            # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
-                state_observation=state_observation, id=id
+                id = id,
+                state_observation = state_observation,
+                location_prediction = location_prediction.numpy()
             )
 
             # Get actions and values
@@ -1831,15 +1873,6 @@ class CNNBase:
                 batched_critic_mapstack
             )  # size(1)
 
-        # except Exception as err:
-        #     ''' If exception, save current model, dump the local variables to a file, and print exception'''
-        #     print("Exception encountered, saving model...")
-        #     if path.exists(self.save_path):
-        #         self.save(checkpoint_path=self.save_path)
-        #     else:
-        #         self.save(checkpoint_path='./rad_team_error_log.log')
-
-        #     print(repr(err))
 
         state_value_item: Union[float, None]
         if state_value:
@@ -1912,15 +1945,16 @@ class CNNBase:
     def step(
         self,
         state_observation: Dict[int, npt.NDArray],
-        hidden: Union[torch.Tensor, None] = None,
+        hidden: torch.Tensor
     ) -> Tuple[ActionChoice, HeatMaps]:
         """Alias for select_action"""
-        return self.select_action(state_observation=state_observation, id=self.id)
+        return self.select_action(state_observation=state_observation, id=self.id, hidden=hidden)
 
-    def reset_hidden(self) -> None:
+    def reset_hidden(self, batch_size=1) -> Tuple[torch.Tensor, torch.Tensor]:
         """For compatibility - returns nothing"""
-        return
-
+        model_hidden = self.model.init_hidden(batch_size)
+        return model_hidden
+    
     def render(
         self,
         savepath: str = getcwd(),

@@ -117,10 +117,10 @@
       "cwd": "${workspaceFolder}/algos/test_ppo"
     },
     {
-      "name": "Hail Mary - Train OG project w/MARL Train",
+      "name": "Hail Mary - Train OG project w/MARL Env",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/algos/test_train/train.py",
+      "program": "${workspaceFolder}/algos/test_environment/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       //"args": ["--steps_per_epoch", "3"],
