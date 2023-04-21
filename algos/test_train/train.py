@@ -449,7 +449,7 @@ class train_PPO:
 
                     if epoch_ended and not (episode_over):
                         print(
-                            f"Warning: trajectory cut off by epoch at {steps_in_episode} steps and step count {steps_in_epoch}.",
+                            f"Episode trajectory cut off by epoch max step count at episode stepcount {steps_in_episode}  and epoch stepcount {steps_in_epoch}.",
                             flush=True,
                         )
 

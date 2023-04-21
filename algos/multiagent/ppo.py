@@ -1203,7 +1203,7 @@ class AgentPPO:
             act = trajectories[:, action_idx]
             logp_old = trajectories[:, logp_old_idx]
             adv = trajectories[:, advantage_idx]
-            ret = trajectories[:, return_idx, None],
+            ret = trajectories[:, return_idx, None]
             src_tar = trajectories[:, source_loc_idx:].clone()
 
             # Calculate new action log probabilities
@@ -1234,11 +1234,11 @@ class AgentPPO:
             loss_storage[index, 3] = val_loss.detach()
 
         # Get means
-        mean_loss = loss_buffer.mean()
-        means = loss_storage.mean(axis=0)
+        mean_loss: torch.Tensor = loss_buffer.mean()
+        means: torch.Tensor = loss_storage.mean(axis=0) # type: ignore
         
         # For clarity
-        loss_pi = mean_loss
+        loss_pi: torch.Tensor  = mean_loss
         approx_kl = means[0].detach()
         ent = means[1].detach()
         clipfrac = means[2].detach()
@@ -1266,7 +1266,7 @@ class AgentPPO:
             if proc_id() == 0:
                 logger.log('Terminated update at %d gradient steps due to reaching max kl.'%iter)            
 
-        policy_result = dict()
+        policy_result: Dict[str, npt.NDArray] = dict()
         policy_result["kl"] =  pi_info["kl"][0].numpy()
         policy_result["ent"] = pi_info["ent"][0].numpy()
         policy_result["cf"] = pi_info["cf"][0].numpy()

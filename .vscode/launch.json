@@ -117,7 +117,7 @@
       "cwd": "${workspaceFolder}/algos/test_ppo"
     },
     {
-      "name": "Hail Mary - Train OG project w/MARL PPO",
+      "name": "Hail Mary - Train OG project w/MARL Train",
       "type": "python",
       "request": "launch",
       "program": "${workspaceFolder}/algos/test_train/train.py",

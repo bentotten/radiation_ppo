@@ -651,7 +651,7 @@ class AgentPPO:
         self, logger: EpochLogger = None
     ) -> UpdateResult:  #         (env, bp_args, loss_fcn=loss)
         """
-        Wrapper function to update individual neural networks. Note: update functions perform multiple updates per call
+        Wrapper function to update individual neural networks. Note: performs multiple updates per call.
 
         :param logger: (EpochLogger) Logger used for RAD-A2C updates.
         """
@@ -676,7 +676,8 @@ class AgentPPO:
         min_iterations: int = len(data["ep_form"])
         kk: int = 0
         term: bool = False
-
+        results: UpdateResult
+        
         # Train RAD-A2C framework
         if (
             self.actor_critic_architecture == "rnn"
@@ -715,9 +716,10 @@ class AgentPPO:
                 LocLoss = predictor_loss,  
                 VarExplain=0,
             )
+            
         # Train RAD-TEAM framework
         else:
-            # TODO get PFGRU working with RAD-TEAM
+            # TODO add PFGRU to RAD-TEAM
             model_loss = torch.tensor(0)
 
             # Get mapstacks from buffer or inflate from logs, if in max-memory mode
@@ -736,9 +738,7 @@ class AgentPPO:
                 sample_indexes = sample(self, data=data)
 
                 # actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(
-                    data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer
-                )
+                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
 
                 # Check Actor KL Divergence
                 if actor_loss_results["kl"].item() < 1.5 * self.target_kl:
@@ -756,8 +756,6 @@ class AgentPPO:
             # TODO Uncomment after implementing PFGRU
             # self.agent_optimizer.pfgru_scheduler.step()
             # Reduce pfgru learning rate
-
-            results: UpdateResult
 
             # If local critic, do Value function learning here
             # For global critic, only first agent performs the update
@@ -1106,7 +1104,7 @@ class AgentPPO:
             act = trajectories[:, action_idx]
             logp_old = trajectories[:, logp_old_idx]
             adv = trajectories[:, advantage_idx]
-            ret = trajectories[:, return_idx, None],
+            ret = trajectories[:, return_idx, None]
             src_tar = trajectories[:, source_loc_idx:].clone()
 
             # Calculate new action log probabilities
@@ -1123,6 +1121,7 @@ class AgentPPO:
             clipfrac = (torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item())
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
+            
             val_loss = self.agent_optimizer.MSELoss(val, ret)  # MSE critc loss
 
             loss_buffer[index] = -(
@@ -1131,14 +1130,14 @@ class AgentPPO:
                 + self.alpha * ent
             )
             
-            loss_storage[ii,0] = approx_kl; 
-            loss_storage[ii,1] = ent; 
-            loss_storage[ii,2] = clipfrac; 
-            loss_storage[ii,3] = val_loss.detach()
+            loss_storage[index,0] = approx_kl; 
+            loss_storage[index,1] = ent; 
+            loss_storage[index,2] = clipfrac; 
+            loss_storage[index,3] = val_loss.detach()
 
         # Get means
         mean_loss = loss_buffer.mean()
-        means = loss_storage.mean(axis=0)
+        means = loss_storage.mean(axis=0) # type: ignore
         
         # For clarity
         loss_pi = mean_loss
@@ -1169,7 +1168,7 @@ class AgentPPO:
             if proc_id() == 0:
                 logger.log('Terminated update at %d gradient steps due to reaching max kl.'%iter)            
 
-        policy_result = dict()
+        policy_result: Dict[str, npt.NDArray] = dict()
         policy_result["kl"] =  pi_info["kl"][0].numpy()
         policy_result["ent"] = pi_info["ent"][0].numpy()
         policy_result["cf"] = pi_info["cf"][0].numpy()
