@@ -416,58 +416,28 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         
         return model_loss
     
-    if not TEST_PPO:
-        # Set up optimizers and learning rate decay for policy and localization module
-        pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-        model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-        pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
-        model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
-        loss = torch.nn.MSELoss(reduction='mean')
-                
-        # test pi optimizer
-        state1 = pi_optimizer.state_dict() 
-        state2 = ac_ppo.agent_optimizer.pi_optimizer.state_dict()          
-        assert compare_dicts(state1, state2)
-        
-        # test model_optimizer
-        state1 = model_optimizer.state_dict() 
-        state2 = ac_ppo.agent_optimizer.model_optimizer.state_dict()          
-        assert compare_dicts(state1, state2)    
-        
-        # test pi_scheduler
-        state1 = pi_scheduler.state_dict() 
-        state2 = ac_ppo.agent_optimizer.pi_scheduler.state_dict()          
-        assert compare_dicts(state1, state2)        
-        
-        # test model_scheduler
-        state1 = model_scheduler.state_dict() 
-        state2 = ac_ppo.agent_optimizer.pfgru_scheduler.state_dict()          
-        assert compare_dicts(state1, state2)       
-        
-        # test loss
-        state1 = loss.state_dict() 
-        state2 = ac_ppo.agent_optimizer.MSELoss.state_dict()          
-        assert compare_dicts(state1, state2)        
+    # OG
+    # Set up optimizers and learning rate decay for policy and localization module
+    # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
+    # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
+    # pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
+    # model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
+    # loss = torch.nn.MSELoss(reduction='mean')    
     
-    if TEST_OPTIMIZER:
-        optimization = OptimizationStorage(
-                    train_pi_iters=train_pi_iters,
-                    train_v_iters=None,
-                    train_pfgru_iters=train_v_iters,
-                    pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-                    critic_optimizer=None, 
-                    model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
-                    MSELoss=torch.nn.MSELoss(reduction="mean"),
-                )
+    optimization = OptimizationStorage(
+                train_pi_iters=train_pi_iters,
+                train_v_iters=None,
+                train_pfgru_iters=train_v_iters,
+                pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+                critic_optimizer=None, 
+                model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
+                MSELoss=torch.nn.MSELoss(reduction="mean"),
+            )
 
     # Set up model saving
-    if TEST_PPO:
-        logger.setup_pytorch_saver(ac.agent) 
-        loss = ac.agent_optimizer.MSELoss           
-    else:
-        logger.setup_pytorch_saver(ac)
+    logger.setup_pytorch_saver(ac)
 
-    def update(env, args, loss_fcn=loss):
+    def update(env, args, loss_fcn):
         """Update for the localization and A2C modules"""
 
         data = new_buffer.get()
@@ -526,12 +496,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
     o, _, _, _ = env.reset()
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
-    stat_buff = core.StatBuff()
-    stat_buff.update(o[0])
+    
     ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
     
+    ac.set_mode('eval')
     if not TEST_PPO:
         ac.model.eval()
         assert ac.model.training == ac_ppo.agent.model.training
@@ -557,9 +527,8 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             assert ac.pi.logits_net.v_net.training == ac_ppo.agent.pi.logits_net.v_net.training
         
         for t in range(local_steps_per_epoch):
-            #Standardize input using running statistics per episode
+            # Artifact - standardization done inside CNN
             obs_std = o
-            obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
             
             #compute action and logp (Actor), compute value (Critic)
             if TEST_PPO:
@@ -594,9 +563,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             # Update obs (critical!)
             o = next_o
 
-            #Update running mean and std
-            stat_buff.update(o[0])
-
+            # Ending conditions
             timeout = ep_len == max_ep_len
             terminal = d or timeout
             epoch_ended = t==local_steps_per_epoch-1
@@ -612,22 +579,11 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                    
                     if TEST_PPO:
-                        _, v, _, _, _ = ac.step({0: obs_std}, hidden=hidden)   
-                
-                        # Test against saved value
-                        # to_test = torch.load(f'./hidden/{HIDDEN_SAVES}')
-                        # assert compare_dicts(to_test, v)   
-                        # HIDDEN_SAVES += 1                                                            
+                        _, v, _, _, _ = ac.step({0: obs_std}, hidden=hidden)                                                        
                     
                     if not TEST_PPO:
-                        _, v, _, _, _ = ac.step(obs_std, hidden=hidden)
-                        
-                        # Save value
-                        # torch.save(v, f'./hidden/{HIDDEN_SAVES}')
-                        # HIDDEN_SAVES += 1                
+                        _, v, _, _, _ = ac.step(obs_std, hidden=hidden)             
                     
                     if epoch_ended:
                         #Set flag to sample new environment parameters
@@ -660,7 +616,6 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                             episode_rewards=ep_ret_ls
                             )                
                 ep_ret_ls = []
-                stat_buff.reset()
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
@@ -686,8 +641,6 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                     o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
-
-                stat_buff.update(o[0])
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):

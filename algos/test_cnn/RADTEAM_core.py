@@ -70,6 +70,10 @@ def calculate_resolution_accuracy(resolution_multiplier: float, scale: float):
     return resolution_multiplier * 1 / scale
 
 
+def count_vars(module):
+    return sum([np.prod(p.shape) for p in module.parameters()])
+
+
 class ActionChoice(NamedTuple):
     """Named Tuple - Standardized response/return template from Actor-Critic for action selection"""
 
@@ -81,7 +85,7 @@ class ActionChoice(NamedTuple):
     action_logprob: float  # size (1)
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
     state_value: Union[float, None]  # size(1)
-    #: Coordinates predicted by the location prediction model (PFGRU). TODO: Implement for CNN
+    #: Coordinates predicted by the location prediction model (PFGRU).
     loc_pred: Union[torch.Tensor, None] = None
 
     # For compatibility with RAD-PPO
@@ -1754,11 +1758,11 @@ class CNNBase:
         if mode == "train":
             self.pi.put_in_training_mode()
             self.critic.put_in_training_mode()
-            # self.model.put_in_training_mode() # TODO add
+            self.model.train()
         elif mode == "eval":
             self.pi.put_in_evaluation_mode
             self.critic.put_in_evaluation_mode
-            # self.model.put_in_training_mode() # TODO add
+            self.model.eval()
 
         else:
             raise Warning(
@@ -1767,7 +1771,6 @@ class CNNBase:
 
     def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int):
         with torch.no_grad():
-            # TODO Maps are not matching between agents, needs check
             (
                 location_map,
                 others_locations_map,
