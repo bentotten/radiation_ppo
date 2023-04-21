@@ -1489,8 +1489,8 @@ class PFGRUCell(PFRNNBaseCell):
         self,
         input_size: int,
         obs_size: int,
-        use_resampling: bool,
         activation: str,
+        use_resampling: bool = True,        
         num_particles: int = 40,
         hidden_size: int = 64,
         resamp_alpha: float = 0.7,
@@ -1664,6 +1664,7 @@ class CNNBase:
     environment_scale: int
     bounds_offset: tuple  # No default to ensure changes to environment are propogated to this function
     enforce_boundaries: bool  # No default due to the increased computation needs for non-enforced boundaries. Ensures this was done intentionally.
+    predictor_hidden_size: int # 
     grid_bounds: Tuple[int, int] = field(default_factory=lambda: (1, 1))
     resolution_multiplier: float = field(default=0.01)
     GlobalCritic: Union[Critic, None] = field(default=None)
@@ -1737,14 +1738,12 @@ class CNNBase:
             self.critic = Critic(map_dim=self.maps.map_dimensions)
 
         self.mseLoss = nn.MSELoss()
-
-        # TODO rename this (this is the PFGRU module); naming this "model" for compatibility reasons (one refactor at a time!), but the true model is the maps buffer
-        # TODO Finish integrating this
+   
         self.model = PFGRUCell(
             input_size=self.observation_space - 8,
             obs_size=self.observation_space - 8,
-            use_resampling=True,
-            activation="relu",
+            activation="tanh",
+            hidden_size= self.predictor_hidden_size #(bpf_hsize) (hid_rec in cli)
         )
 
     def set_mode(self, mode: str) -> None:

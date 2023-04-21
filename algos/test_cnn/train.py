@@ -64,111 +64,6 @@ def compare_dicts(dict1, dict2):
             return True
 
 
-class PPOBuffer:
-    """
-    A buffer for storing histories experienced by a PPO agent interacting
-    with the environment, and using Generalized Advantage Estimation (GAE-Lambda)
-    for calculating the advantages of state-action pairs.
-    """
-
-    def __init__(self, obs_dim, act_dim, size, gamma=0.99, lam=0.90, hid_size=48):
-        self.obs_buf = np.zeros(core.combined_shape(size, obs_dim), dtype=np.float32)
-        self.act_buf = np.zeros(core.combined_shape(size), dtype=np.float32)
-        self.adv_buf = np.zeros(size, dtype=np.float32)
-        self.rew_buf = np.zeros(size, dtype=np.float32)
-        self.ret_buf = np.zeros(size, dtype=np.float32)
-        self.val_buf = np.zeros(size, dtype=np.float32)
-        self.source_tar = np.zeros((size,2), dtype=np.float32)
-        self.logp_buf = np.zeros(size, dtype=np.float32)
-        self.obs_win = np.zeros(obs_dim, dtype=np.float32)
-        self.obs_win_std = np.zeros(obs_dim, dtype=np.float32)
-        self.gamma, self.lam = gamma, lam
-        self.ptr, self.path_start_idx, self.max_size = 0, 0, size
-        self.beta = 0.005
-
-    def store(self, obs, act, rew, val, logp, src):
-        """
-        Append one timestep of agent-environment interaction to the buffer.
-        """
-        assert self.ptr < self.max_size     
-        self.obs_buf[self.ptr,:] = obs 
-        self.act_buf[self.ptr] = act
-        self.rew_buf[self.ptr] = rew
-        self.val_buf[self.ptr] = val
-        self.source_tar[self.ptr] = src
-        self.logp_buf[self.ptr] = logp
-        self.ptr += 1
-
-    def finish_path(self, last_val=0):
-        """
-        Call this at the end of a trajectory, or when one gets cut off
-        by an epoch ending. This looks back in the buffer to where the
-        trajectory started, and uses rewards and value estimates from
-        the whole trajectory to compute advantage estimates with GAE-Lambda,
-        as well as compute the rewards-to-go for each state, to use as
-        the targets for the value function.
-
-        The "last_val" argument should be 0 if the trajectory ended
-        because the agent reached a terminal state (died), and otherwise
-        should be V(s_T), the value function estimated for the last state.
-        This allows us to bootstrap the reward-to-go calculation to account
-        for timesteps beyond the arbitrary episode horizon (or epoch cutoff).
-        """
-
-        path_slice = slice(self.path_start_idx, self.ptr)
-        rews = np.append(self.rew_buf[path_slice], last_val)
-        vals = np.append(self.val_buf[path_slice], last_val)
-        
-        # the next two lines implement GAE-Lambda advantage calculation
-        # gamma determines scale of value function, introduces bias regardless of VF accuracy
-        # lambda introduces bias when VF is inaccurate
-        deltas = rews[:-1] + self.gamma * vals[1:] - vals[:-1]
-        self.adv_buf[path_slice] = core.discount_cumsum(deltas, self.gamma * self.lam)
-        
-        # the next line computes rewards-to-go, to be targets for the value function
-        self.ret_buf[path_slice] = core.discount_cumsum(rews, self.gamma)[:-1]
-        
-        self.path_start_idx = self.ptr
-
-    def get(self,logger=None):
-        """
-        Call this at the end of an epoch to get all of the data from
-        the buffer, with advantages appropriately normalized (shifted to have
-        mean zero and std one). Also, resets some pointers in the buffer.
-        """
-        assert self.ptr == self.max_size    # buffer has to be full before you can get
-        self.ptr, self.path_start_idx = 0, 0
-        # the next two lines implement the advantage normalization trick
-        adv_mean, adv_std = mpi_statistics_scalar(self.adv_buf)
-        self.adv_buf = (self.adv_buf - adv_mean) / adv_std
-        #ret_mean, ret_std = mpi_statistics_scalar(self.ret_buf)
-        #self.ret_buf = (self.ret_buf) / ret_std
-        #obs_mean, obs_std = mpi_statistics_vector(self.obs_buf)
-        #self.obs_buf_std_ind[:,1:] = (self.obs_buf[:,1:] - obs_mean[1:]) / (obs_std[1:])
-        
-        data = dict(obs=self.obs_buf, act=self.act_buf, ret=self.ret_buf,
-                    adv=self.adv_buf, logp=self.logp_buf, loc_pred=self.obs_win_std,ep_len= sum(logger.epoch_dict['EpLen']))
-        data = {k: torch.as_tensor(v, dtype=torch.float32) for k,v in data.items()}
-
-        if logger:
-            slice_b = 0
-            slice_f = 0
-            epLen = logger.epoch_dict['EpLen']
-            epLenSize = len(epLen) if sum(epLen) == len(self.obs_buf) else (len(epLen) + 1)
-            obs_buf = np.hstack((self.obs_buf,self.adv_buf[:,None],self.ret_buf[:,None],self.logp_buf[:,None],self.act_buf[:,None],self.source_tar))
-            epForm = [[] for _ in range(epLenSize)]
-            for jj, ep_i in enumerate(epLen):
-                slice_f += ep_i
-                epForm[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32))
-                slice_b += ep_i
-            if slice_f != len(self.obs_buf):
-                epForm[jj+1].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
-                
-            data['ep_form'] = epForm
-
-        return data
-
-
 def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0, 
         steps_per_epoch=4000, epochs=50, gamma=0.99, alpha=0, clip_ratio=0.2, pi_lr=3e-4, mp_mm=[5,5],
         vf_lr=5e-3, train_pi_iters=40, train_v_iters=15, lam=0.9, max_ep_len=120, save_gif=False,
@@ -279,8 +174,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     """
 
-    HIDDEN_SAVES = 0
-
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
     # Set up logger and save configuration
@@ -292,96 +185,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     # Instantiate environment
     env = env_fn()
-    ac_kwargs['seed'] = seed
-    ac_kwargs['pad_dim'] = 2
-
-    obs_dim = env.observation_space.shape[0]
-    act_dim = env.action_space.shape
-
-    #Instantiate A2C
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
     
-    # TEST AGENTPPO as actual decision-makers
-    if TEST_PPO:
-        ac_kwargs['observation_space'] = env.observation_space
-        ac_kwargs['action_space'] = env.action_space
-        bp_args = BpArgs(
-            bp_decay = 0.1,
-            l2_weight=1.0, 
-            l1_weight=0.0,
-            elbo_weight=1.0,
-            area_scale=env.search_area[2][1]
-            )    
-        
-        ppo_kwargs = dict(
-            observation_space=env.observation_space.shape[0],
-            bp_args=bp_args,
-            steps_per_epoch=steps_per_epoch,
-            steps_per_episode=120,
-            number_of_agents=1,
-            env_height=env.search_area[2][1],
-            actor_critic_args=ac_kwargs,
-            actor_critic_architecture='rnn',
-            minibatch=1,
-            train_pi_iters=train_pi_iters,
-            train_v_iters=None,
-            train_pfgru_iters=train_v_iters,
-            actor_learning_rate=pi_lr,
-            critic_learning_rate=None,
-            pfgru_learning_rate=vf_lr,
-            gamma=gamma,
-            alpha=alpha,
-            clip_ratio=clip_ratio,
-            target_kl=target_kl,
-            lam=lam,
-            GlobalCriticOptimizer=None,
-        ) 
-        
-        ac = AgentPPO(id=0, **ppo_kwargs)
-
-    # Otherwise, just test that initialization matches decision maker
-    else:
-        ac_kwargs['observation_space'] = env.observation_space
-        ac_kwargs['action_space'] = env.action_space
-        bp_args = {
-            'bp_decay' : 0.1,
-            'l2_weight':1.0, 
-            'l1_weight':0.0,
-            'elbo_weight':1.0,
-            'area_scale':env.search_area[2][1]
-            }    
-        
-        ppo_kwargs = dict(
-            observation_space=env.observation_space.shape[0],
-            bp_args=bp_args,
-            steps_per_epoch=steps_per_epoch,
-            steps_per_episode=120,
-            number_of_agents=1,
-            env_height=env.search_area[2][1],
-            actor_critic_args=ac_kwargs,
-            actor_critic_architecture='rnn',
-            minibatch=1,
-            train_pi_iters=train_pi_iters,
-            train_v_iters=None,
-            train_pfgru_iters=train_v_iters,
-            actor_learning_rate=pi_lr,
-            critic_learning_rate=None,
-            pfgru_learning_rate=vf_lr,
-            gamma=gamma,
-            alpha=alpha,
-            clip_ratio=clip_ratio,
-            target_kl=target_kl,
-            lam=lam,
-            GlobalCriticOptimizer=None,
-        )    
-        ac_ppo = AgentPPO(id=0, **ppo_kwargs)        
-    
-    # Sync params across processes
-    if not TEST_PPO:
-        sync_params(ac)
-    else:
-        ac.sync_params()
-
     #PFGRU args, from Ma et al. 2020
     bp_args = {
         'bp_decay' : 0.1,
@@ -389,21 +193,37 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         'l1_weight':0.0,
         'elbo_weight':1.0,
         'area_scale':env.search_area[2][1]
-        }
+        }    
+    
+    # Setup args for actor-critic and prediction module (pfgru)
+    dict(
+            hidden_sizes_pol=[args.hid_pol]*args.l_pol,hidden_sizes_val=[args.hid_val]*args.l_val,
+            hidden_sizes_rec=args.hid_rec, hidden=[args.hid_gru], net_type=args.net_type,batch_s=args.batch
+            )
+    
+    ac_kwargs['seed'] = seed
+    ac_kwargs['pad_dim'] = 2
+    ac_kwargs['action_space'] = env.detectable_directions # Usually 8
+    ac_kwargs['observation_space']= env.observation_space.shape[0]  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
+    ac_kwargs['detector_step_size'] = env.step_size # Usually 100 cm
+    ac_kwargs['environment_scale'] = env.scale
+    ac_kwargs['bounds_offset'] = env.observation_area
+    ac_kwargs['grid_bounds'] = env.scaled_grid_max       
+
+    #Instantiate A2C
+    ac = actor_critic(**ac_kwargs)
+        
+    sync_params(ac)
 
     # Count variables
-    if TEST_PPO:
-        var_counts = tuple(core.count_vars(module) for module in [ac.agent.pi, ac.agent.model])
-        logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)        
-    else:
-        var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])
-        logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
+    var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
+    logger.log('\nNumber of parameters: \t actior: %d, critic: %d, prediction model: %d \t'%var_counts)
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
     
     new_buffer = NEWPPO(
-                observation_dimension = obs_dim,
+                observation_dimension = env.observation_space.shape[0],
                 max_size = local_steps_per_epoch,
                 max_episode_length = max_ep_len,
                 gamma = gamma,
@@ -928,7 +748,7 @@ if __name__ == '__main__':
     parser.add_argument('--hid_gru', type=int, default=[24],help='A2C GRU hidden state size')
     parser.add_argument('--hid_pol', type=int, default=[32],help='Actor linear layer size') 
     parser.add_argument('--hid_val', type=int, default=[32],help='Critic linear layer size') 
-    parser.add_argument('--hid_rec', type=int, default=[24],help='PFGRU hidden state size')
+    parser.add_argument('--hid_rec', type=int, default=24,help='PFGRU hidden state size')
     parser.add_argument('--l_pol', type=int, default=1,help='Number of layers for Actor MLP')
     parser.add_argument('--l_val', type=int, default=1,help='Number of layers for Critic MLP')
     parser.add_argument('--gamma', type=float, default=0.99,help='Reward attribution for advantage estimator')
@@ -959,6 +779,7 @@ if __name__ == '__main__':
         "number_agents": 1, # TODO change for MARL
         "enforce_grid_boundaries": False
         }
+    
     timestamp = datetime.now().replace(microsecond=0).strftime("%Y-%m-%d-%H:%M:%S")
     exp_name = timestamp + "_" + exp_name
     save_dir_name = save_dir_name + "/" + timestamp    
@@ -982,20 +803,13 @@ if __name__ == '__main__':
     
     # CNN args
     ac_kwargs = dict(
-        action_space=env.detectable_directions,  # Usually 8
-        observation_space=env.observation_space.shape[
-            0
-        ],  # Also known as state dimensions: The dimensions of the observation returned from the environment. Usually 11
-        steps_per_episode = 120,
-        number_of_agents = 1,
-        detector_step_size = env.step_size,  # Usually 100 cm
-        environment_scale = env.scale,
-        bounds_offset = env.observation_area,
+        steps_per_episode = max_ep_step,
+        number_of_agents = 1,        
         enforce_boundaries = True,
-        grid_bounds = env.scaled_grid_max,
         resolution_multiplier = 0.01,
         GlobalCritic = None,
-        save_path = [f"../../models/train/{save_dir_name}", f"{exp_name}_s{args.seed}"]
+        save_path = [f"../../models/train/{save_dir_name}", f"{exp_name}_s{args.seed}"],
+        predictor_hidden_size = args.hid_rec 
         )    
     
     #Run ppo training function
