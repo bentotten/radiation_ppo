@@ -673,34 +673,30 @@ class AgentPPO:
 
         # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get()
-        min_iterations = len(data["ep_form"])
-        kk = 0
-        term = False
+        min_iterations: int = len(data["ep_form"])
+        kk: int = 0
+        term: bool = False
 
         # Train RAD-A2C framework
         if (
             self.actor_critic_architecture == "rnn"
             or self.actor_critic_architecture == "mlp"
         ):
-            # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
+            # Update function for the PFGRU localization module.
             model_loss = self.update_model(data)
 
             # Reset gradients
-            self.agent_optimizer.pi_optimizer.zero_grad()
-            # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
+            self.agent_optimizer.pi_optimizer.zero_grad() # TODO not in original
+            
+            # Train Actor-Critic policy with multiple steps of gradient descent
+            # Early stop training if KL divergence above certain threshold
             while not term and kk < self.train_pi_iters:
-                # Early stop training if KL divergence above certain threshold
-                update_results: Dict[
-                    str, Union[torch.Tensor, npt.NDArray[Any], List[Any], bool]
-                ] = {}
                 (
-                    update_results["pi_l"],
-                    update_results["pi_info"],
-                    update_results["term"],
-                    update_results["loc_loss"],
-                ) = self.update_rada2c(
-                    data, min_iterations, logger=logger
-                )  # type: ignore
+                    policy_loss_sum_new,
+                    policy_result,
+                    term,
+                    predictor_loss,
+                ) = self.update_rada2c(data, min_iterations, logger=logger)
                 kk += 1
 
             # Reduce learning rate
@@ -709,14 +705,14 @@ class AgentPPO:
 
             # Log changes from update
             results = UpdateResult(
-                stop_iteration=kk,
-                loss_policy=update_results["pi_l"].item(),  # type: ignore
-                loss_critic=update_results["pi_info"]["val_loss"].item(),  # type: ignore
-                loss_predictor=model_loss.item(),  # TODO if using the regression GRU
-                kl_divergence=update_results["pi_info"]["kl"],  # type: ignore
-                Entropy=update_results["pi_info"]["ent"],  # type: ignore
-                ClipFrac=update_results["pi_info"]["cf"],  # type: ignore
-                LocLoss=update_results["loc_loss"],  # type: ignore
+                stop_iteration = kk,
+                loss_policy = policy_loss_sum_new.item(),
+                loss_critic = policy_result["val_loss"].item(),
+                loss_predictor = model_loss.item(),  # TODO if using the regression GRU
+                kl_divergence = policy_result["kl"],
+                Entropy = policy_result["ent"], 
+                ClipFrac = policy_result["cf"], 
+                LocLoss = predictor_loss,  
                 VarExplain=0,
             )
         # Train RAD-TEAM framework

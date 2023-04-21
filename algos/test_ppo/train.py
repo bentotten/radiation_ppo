@@ -690,6 +690,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         # Train policy with multiple steps of gradient descent (mini batch)
         if TEST_OPTIMIZER: 
             assert optimization.train_pi_iters == train_pi_iters
+            
         while (not term and kk < train_pi_iters):
             #Early stop training if KL-div above certain threshold
             pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
@@ -717,7 +718,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             state1 = model_scheduler.state_dict() 
             state2 = optimization.pfgru_scheduler.state_dict()          
             assert compare_dicts(state1, state2)            
-            
 
         logger.store(StopIter=kk)
 
