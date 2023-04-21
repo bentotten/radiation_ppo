@@ -421,13 +421,16 @@ class RNNModelActorCritic(nn.Module):
             hidden = (hidden_part,hidden2)
         return a.numpy(), v.numpy(), logp_a.numpy(), hidden, loc_pred.numpy()
 
-    def grad_step(self, obs,act, hidden=None):
+    def grad_step(self, obs, act, hidden=None):
+        
         obs_t = torch.as_tensor(obs, dtype=torch.float32).unsqueeze(1)
         loc_pred = torch.empty((obs_t.shape[0],2))
         hidden_part = hidden[0]
+        
         with torch.no_grad():
             for kk, o in enumerate(obs_t):
                 loc_pred[kk], hidden_part = self.model(o[:,:3], hidden_part)
+        
         obs_t = torch.cat((obs_t,loc_pred.unsqueeze(1)),dim=2)
         pi, logp_a, hidden2, val  = self.pi(obs_t, act=act, hidden=hidden[1])
         return pi, val, logp_a, loc_pred

@@ -1953,10 +1953,9 @@ class CNNBase:
 
     def step_with_gradient(
         self, 
-        id: int,
-        state_observation: Dict[int, npt.NDArray], 
-        action_taken: torch.Tensor,
-        hidden: torch.Tensor
+        actor_mapstack: torch.Tensor,
+        critic_mapstack: torch.Tensor,
+        action_taken: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Identical to select_action, however stores the gradient for a gradient update and returns different information.
@@ -1966,25 +1965,28 @@ class CNNBase:
         :param hidden: hidden layers for PFGRU.
         """
         
-        with torch.no_grad():
-            obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
-            obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
+        # NOTE: Original had this create a new prediction, however this will cause the location_prediction map to not match the original. New maps can
+        # be made by pulling full observations from the full_observations_buffer in the ppo_buffer.get() function and uncomment if desired.
+        
+        # with torch.no_grad():
+        #     obs_list = [state_observation[i][:3] for i in range(self.number_of_agents)] # Create a list of just readings and locations for all agents
+        #     obs_tensor = torch.as_tensor(obs_list, dtype=torch.float32)
 
-            location_prediction, new_hidden = self.model(obs_tensor, hidden)
+        #     location_prediction, _ = self.model(obs_tensor, hidden)
             
-            # Process data and create maps
-            batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
-                id = id,
-                state_observation = state_observation,
-                location_prediction = tuple(location_prediction.tolist())
-            )
+        #     # Process data and create maps
+        #     batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
+        #         id = id,
+        #         state_observation = state_observation,
+        #         location_prediction = tuple(location_prediction.tolist())
+        #     )
 
         # Get action logprobs and entroy WITH gradient
-        action_logprobs, dist_entropy = self.pi.get_action_information(state_map_stack=batched_actor_mapstack, action=action_taken)
+        action_logprobs, dist_entropy = self.pi.get_action_information(state_map_stack=actor_mapstack, action=action_taken) 
 
-        state_value: torch.Tensor = self.critic.forward(batched_critic_mapstack)
+        state_value = self.critic.forward(critic_mapstack)
         
-        return action_logprobs, dist_entropy, state_value
+        return action_logprobs, state_value, dist_entropy # type: ignore
 
 
     def reset_hidden(self, batch_size=1) -> Tuple[torch.Tensor, torch.Tensor]:

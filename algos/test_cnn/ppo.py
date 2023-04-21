@@ -177,52 +177,26 @@ class PPOBuffer:
     max_episode_length: int
     number_agents: int
 
-    ptr: int = field(
-        init=False
-    )  # For keeping track of location in buffer during update
-    path_start_idx: int = field(
-        init=False
-    )  # For keeping track of starting location in buffer during update
+    ptr: int = field(init=False)  # For keeping track of location in buffer during update
+    path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
-    full_observation_buffer: List[
-        Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]
-    ] = field(
-        init=False
-    )  # In memory-priority mode, for each timestep, stores every agents observation
-    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(
-        init=False
-    )  # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
+    # In memory-priority mode, for each timestep, stores every agents observation    
+    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(init=False)  
+    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(init=False)  # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
 
-    obs_buf: npt.NDArray[np.float32] = field(
-        init=False
-    )  # Observation buffer for each agent
-    act_buf: npt.NDArray[np.float32] = field(
-        init=False
-    )  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
-    adv_buf: npt.NDArray[np.float32] = field(
-        init=False
-    )  # Advantages buffer for each step
+    obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
+    act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
+    adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
     rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer for each step
-    ret_buf: npt.NDArray[np.float32] = field(
-        init=False
-    )  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
-    val_buf: npt.NDArray[np.float32] = field(
-        init=False
-    )  # State-value buffer for each step
-    source_tar: npt.NDArray[np.float32] = field(
-        init=False
-    )  # Source location buffer (for moving targets)
-    logp_buf: npt.NDArray[np.float32] = field(
-        init=False
-    )  # action log probabilities buffer
+    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
+    val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer for each step
+    source_tar: npt.NDArray[np.float32] = field(init=False)  # Source location buffer (for moving targets)
+    logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
+    location_pred_buf: npt.NDArray[np.float32] = field(init=False)  # Store location predictions
 
-    obs_win: npt.NDArray[np.float32] = field(
-        init=False
-    )  # For location prediction TODO find out what its doing
-    obs_win_std: npt.NDArray[np.float32] = field(
-        init=False
-    )  # For location prediction TODO find out what its doing
+    obs_win: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
+    obs_win_std: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
 
     gamma: float = 0.99  # trajectory discount for Generalize Advantage Estimate (GAE)
     lam: float = 0.90  # exponential mean discount Generalize Advantage Estimate (GAE). Can be thought of like a smoothing parameter.
@@ -254,9 +228,7 @@ class PPOBuffer:
             self.full_observation_buffer = None
 
         # TODO delete once full_observation_buffer is done
-        self.obs_buf = np.zeros(
-            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
-        )
+        self.obs_buf = np.zeros(combined_shape(self.max_size, self.observation_dimension), dtype=np.float32)
         self.act_buf = np.zeros(combined_shape(self.max_size), dtype=np.float32)
         self.adv_buf = np.zeros(self.max_size, dtype=np.float32)
         self.rew_buf = np.zeros(self.max_size, dtype=np.float32)
@@ -264,6 +236,7 @@ class PPOBuffer:
         self.val_buf = np.zeros(self.max_size, dtype=np.float32)
         self.source_tar = np.zeros((self.max_size, 2), dtype=np.float32)
         self.logp_buf = np.zeros(self.max_size, dtype=np.float32)
+        self.location_pred_buf = np.zeros((self.max_size, 2), dtype=np.float32)
 
         # TODO artifact - investigate
         self.obs_win = np.zeros(self.observation_dimension, dtype=np.float32)
@@ -286,6 +259,7 @@ class PPOBuffer:
         full_observation: Dict[int, npt.NDArray],
         heatmap_stacks: None,
         terminal: bool,
+        location_prediction: torch.Tensor
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -307,6 +281,7 @@ class PPOBuffer:
         self.val_buf[self.ptr] = val
         self.source_tar[self.ptr] = src
         self.logp_buf[self.ptr] = logp
+        self.location_pred_buf[self.ptr] = location_prediction
 
         if heatmap_stacks:
             if PRIO_MEMORY:
@@ -408,7 +383,8 @@ class PPOBuffer:
         # Data is currently stored per-step for the entire epoch. This divides the data into a per-episode form
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
         actor_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        critic_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]        
+        critic_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
+        prediction_location_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
         
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         slice_b: int = 0
@@ -418,7 +394,8 @@ class PPOBuffer:
             slice_f += ep_i
             episode_form[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)) # Take readings from slice_b to slice_f. Slice_f marks the episode offset
             actor_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['actor'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
-            critic_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['critic'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor            
+            critic_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['critic'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
+            prediction_location_in_episode_form[jj].append(self.location_pred_buf[slice_b:slice_f])
             slice_b += ep_i
             jj += 1
         if slice_f != len(self.obs_buf):
@@ -437,7 +414,8 @@ class PPOBuffer:
             ep_len=torch.as_tensor(np.copy(total_episode_length), dtype=torch.float32),
             ep_form=episode_form,
             actor_heatmaps_ep_form = actor_heatmaps_in_episode_form,
-            critic_heatmaps_ep_form = critic_heatmaps_in_episode_form
+            critic_heatmaps_ep_form = critic_heatmaps_in_episode_form,
+            location_pred_ep_form = prediction_location_in_episode_form
         )
 
         return data

@@ -244,6 +244,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         ep_form= data['ep_form']
         pi_ep_form = data['actor_heatmaps_ep_form']
         v_ep_form = data['critic_heatmaps_ep_form']
+        loc_pred_ep_form = data['location_pred_ep_form']
         
         assert len(ep_form) == len(pi_ep_form)
         assert len(ep_form) == len(v_ep_form)
@@ -260,24 +261,46 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         loss_sto = torch.zeros((len(ep_form),4),dtype=torch.float32)
         loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
         loss_arr = torch.autograd.Variable(loss_arr_buff)
+        src_target_buffer = torch.zeros((len(ep_form),2),dtype=torch.float32)
+        loc_prediction_buffer = torch.zeros((len(ep_form),2),dtype=torch.float32)
 
-        for ii,ep in enumerate(ep_form):
-            #For each set of episodes per process from an epoch, compute loss 
-            trajectories = ep[0]
+        # For each set of episodes per process from an epoch, compute loss 
+        for ii in range(len(ep_form)):
+            # Clear stored maps            
+            ac.reset() 
             
-            ac.reset() # Clear stored maps
-            hidden = ac.reset_hidden() # Get hidden layers for pfgru
-            
-            obs = trajectories[:,:observation_idx]
+            # Get Data
+            trajectories = ep_form[ii][0]
+            actor_mapstacks = pi_ep_form[ii][0]
+            critic_mapstacks = v_ep_form[ii][0]
+            loc_pred = loc_pred_ep_form[ii][0]
+                        
             act = trajectories[:,action_idx]
             logp_old = trajectories[:,logp_old_idx]
             adv = trajectories[:,advantage_idx]
             ret = trajectories[:,return_idx,None]
             src_tar = trajectories[:,source_loc_idx:].clone()
             
-            # Calculate new log prob.
-            #pi, val, logp, loc = ac.step_with_gradient(obs, act, hidden=hidden)
-            pi, val, logp, loc = ac.step_with_gradient(obs, act, hidden=hidden)
+            # Sanity check
+            assert len(actor_mapstacks) == len(act)
+            assert len(critic_mapstacks) == len(act)
+            
+            logp_buffer = []
+            value_buffer = []
+            entropy_buffer = []
+                
+            # For CNN, this must be done iteratively, cannot batch
+            for step in range(len(act)):
+                # Calculate new log prob.
+                logp, val, ent = ac.step_with_gradient(actor_mapstack=actor_mapstacks[step], critic_mapstack=critic_mapstacks[step], action_taken=act[step])
+                logp_buffer.append(logp)
+                value_buffer.append(value_buffer)
+                entropy_buffer.append(entropy_buffer)
+                
+                # TODO UPDATE CRITIC
+                                  
+            
+            # TODO CONVERT TO STACKED TENSOR
             
             # PPO-Clip starts here
             logp_diff = logp_old - logp 
@@ -289,11 +312,15 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             #Useful extra info
             clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
             approx_kl = logp_diff.detach().mean().item()
-            ent = pi.entropy().detach().mean().item()
             val_loss = optimization.MSELoss(val,ret)
             
             loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
-            loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
+            loss_sto[ii,0] = approx_kl; 
+            loss_sto[ii,1] = ent; 
+            loss_sto[ii,2] = clipfrac; 
+            loss_sto[ii,3] = val_loss.detach()
+            src_target_buffer[ii] = src_tar
+            loc_prediction_buffer[ii] = loc_pred     
             
 
         mean_loss = loss_arr.mean()
@@ -301,7 +328,6 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
         pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
         
-        # TODO UPDATE CRITIC
         
         #Average KL across processes for policy
         kl = mpi_avg(pi_info['kl'][-1])
@@ -322,7 +348,10 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
         pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss'] = pi_info['kl'][0].numpy(), pi_info['ent'][0].numpy(), pi_info['cf'][0].numpy(), pi_info['val_loss'][0].numpy()
         loss_sum_new = loss_pi
-        return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
+        
+        prediction_loss = ((env_sim.search_area[2][1] * loc_prediction_buffer) - src_target_buffer).square().mean().sqrt()
+        
+        return loss_sum_new, pi_info, term, prediction_loss
 
     
     def update_model(data, args):
@@ -489,7 +518,8 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 src=env.src_coords, 
                 full_observation={0: obs_std}, # TODO CHANGE FOR MULTI
                 heatmap_stacks=heatmap_stack, 
-                terminal=d
+                terminal=d,
+                location_prediction = result.loc_pred
                 )
             
             logger.store(VVals=result.state_value)
