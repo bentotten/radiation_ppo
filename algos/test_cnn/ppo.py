@@ -1,3 +1,8 @@
+# type: ignore
+"""
+    NOTE: This is a duplicate PPO for testing purposes only! 
+"""
+
 import torch
 from torch.optim import Adam
 import torch.nn.functional as F
@@ -11,27 +16,18 @@ from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Di
 import scipy.signal  # type: ignore
 import ray
 
-try:
-    import NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
-    import NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from rl_tools.epoch_logger import EpochLogger  # type: ignore
-    from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
-    from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
-except ModuleNotFoundError:
-    import algos.multiagent.NeuralNetworkCores.RADTEAM_core as RADCNN_core  # type: ignore
-    import algos.multiagent.NeuralNetworkCores.RADA2C_core as RADA2C_core  # type: ignore
-    from algos.multiagent.rl_tools.epoch_logger import EpochLogger
-    from algos.multiagent.rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
-    from algos.multiagent.rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
-except:
-    raise Exception
+import core as RADA2C_core  # type: ignore
+from rl_tools.logx import EpochLogger # type: ignore
+from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
+from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
+
 
 # If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements, but greatly slows down training.
 PRIO_MEMORY = False
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
 
-
+# Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     """
     This method combines dimensions. It combines length and existing shape dimension into a new tuple representing dimensions (useful for numpy.zeros() or tensor creation).
@@ -58,7 +54,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
         shape = cast(Tuple[int, Any], shape)
         return (length, *shape)
 
-
+# Ok via unit testing
 def discount_cumsum(
     x: npt.NDArray[np.float64], discount: float
 ) -> npt.NDArray[np.float64]:
@@ -83,64 +79,6 @@ def discount_cumsum(
 
     """
     return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
-
-
-# NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
-def generalized_advantage_estimate(gamma, lamb, done, rewards, values):
-    """
-    gamma: trajectory discount (scalar)
-    lamda: exponential mean discount (scalar)
-    values: value function results for each step
-    rewards: rewards for each step
-    done: flag for end of episode (ensures advantage only calculated for single epsiode, when multiple episodes are present)
-
-    Thank you to https://nn.labml.ai/rl/ppo/gae.html
-    """
-    batch_size = done.shape[0]
-
-    advantages = np.zeros(batch_size + 1)
-
-    last_advantage = 0
-    last_value = values[-1]
-
-    for t in reversed(range(batch_size)):
-        # Make mask to filter out values by episode
-        mask = 1.0 - done[t]  # convert bools into variable to multiply by
-
-        # Apply terminal mask to values and advantages
-        last_value = last_value * mask
-        last_advantage = last_advantage * mask
-
-        # Calculate deltas
-        delta = rewards[t] + gamma * last_value - values[t]
-
-        # Get last advantage and add to proper element in advantages array
-        last_advantage = delta + gamma * lamb * last_advantage
-        advantages[t] = last_advantage
-
-        # Get new last value
-        last_value = values[t]
-
-    return advantages
-
-
-# NOTE: Obsolete - use discount cumsum instead. Used for verification purposes
-def rewards_to_go(batch_rews, gamma):
-    """
-    Calculate the rewards to go. Gamma is the discount factor.
-    Thank you to https://medium.com/swlh/coding-ppo-from-scratch-with-pytorch-part-2-4-f9d8b8aa938a
-    """
-    # The rewards-to-go (rtg) per episode per batch to return and the shape will be (num timesteps per episode).
-    batch_rtgs = []
-
-    # Iterate through each episode backwards to maintain same order in batch_rtgs
-    discounted_reward = 0  # The discounted reward so far
-
-    for rew in reversed(batch_rews):
-        discounted_reward = rew + discounted_reward * gamma
-        batch_rtgs.insert(0, discounted_reward)
-
-    return batch_rtgs
 
 
 class UpdateResult(NamedTuple):
@@ -215,8 +153,9 @@ class OptimizationStorage:
             )
         else:
             self.critic_scheduler = None  # RAD-A2C has critic embeded in pi
-            
+        
 
+# Ok now
 @dataclass
 class PPOBuffer:
     """
@@ -345,7 +284,7 @@ class PPOBuffer:
         logp: float,
         src: npt.NDArray[np.float32],
         full_observation: Dict[int, npt.NDArray],
-        heatmap_stacks: RADCNN_core.HeatMaps,
+        heatmap_stacks: None,
         terminal: bool,
     ) -> None:
         """
@@ -496,7 +435,7 @@ class PPOBuffer:
                 np.copy(self.obs_win_std), dtype=torch.float32
             ),  # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(np.copy(total_episode_length), dtype=torch.float32),
-            ep_form=episode_form, # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
+            ep_form=episode_form,
         )
 
         return data
@@ -576,7 +515,7 @@ class AgentPPO:
     number_of_agents: int  # Number of agents
     env_height: float
     actor_critic_args: Dict[str, Any]
-    actor_critic_architecture: str = field(default="cnn")
+    actor_critic_architecture: str = field(default="rnn")
     minibatch: int = field(default=1)
     train_pi_iters: int = field(default=40)
     train_v_iters: int = field(default=40)
@@ -592,11 +531,12 @@ class AgentPPO:
     lam: float = field(default=0.9)
 
     # Initialized elsewhere
-    agent: Union[RADCNN_core.CNNBase, RADA2C_core.RNNModelActorCritic] = field(
+    agent: RADA2C_core.RNNModelActorCritic = field(
         init=False
     )
     #: (bool) Reduces PFGRU training iteration when further along to speed up training.
     reduce_pfgru_iters: bool = field(init=False)
+
 
     def __post_init__(self):
         
@@ -616,32 +556,7 @@ class AgentPPO:
             print("Device set to : cpu")
         print("============================================================================================")
 
-
-        # CNN
-        if self.actor_critic_architecture == "cnn":
-            self.agent = RADCNN_core.CNNBase(id=self.id, **self.actor_critic_args)
-
-            if not self.GlobalCriticOptimizer:
-                CriticOptimizer = Adam(
-                    self.agent.critic.parameters(), lr=self.critic_learning_rate
-                )
-            else:
-                CriticOptimizer = self.GlobalCriticOptimizer
-
-            # Initialize learning opitmizers
-            self.agent_optimizer = OptimizationStorage(
-                critic_flag = True,
-                pi_optimizer=Adam(
-                    self.agent.pi.parameters(), lr=self.actor_learning_rate
-                ),
-                critic_optimizer=CriticOptimizer,  # Allows for global optimizer
-                model_optimizer=Adam(
-                    self.agent.model.parameters(), lr=self.pfgru_learning_rate
-                ),
-                MSELoss=torch.nn.MSELoss(reduction="mean"),
-            )
-        # Gated recurrent architecture for RAD-A2C
-        elif (
+        if (
             self.actor_critic_architecture == "rnn"
             or self.actor_critic_architecture == "mlp"
         ):
@@ -683,7 +598,7 @@ class AgentPPO:
         self.agent.set_mode(mode="eval") # TODO investigate if needs to be ac_ppo.agent.pi.logits_net.v_net.eval() or if pi is ok for RAD-A2C
 
     def reduce_pfgru_training(self):
-        """ Reduce localization module training iterations after some number of epochs to speed up training """
+        """ Reduce localization module training iterations after some number of epochs to speed up training"""
         if self.reduce_pfgru_iters:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False
@@ -693,7 +608,7 @@ class AgentPPO:
         observations: Dict[int, List[Any]],
         hidden: Union[None, Tuple[torch.Tensor]] = None,
         message: Union[None, Dict] = None,
-    ) -> RADCNN_core.ActionChoice:
+    ) -> Any:
         """
         Wrapper for neural network action selection
 
@@ -708,22 +623,11 @@ class AgentPPO:
             or self.actor_critic_architecture == "mlp"
         ):
             # a, v, logp, hidden, out_pred = self.agent.step(obs=observations[self.id], hidden=hiddens) # type: ignore
-            results, heatmaps = self.agent.step(
+            a, v, logp, hidden, out_pred = self.agent.step(
                 obs=observations[self.id], hidden=hidden
             )
-            # results = RADCNN_core.ActionChoice(
-            #     id= self.id,
-            #     action= a,
-            #     action_logprob= logp,
-            #     state_value= v,
-            #     loc_pred= out_pred,
-            #     hiddens= hidden
-            #     )
-        else:
-            results, heatmaps = self.agent.select_action(
-                observations, self.id
-            )  # TODO add in hidden layer shenanagins for PFGRU use
-        return results, heatmaps
+
+        return a, v, logp, hidden, out_pred
 
     def reset_agent(self) -> None:
         """
@@ -747,7 +651,7 @@ class AgentPPO:
         self, logger: EpochLogger = None
     ) -> UpdateResult:  #         (env, bp_args, loss_fcn=loss)
         """
-        Wrapper function to update individual neural networks. Note: update functions perform multiple updates per call
+        Wrapper function to update individual neural networks. Note: performs multiple updates per call.
 
         :param logger: (EpochLogger) Logger used for RAD-A2C updates.
         """
@@ -769,35 +673,31 @@ class AgentPPO:
 
         # Get data from buffers. NOTE: this does not get heatmap stacks/full observations.
         data: Dict[str, torch.Tensor] = self.ppo_buffer.get()
-        min_iterations = len(data["ep_form"]) # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
-        kk = 0
-        term = False
-
+        min_iterations: int = len(data["ep_form"])
+        kk: int = 0
+        term: bool = False
         results: UpdateResult
+        
         # Train RAD-A2C framework
         if (
             self.actor_critic_architecture == "rnn"
             or self.actor_critic_architecture == "mlp"
         ):
-            # Update function for the PFGRU localization module. Module will be set to train mode, then eval mode within update_model
+            # Update function for the PFGRU localization module.
             model_loss = self.update_model(data)
 
             # Reset gradients
-            self.agent_optimizer.pi_optimizer.zero_grad()
-            # Train Actor-Critic policy with multiple steps of gradient descent. train_pi_iters == k_epochs
+            self.agent_optimizer.pi_optimizer.zero_grad() # TODO not in original
+            
+            # Train Actor-Critic policy with multiple steps of gradient descent
+            # Early stop training if KL divergence above certain threshold
             while not term and kk < self.train_pi_iters:
-                # Early stop training if KL divergence above certain threshold
-                update_results: Dict[
-                    str, Union[torch.Tensor, npt.NDArray[Any], List[Any], bool]
-                ] = {}
                 (
-                    update_results["pi_l"],
-                    update_results["pi_info"],
-                    update_results["term"],
-                    update_results["loc_loss"],
-                ) = self.update_rada2c(
-                    data, min_iterations, logger=logger
-                )  # type: ignore
+                    policy_loss_sum_new,
+                    policy_result,
+                    term,
+                    predictor_loss,
+                ) = self.update_rada2c(data, min_iterations, logger=logger)
                 kk += 1
 
             # Reduce learning rate
@@ -806,22 +706,21 @@ class AgentPPO:
 
             # Log changes from update
             results = UpdateResult(
-                stop_iteration=kk,
-                loss_policy=update_results["pi_l"].item(),  # type: ignore
-                loss_critic=update_results["pi_info"]["val_loss"].item(),  # type: ignore
-                loss_predictor=model_loss.item(),  # TODO if using the regression GRU
-                kl_divergence=update_results["pi_info"]["kl"],  # type: ignore
-                Entropy=update_results["pi_info"]["ent"],  # type: ignore
-                ClipFrac=update_results["pi_info"]["cf"],  # type: ignore
-                LocLoss=update_results["loc_loss"],  # type: ignore
+                stop_iteration = kk,
+                loss_policy = policy_loss_sum_new.item(),
+                loss_critic = policy_result["val_loss"].item(),
+                loss_predictor = model_loss.item(),  # TODO if using the regression GRU
+                kl_divergence = policy_result["kl"],
+                Entropy = policy_result["ent"], 
+                ClipFrac = policy_result["cf"], 
+                LocLoss = predictor_loss,  
                 VarExplain=0,
             )
+            
         # Train RAD-TEAM framework
         else:
-            # TODO get PFGRU working with RAD-TEAM
+            # TODO add PFGRU to RAD-TEAM
             model_loss = torch.tensor(0)
-
-
 
             # Get mapstacks from buffer or inflate from logs, if in max-memory mode
             if PRIO_MEMORY:
@@ -839,9 +738,7 @@ class AgentPPO:
                 sample_indexes = sample(self, data=data)
 
                 # actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(
-                    data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer
-                )
+                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
 
                 # Check Actor KL Divergence
                 if actor_loss_results["kl"].item() < 1.5 * self.target_kl:
@@ -907,10 +804,10 @@ class AgentPPO:
                     VarExplain=0,
                 )
 
-        # Take agents out of train mode
+        # Put agents in eval mode
         self.agent.set_mode(mode="eval")
-        # Log changes from update
-        return results            
+        
+        return results
 
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch=None):
         """Simulates batched processing through CNN. Wrapper for computing single-batch loss for pi"""
@@ -1058,7 +955,7 @@ class AgentPPO:
         """Update a single agent's PFGRU location prediction module (see Ma et al. 2020 for more details)"""
         # Initial values and compatability
         args: BpArgs = self.bp_args
-        ep_form = data["ep_form"] # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
+        ep_form = data["ep_form"]
         source_loc_idx = 15  # src_tar is location estimate
         o_idx = 3
 
@@ -1069,7 +966,7 @@ class AgentPPO:
             model_loss_arr: torch.Tensor = torch.autograd.Variable(
                 torch.tensor([], dtype=torch.float32)
             )
-            for ep in ep_form: # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
+            for ep in ep_form:
                 sl = len(ep[0])
                 hidden = self.reset_hidden()[0]  # type: ignore
                 # src_tar: npt.NDArray[np.float32] = ep[0][:, source_loc_idx:].clone()
@@ -1178,7 +1075,7 @@ class AgentPPO:
         return_idx = 12
         source_loc_idx = 15
 
-        ep_form: List[torch.tensor] = data["ep_form"]  # type: ignore # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
+        ep_form: List[torch.tensor] = data["ep_form"]  # type: ignore
 
         # Policy info buffer
         # KL is for KL divergence
@@ -1188,79 +1085,73 @@ class AgentPPO:
         pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
 
         # Sample a random tensor
-        ep_select = np.random.choice(
-            np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
-        )
-        ep_form = [ep_form[idx] for idx in ep_select] # Basically a list of all episodes, that then contain a single-element list of a tensor representing the observation. TODO make this better
+        ep_select = np.random.choice(np.arange(0, len(ep_form)), size=int(min_iterations), replace=False)
+        ep_form = [ep_form[idx] for idx in ep_select]
 
         # Loss storage buffer(s)
-        loss_sto: torch.Tensor = torch.tensor([], dtype=torch.float32)
-        loss_arr: torch.Tensor = torch.autograd.Variable(
-            torch.tensor([], dtype=torch.float32)
-        )
-
-        for ep in ep_form:
+        loss_array_buffer = torch.zeros((len(ep_form), 1),dtype=torch.float32) # Prefilling is fast with numpy
+        loss_buffer = torch.autograd.Variable(loss_array_buffer)
+        loss_storage = torch.zeros((len(ep_form),4),dtype=torch.float32)
+        
+        for index, ep in enumerate(ep_form):
             # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]  # type: ignore
+            trajectories = ep[0]  
+            
             hidden = self.reset_hidden()
-            obs, act, logp_old, adv, ret, src_tar = (
-                trajectories[:, :observation_idx],
-                trajectories[:, action_idx],
-                trajectories[:, logp_old_idx],
-                trajectories[:, advantage_idx],
-                trajectories[:, return_idx, None],
-                trajectories[:, source_loc_idx:].clone(),
-            )
+            
+            # Pull data from episode
+            obs = trajectories[:, :observation_idx]
+            act = trajectories[:, action_idx]
+            logp_old = trajectories[:, logp_old_idx]
+            adv = trajectories[:, advantage_idx]
+            ret = trajectories[:, return_idx, None]
+            src_tar = trajectories[:, source_loc_idx:].clone()
 
             # Calculate new action log probabilities
-
-            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)  # type: ignore
-
+            pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
+            
+            # PPO-Clip
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
-            clip_adv = (
-                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
-            )
+            clip_adv = (torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv)
             clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
 
             # Useful extra info
-            clipfrac = (
-                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            )
+            clipfrac = (torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item())
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-
+            
             val_loss = self.agent_optimizer.MSELoss(val, ret)  # MSE critc loss
 
-            # TODO: More descriptive name
-            new_loss: torch.Tensor = -(
+            loss_buffer[index] = -(
                 torch.min(ratio * adv, clip_adv).mean()  # Policy loss
                 - 0.01 * val_loss
                 + self.alpha * ent
             )
-            loss_arr = torch.hstack((loss_arr, new_loss.unsqueeze(0)))
+            
+            loss_storage[index,0] = approx_kl; 
+            loss_storage[index,1] = ent; 
+            loss_storage[index,2] = clipfrac; 
+            loss_storage[index,3] = val_loss.detach()
 
-            new_loss_sto: torch.Tensor = torch.tensor(
-                [approx_kl, ent, clipfrac, val_loss.detach()]
-            )
-            loss_sto = torch.hstack((loss_sto, new_loss_sto.unsqueeze(0)))
+        # Get means
+        mean_loss = loss_buffer.mean()
+        means = loss_storage.mean(axis=0) # type: ignore
+        
+        # For clarity
+        loss_pi = mean_loss
+        approx_kl = means[0].detach()
+        ent = means[1].detach()
+        clipfrac = means[2].detach()
+        loss_val = means[3].detach()    
+        
+        # TODO make a named tuple
+        pi_info["kl"].append(approx_kl) 
+        pi_info["ent"].append(ent)  
+        pi_info["cf"].append(clipfrac) 
+        pi_info["val_loss"].append(loss_val)  
 
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)  # type: ignore
-        loss_pi, approx_kl, ent, clipfrac, loss_val = (
-            mean_loss,
-            means[0].detach(),
-            means[1].detach(),
-            means[2].detach(),
-            means[3].detach(),
-        )
-        pi_info["kl"].append(approx_kl)  # type: ignore
-        pi_info["ent"].append(ent)  # type: ignore
-        pi_info["cf"].append(clipfrac)  # type: ignore
-        pi_info["val_loss"].append(loss_val)  # type: ignore
-
-        # kl = pi_info["kl"][-1].mean()  # type: ignore
         # Average KL across processes
         kl = mpi_avg(pi_info["kl"][-1])  # MPI
 
@@ -1274,20 +1165,25 @@ class AgentPPO:
             term = False
         else:
             term = True
+            if proc_id() == 0:
+                logger.log('Terminated update at %d gradient steps due to reaching max kl.'%iter)            
 
-        pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
-            pi_info["kl"][0].numpy(),  # type: ignore
-            pi_info["ent"][0].numpy(),  # type: ignore
-            pi_info["cf"][0].numpy(),  # type: ignore
-            pi_info["val_loss"][0].numpy(),  # type: ignore
-        )
-        loss_sum_new = loss_pi
+        policy_result: Dict[str, npt.NDArray] = dict()
+        policy_result["kl"] =  pi_info["kl"][0].numpy()
+        policy_result["ent"] = pi_info["ent"][0].numpy()
+        policy_result["cf"] = pi_info["cf"][0].numpy()
+        policy_result["val_loss"] = pi_info["val_loss"][0].numpy()
+        
+        policy_loss_sum_new = loss_pi
+        
+        predictor_loss = (self.env_height * loc - (src_tar)).square().mean().sqrt()
+        
         return (
-            loss_sum_new,
-            pi_info,
+            policy_loss_sum_new,
+            policy_result,
             term,
-            (self.env_height * loc - (src_tar)).square().mean().sqrt(),
-        )  # type: ignore
+            predictor_loss,
+        )
 
     def generate_mapstacks(self):
         """Generate a list of inflated maps from buffer"""
