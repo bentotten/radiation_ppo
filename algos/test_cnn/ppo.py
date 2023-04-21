@@ -265,7 +265,7 @@ class PPOBuffer:
         self.source_tar = np.zeros((self.max_size, 2), dtype=np.float32)
         self.logp_buf = np.zeros(self.max_size, dtype=np.float32)
 
-        # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
+        # TODO artifact - investigate
         self.obs_win = np.zeros(self.observation_dimension, dtype=np.float32)
         self.obs_win_std = np.zeros(self.observation_dimension, dtype=np.float32)
 

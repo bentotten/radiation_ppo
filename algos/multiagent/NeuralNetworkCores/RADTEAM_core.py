@@ -88,9 +88,9 @@ class ActionChoice(NamedTuple):
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
     state_value: Union[float, None]  # size(1)
     #: Coordinates predicted by the location prediction model (PFGRU).
-    loc_pred: Union[torch.Tensor, None] = None
+    loc_pred: Union[torch.Tensor, None]
     #: Hidden state (for compatibility with RAD-PPO)
-    hidden: torch.Tensor = None
+    hidden: torch.Tensor
 
 
 class HeatMaps(NamedTuple):
@@ -529,7 +529,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple) -> MapStack:
+    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple[float, float]) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -690,7 +690,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
 
     def _inflate_coordinates(
-        self, single_observation: Union[np.ndarray, Point]
+        self, single_observation: Union[np.ndarray, Point, Tuple[float, float]]
     ) -> Tuple[int, int]:
         """
         Method to take a single observation state, extracts the coordinates, then inflates them to the resolution accuracy specified during initialization. Also works with tuple of deflated coordinates.
@@ -1796,7 +1796,7 @@ class CNNBase:
                 "Invalid mode set for Agent. Agent remains in their original training mode"
             )
 
-    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple):
+    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple[float, float]):
         with torch.no_grad():
             (
                 prediction_map,
@@ -1855,11 +1855,13 @@ class CNNBase:
 
             location_prediction, new_hidden = self.model(obs_tensor, hidden)
             
+            prediction_tuple: Tuple[float, float] = tuple(location_prediction.tolist()) # type: ignore
+            
             # Process data and create maps
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
                 id = id,
                 state_observation = state_observation,
-                location_prediction = tuple(location_prediction.tolist())
+                location_prediction=prediction_tuple
             )
 
             # Get actions and values
