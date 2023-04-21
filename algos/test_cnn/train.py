@@ -19,9 +19,6 @@ from ppo import OptimizationStorage, AgentPPO, BpArgs
 
 import RADTEAM_core as core
 
-TEST_OPTIMIZER = False 
-TEST_PPO = True  
-
 
 def compare_dicts(dict1, dict2):
     """ Recursively compare all the values of objects """
@@ -271,10 +268,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-            val_loss = loss(val,ret)
-            
-            if TEST_OPTIMIZER:
-                assert optimization.MSELoss(val, ret) == val_loss
+            val_loss = optimization.MSELoss(val,ret)
             
             loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
             loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
@@ -285,52 +279,36 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
         pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
         
-        #Average KL across processes 
+        # TODO UPDATE CRITIC
+        
+        #Average KL across processes for policy
         kl = mpi_avg(pi_info['kl'][-1])
         if kl.item() < 1.5 * target_kl:
             
-            if TEST_OPTIMIZER:
-                state1 = pi_optimizer.state_dict() 
-                state2 = optimization.pi_optimizer.state_dict()          
-                assert compare_dicts(state1, state2)
-            
-            pi_optimizer.zero_grad() 
-            
-            if TEST_OPTIMIZER:
-                optimization.pi_optimizer.zero_grad()
+            optimization.pi_optimizer.zero_grad()
             
             loss_pi.backward()
             #Average gradients across processes
             mpi_avg_grads(ac.pi)
-            pi_optimizer.step()
-            
-            if TEST_OPTIMIZER:
-                optimization.pi_optimizer.step()
-            
-                state1 = pi_optimizer.state_dict() 
-                state2 = optimization.pi_optimizer.state_dict()          
-                assert compare_dicts(state1, state2)
+            optimization.pi_optimizer.step()
             
             term = False
         else:
             term = True
             if proc_id() == 0:
-                logger.log('Terminated at %d steps due to reaching max kl.'%iter)
+                logger.log('Terminated policy update at %d steps due to reaching max kl.'%iter)             
 
         pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss'] = pi_info['kl'][0].numpy(), pi_info['ent'][0].numpy(), pi_info['cf'][0].numpy(), pi_info['val_loss'][0].numpy()
         loss_sum_new = loss_pi
         return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
 
     
-    def update_model(data, args, loss=None):
+    def update_model(data, args):
         #Update the PFGRU, see Ma et al. 2020 for more details
         ep_form= data['ep_form']
         model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
         source_loc_idx = 15
         o_idx = 3
-
-        if TEST_OPTIMIZER: 
-            assert optimization.train_pfgru_iters == train_v_iters
 
         for jj in range(train_v_iters):
             model_loss_arr_buff.zero_()
@@ -389,15 +367,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             
             model_loss = model_loss_arr.mean()
             
-            if TEST_OPTIMIZER:            
-                state1 = model_optimizer.state_dict() 
-                state2 = optimization.model_optimizer.state_dict()          
-                assert compare_dicts(state1, state2)
-                                        
-            model_optimizer.zero_grad()
-            
-            if TEST_OPTIMIZER:
-                optimization.model_optimizer.zero_grad()
+            optimization.model_optimizer.zero_grad()
             
             model_loss.backward()
 
@@ -405,14 +375,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
             
-            model_optimizer.step() 
-            
-            if TEST_OPTIMIZER:
-                optimization.model_optimizer.step()
-                state1 = model_optimizer.state_dict() 
-                state2 = optimization.model_optimizer.state_dict()          
-                assert compare_dicts(state1, state2)
-                                    
+            optimization.model_optimizer.step()                   
         
         return model_loss
     
@@ -432,50 +395,28 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 critic_flag=True
             )
 
-    def update(env, args, loss_fcn):
+    def update(env, args):
         """Update for the localization and A2C modules"""
 
         data = new_buffer.get()
     
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
-        loss_mod = update_model(data, args, loss=loss_fcn)
+        loss_mod = update_model(data, args)
 
         ac.model.eval()
         min_iters = len(data['ep_form'])
         kk = 0; term = False
-
-        # Train policy with multiple steps of gradient descent (mini batch)
-        if TEST_OPTIMIZER: 
-            assert optimization.train_pi_iters == train_pi_iters
             
         while (not term and kk < train_pi_iters):
             #Early stop training if KL-div above certain threshold
             pi_l, pi_info, term, loc_loss = update_a2c(data, env, minibatch=min_iters,iter=kk)
-            kk += 1
-        
-        if TEST_OPTIMIZER:
-            state1 = pi_scheduler.state_dict() 
-            state2 = optimization.pi_scheduler.state_dict()          
-            assert compare_dicts(state1, state2)
-            state1 = model_scheduler.state_dict() 
-            state2 = optimization.pfgru_scheduler.state_dict()          
-            assert compare_dicts(state1, state2)                    
+            kk += 1              
         
         #Reduce learning rate
-        pi_scheduler.step()
-        model_scheduler.step()
-        
-        if TEST_OPTIMIZER:
-            optimization.pi_scheduler.step()
-            optimization.pfgru_scheduler.step()
-
-            state1 = pi_scheduler.state_dict() 
-            state2 = optimization.pi_scheduler.state_dict()          
-            assert compare_dicts(state1, state2)
-            state1 = model_scheduler.state_dict() 
-            state2 = optimization.pfgru_scheduler.state_dict()          
-            assert compare_dicts(state1, state2)            
+        optimization.pi_scheduler.step()
+        optimization.critic_scheduler.step()
+        optimization.pfgru_scheduler.step()        
 
         logger.store(StopIter=kk)
 
@@ -599,16 +540,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
         
         #Reduce localization module training iterations after 100 epochs to speed up training
-        if TEST_PPO:
-            if epoch > 99:                    
-                ac.reduce_pfgru_training()
-        if not TEST_PPO:
-            if reduce_v_iters and epoch > 99:        
-                train_v_iters = 5
-                reduce_v_iters = False        
+        if reduce_v_iters and epoch > 99:        
+            train_v_iters = 5
+            reduce_v_iters = False        
        
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=optimization.MSELoss)
+        update(env, bp_args)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
