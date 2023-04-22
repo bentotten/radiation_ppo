@@ -398,8 +398,16 @@ class PPOBuffer:
             prediction_location_in_episode_form[jj].append(self.location_pred_buf[slice_b:slice_f])
             slice_b += ep_i
             jj += 1
+        # If epoch was cut off
         if slice_f != len(self.obs_buf):
             episode_form[jj].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
+            actor_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['actor'][slice_f:]) 
+            critic_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['critic'][slice_f:]) 
+            prediction_location_in_episode_form[jj].append(self.location_pred_buf[slice_f:])            
+
+        assert len(actor_heatmaps_in_episode_form) == len(critic_heatmaps_in_episode_form)
+        assert len(actor_heatmaps_in_episode_form) == len(episode_form)
+
 
         # Convert to tensors
         data = dict(

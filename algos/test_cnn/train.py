@@ -522,7 +522,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 logp=result.action_logprob, 
                 rew=r, 
                 src=env.src_coords, 
-                full_observation={0: obs_std}, # TODO CHANGE FOR MULTI
+                full_observation={0: obs_std},
                 heatmap_stacks=heatmap_stack, 
                 terminal=d,
                 location_prediction = result.loc_pred
