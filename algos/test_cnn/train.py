@@ -303,7 +303,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             ent = torch.stack(entropy_buffer).mean().item()
             
             # PPO-Clip starts here
-            logp_diff = logp_old - logp # TODO these are all zeros, is that supposed to happen?
+            logp_diff = logp_old - logp 
             ratio = torch.exp(logp - logp_old)
 
             clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
