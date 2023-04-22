@@ -1260,7 +1260,7 @@ class AgentPPO:
         else:
             term = True
             if proc_id() == 0:
-                logger.log('Terminated update at %d gradient steps due to reaching max kl.'%iter)            
+                logger.log('Terminated update at %d gradient steps due to reaching max kl.')            
 
         policy_result: Dict[str, npt.NDArray] = dict()
         policy_result["kl"] =  pi_info["kl"][0].numpy()

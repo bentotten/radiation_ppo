@@ -87,10 +87,10 @@ class ActionChoice(NamedTuple):
     action_logprob: float  # size (1)
     #: The estimated value of being in this state. Note: Using GAE for advantage, this is the state-value, not the q-value
     state_value: Union[float, None]  # size(1)
-    #: Coordinates predicted by the location prediction model (PFGRU).
-    loc_pred: Union[torch.Tensor, None] = None
     #: Hidden state (for compatibility with RAD-PPO)
-    hidden: torch.Tensor = None
+    hidden: torch.Tensor 
+    #: Coordinates predicted by the location prediction model (PFGRU).
+    loc_pred: Union[torch.Tensor, None] = None    
 
 
 class HeatMaps(NamedTuple):
@@ -529,7 +529,7 @@ class MapsBuffer:
         self.visit_counts_shadow.clear()
         self.tools.reset()
 
-    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Tuple) -> MapStack:
+    def observation_to_map(self, observation: Dict[int, npt.NDArray], id: int, loc_prediciton: Point) -> MapStack:
         """
         Method to process observation data into observation maps from a dictionary with agent ids holding their individual 11-element observation. Also updates tools.
 
@@ -1794,7 +1794,7 @@ class CNNBase:
                 "Invalid mode set for Agent. Agent remains in their original training mode"
             )
 
-    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Tuple):
+    def get_map_stack(self, state_observation: Dict[int, npt.NDArray], id: int, location_prediction: Point):
         with torch.no_grad():
             (
                 prediction_map,
@@ -1857,7 +1857,7 @@ class CNNBase:
             batched_actor_mapstack, batched_critic_mapstack = self.get_map_stack(
                 id = id,
                 state_observation = state_observation,
-                location_prediction = tuple(location_prediction.tolist())
+                location_prediction = Point(tuple(location_prediction.tolist())) # type: ignore
             )
 
             # Get actions and values
