@@ -177,8 +177,8 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
-    model_save_iterator = 0 # Round robin saver
-    model_save_iterator_max = 3 # Only save latest 3 models
+    # model_save_iterator = 0 # Round robin saver
+    # model_save_iterator_max = 3 # Only save latest 3 models
 
     #Set Pytorch random seed
     torch.manual_seed(seed)
@@ -221,7 +221,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
     # Count variables
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
-    logger.log('\nNumber of parameters: \t actior: %d, critic: %d, prediction model: %d \t'%var_counts)
+    logger.log('\nNumber of parameters: \t actor: %d, critic: %d, prediction model: %d \t'%var_counts)
 
     # Set up trajectory buffer
     local_steps_per_epoch = int(steps_per_epoch / num_procs())
@@ -315,10 +315,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
             clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
 
+            # Critic loss
+            val_loss = optimization.MSELoss(val,ret)
+
             #Useful extra info
             clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
             approx_kl = logp_diff.detach().mean().item()
-            val_loss = optimization.MSELoss(val,ret)
             
             loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
             loss_sto[ii,0] = approx_kl; 
@@ -343,20 +345,29 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
         
         #Average KL across processes for policy
         kl = mpi_avg(pi_info['kl'][-1])
-        if kl.item() < 1.5 * target_kl:
-            
+        if kl.item() < 1.5 * target_kl:           
             optimization.pi_optimizer.zero_grad()
-            
+                        
             loss_pi.backward()
             #Average gradients across processes
+            # TODO pi does not have any gradients
             mpi_avg_grads(ac.pi)
-            optimization.pi_optimizer.step()
             
+            optimization.pi_optimizer.step()
             term = False
         else:
             term = True
             if proc_id() == 0:
-                logger.log('Terminated policy update at %d steps due to reaching max kl.'%iter)             
+                logger.log('Terminated policy update at %d steps due to reaching max kl.'%iter)   
+                
+        # Train critic
+        # replicate this https://github.com/mahyaret/spinningup/blob/c1c618c2214bf12505359ca4a9da93b0d13d2d65/spinup/algos/pytorch/ppo/ppo.py#L284
+        # TODO NEED TO ADD GLOBAL CRITIC FLAG HERE        
+        optimization.critic_optimizer.zero_grad()
+        mpi_avg_grads(ac.critic)                    
+        optimization.critic_optimizer.step()     
+        
+          
 
         pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss'] = pi_info['kl'][0].numpy(), pi_info['ent'][0].numpy(), pi_info['cf'][0].numpy(), pi_info['val_loss'][0].numpy()
         loss_sum_new = loss_pi
@@ -604,7 +615,7 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 fpath = 'pyt_save'
                 fpath = os.path.join(logger.output_dir, fpath)
                 os.makedirs(fpath, exist_ok=True)
-                ac.save(checkpoint_path=logger.fpath)
+                ac.save(checkpoint_path=fpath)
                 # model_save_iterator = model_save_iterator + 1 % model_save_iterator_max # TODO
             pass 
         

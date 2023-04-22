@@ -1897,7 +1897,7 @@ class CNNBase:
     def get_batch_size(self) -> int:
         return self.pi.batches
 
-    def save(self, checkpoint_path: str, iteration: Union[int, None]) -> None:
+    def save(self, checkpoint_path: str, iteration: Union[int, None] = None) -> None:
         """
         Save the actor, critic, and predictor neural network models.
 
