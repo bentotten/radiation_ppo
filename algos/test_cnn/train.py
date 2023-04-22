@@ -294,16 +294,16 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
                 # Calculate new log prob.
                 logp, val, ent = ac.step_with_gradient(actor_mapstack=actor_mapstacks[step], critic_mapstack=critic_mapstacks[step], action_taken=act[step])
                 logp_buffer.append(logp)
-                value_buffer.append(value_buffer)
-                entropy_buffer.append(entropy_buffer)                                  
+                value_buffer.append(val)
+                entropy_buffer.append(ent)                                  
             
             # Convert into a single tensor
-            logp = torch.tensor(logp_buffer)
-            val = torch.tensor(value_buffer)
-            ent = torch.tensor(entropy_buffer).mean().item()
+            logp = torch.stack(logp_buffer) 
+            val = torch.stack(value_buffer)
+            ent = torch.stack(entropy_buffer).mean().item()
             
             # PPO-Clip starts here
-            logp_diff = logp_old - logp 
+            logp_diff = logp_old - logp # TODO these are all zeros, is that supposed to happen?
             ratio = torch.exp(logp - logp_old)
 
             clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
@@ -319,13 +319,21 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
             loss_sto[ii,1] = ent; 
             loss_sto[ii,2] = clipfrac; 
             loss_sto[ii,3] = val_loss.detach()
-            src_target_buffer[ii] = src_tar
-            loc_prediction_buffer[ii] = loc_pred     
+            src_target_buffer[ii] = src_tar[ii]
+            loc_prediction_buffer[ii] = torch.tensor(loc_pred[ii])
             
         mean_loss = loss_arr.mean()
         means = loss_sto.mean(axis=0)
-        loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
-        pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
+        loss_pi = mean_loss
+        approx_kl = means[0].detach()
+        ent = means[1].detach()
+        clipfrac = means[2].detach()
+        loss_val = means[3].detach()
+        
+        pi_info['kl'].append(approx_kl)
+        pi_info['ent'].append(ent)
+        pi_info['cf'].append(clipfrac)
+        pi_info['val_loss'].append(loss_val)
         
         #Average KL across processes for policy
         kl = mpi_avg(pi_info['kl'][-1])
