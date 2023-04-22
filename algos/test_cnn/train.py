@@ -75,7 +75,8 @@ def ppo(
     mp_mm=[5, 5],
     vf_lr=5e-3,
     train_pi_iters=40,
-    train_v_iters=15,
+    train_v_iters=40,
+    train_pfgru_iters=15,
     lam=0.9,
     max_ep_len=120,
     save_gif=False,
@@ -170,10 +171,13 @@ def ppo(
 
         train_pi_iters (int): Maximum number of gradient descent steps to take
             on policy loss per epoch. (Early stopping may cause optimizer
-            to take fewer than this.)
+            to take fewer than this).
 
-        train_v_iters (int): Number of gradient descent steps to take on
-            value function per epoch.
+        train_v_iters (int): Maximum number of gradient descent steps to take
+            on critic loss per epoch.
+
+        train_pfgru_iters (int): Number of gradient descent steps to take on
+            predictor module (PFGRU) per epoch.
 
         lam (float): Lambda for GAE-Lambda. (Always between 0 and 1,
             close to 1.)
@@ -270,7 +274,7 @@ def ppo(
     if proc_id() == 0:
         print(f"Local steps per epoch: {local_steps_per_epoch}")
 
-    def update_a2c(id, data, env_sim, minibatch=None, iter=None):
+    def update_actor(id, data, env_sim, minibatch=None, iter=None):
         observation_idx = 11
         action_idx = 14
         logp_old_idx = 13
@@ -298,6 +302,8 @@ def ppo(
 
         # Storage and buffers
         loss_sto = torch.zeros((len(ep_form), 4), dtype=torch.float32)
+
+        # For Actor/policy
         loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
         loss_arr = torch.autograd.Variable(loss_arr_buff)
 
@@ -329,26 +335,31 @@ def ppo(
             assert len(actor_mapstacks) == len(act)
             assert len(critic_mapstacks) == len(act)
 
-            logp_buffer = []
-            value_buffer = []
-            entropy_buffer = []
+            logp_b = torch.zeros((len(act)), dtype=torch.float32)
+            logp_buffer = torch.autograd.Variable(logp_b)
+
+            value_b = torch.zeros((len(act)), dtype=torch.float32)
+            value_buffer = torch.autograd.Variable(value_b)
+
+            entropy_b = torch.zeros((len(act)), dtype=torch.float32)
+            entropy_buffer = torch.autograd.Variable(entropy_b)
 
             # For CNN, this must be done iteratively, cannot batch
             for step in range(len(act)):
                 # Calculate new log prob.
-                logp, val, ent = ac.step_with_gradient(
+                logp, val, ent = ac.step_with_gradient_for_actor(
                     actor_mapstack=actor_mapstacks[step],
                     critic_mapstack=critic_mapstacks[step],
                     action_taken=act[step],
                 )
-                logp_buffer.append(logp)
-                value_buffer.append(val)
-                entropy_buffer.append(ent)
+                logp_buffer[step] = logp.clone()
+                value_buffer[step] = val.clone()
+                entropy_buffer[step] = ent.clone()
 
-            # Convert into a single tensor
-            logp = torch.stack(logp_buffer)
-            val = torch.stack(value_buffer)
-            ent = torch.stack(entropy_buffer).mean().item()
+            # Realign variable names
+            logp = logp_buffer
+            val = value_buffer
+            ent = entropy_buffer.mean().item()
 
             # PPO-Clip starts here
             logp_diff = logp_old - logp
@@ -358,7 +369,7 @@ def ppo(
             clipped = ratio.gt(1 + clip_ratio) | ratio.lt(1 - clip_ratio)
 
             # Critic loss
-            val_loss = optimization.MSELoss(val, ret)
+            val_loss = optimization.MSELoss(val, ret.squeeze())
 
             # Useful extra info
             clipfrac = (
@@ -390,13 +401,12 @@ def ppo(
         # Average KL across processes for policy
         kl = mpi_avg(pi_info["kl"][-1])
         if kl.item() < 1.5 * target_kl:
+            # Take actor gradient step
             optimization.pi_optimizer.zero_grad()
-
             loss_pi.backward()
             # Average gradients across processes
             # TODO pi does not have any gradients
             mpi_avg_grads(ac.pi)
-
             optimization.pi_optimizer.step()
             term = False
         else:
@@ -406,13 +416,6 @@ def ppo(
                     "Terminated policy update at %d steps due to reaching max kl."
                     % iter
                 )
-
-        # Train critic
-        # replicate this https://github.com/mahyaret/spinningup/blob/c1c618c2214bf12505359ca4a9da93b0d13d2d65/spinup/algos/pytorch/ppo/ppo.py#L284
-        # TODO NEED TO ADD GLOBAL CRITIC FLAG HERE
-        optimization.critic_optimizer.zero_grad()
-        mpi_avg_grads(ac.critic)
-        optimization.critic_optimizer.step()
 
         pi_info["kl"], pi_info["ent"], pi_info["cf"], pi_info["val_loss"] = (
             pi_info["kl"][0].numpy(),
@@ -431,6 +434,47 @@ def ppo(
 
         return loss_sum_new, pi_info, term, prediction_loss
 
+    def update_critic(data):
+        ep_form = data["ep_form"]
+        v_ep_form = data["critic_heatmaps_ep_form"]
+        return_idx = 12
+
+        loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
+        loss_arr = torch.autograd.Variable(loss_arr_buff)
+
+        for ii in range(len(ep_form)):
+            # Clear stored maps
+            ac.reset()
+
+            # Get Data
+            trajectories = ep_form[ii][0]
+            ret = trajectories[:, return_idx, None]
+
+            critic_mapstacks = v_ep_form[ii][0]
+
+            # For Critic/Value function
+            value_b = torch.zeros((len(ret)), dtype=torch.float32)
+            value_buffer = torch.autograd.Variable(value_b)
+
+            for step in range(len(critic_mapstacks)):
+                # Calculate new log prob.
+                value = ac.step_with_gradient_for_critic(
+                    critic_mapstack=critic_mapstacks[step]
+                )
+                value_buffer[step] = value.clone()
+
+            loss_arr[ii] = val_loss = optimization.MSELoss(value_buffer, ret.squeeze())
+
+        critic_loss = loss_arr.mean()
+
+        # Take critic gradient step
+        optimization.critic_optimizer.zero_grad()
+        critic_loss.backward()
+        # Average gradients across processes
+        # TODO pi does not have any gradients
+        mpi_avg_grads(ac.pi)
+        optimization.critic_optimizer.step()
+
     def update_model(data, args):
         # Update the PFGRU, see Ma et al. 2020 for more details
         ep_form = data["ep_form"]
@@ -438,7 +482,7 @@ def ppo(
         source_loc_idx = 15
         o_idx = 3
 
-        for jj in range(train_v_iters):
+        for jj in range(train_pfgru_iters):
             model_loss_arr_buff.zero_()
             model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
             for ii, ep in enumerate(ep_form):
@@ -570,12 +614,20 @@ def ppo(
         kk = 0
         term = False
 
+        # Update policy
         while not term and kk < train_pi_iters:
             # Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = update_a2c(
+            pi_l, pi_info, term, loc_loss = update_actor(
                 id=0, data=data, env_sim=env, minibatch=min_iters, iter=kk
             )
             kk += 1
+
+        # Update value function
+        for _ in range(train_v_iters):
+            loss_v = update_critic(data=data)
+
+        print(pi_info["val_loss"])
+        print(loss_v)
 
         # Reduce learning rate
         optimization.pi_scheduler.step()
@@ -585,11 +637,10 @@ def ppo(
         logger.store(StopIter=kk)
 
         # Log changes from update
-        kl, ent, cf, loss_v = (
+        kl, ent, cf = (
             pi_info["kl"],
             pi_info["ent"],
             pi_info["cf"],
-            pi_info["val_loss"],
         )
 
         logger.store(
@@ -611,7 +662,7 @@ def ppo(
 
     ep_ret_ls = []
     oob = 0
-    reduce_v_iters = True
+    reduce_pfgru_iters = True
 
     ac.set_mode("eval")
 
@@ -732,9 +783,9 @@ def ppo(
             pass
 
         # Reduce localization module training iterations after 100 epochs to speed up training
-        if reduce_v_iters and epoch > 99:
-            train_v_iters = 5
-            reduce_v_iters = False
+        if reduce_pfgru_iters and epoch > 99:
+            train_pfgru_iters = 5
+            reduce_pfgru_iters = False
 
         # Perform PPO update!
         update(env, bp_args)
