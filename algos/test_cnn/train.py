@@ -173,9 +173,12 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
+    
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
+    model_save_iterator = 0 # Round robin saver
+    model_save_iterator_max = 3 # Only save latest 3 models
 
     #Set Pytorch random seed
     torch.manual_seed(seed)
@@ -210,8 +213,11 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
     #Instantiate A2C
     ac = actor_critic(**ac_kwargs)
-        
-    sync_params(ac)
+    
+    # Sync across MPI
+    sync_params(ac.pi)
+    sync_params(ac.critic)
+    sync_params(ac.model)
 
     # Count variables
     var_counts = tuple(core.count_vars(module) for module in [ac.pi, ac.critic, ac.model])
@@ -594,9 +600,13 @@ def ppo(env_fn, actor_critic=core.CNNBase, ac_kwargs=dict(), seed=0,
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            ac.save(logger.output_dir)
-            pass
-
+            if proc_id()==0:
+                fpath = 'pyt_save'
+                fpath = os.path.join(logger.output_dir, fpath)
+                os.makedirs(fpath, exist_ok=True)
+                ac.save(checkpoint_path=logger.fpath)
+                # model_save_iterator = model_save_iterator + 1 % model_save_iterator_max # TODO
+            pass 
         
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:        
@@ -650,6 +660,18 @@ if __name__ == '__main__':
     parser.add_argument('--net_type',type=str, default='rnn', help='Choose between recurrent neural network A2C or MLP A2C, option: rnn, mlp') 
     parser.add_argument('--alpha',type=float,default=0.1, help='Entropy reward term scaling') 
     args = parser.parse_args()
+
+    ################################## set device ##################################
+    print("============================================================================================")
+    # set device to cpu or cuda
+    device = torch.device("cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        torch.cuda.empty_cache()
+        print("Device set to : " + str(torch.cuda.get_device_name(device)))
+    else:
+        print("Device set to : cpu")
+    print("============================================================================================")
 
     #Change mini-batch size, only been tested with size of 1
     args.batch = 1

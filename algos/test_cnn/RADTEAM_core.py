@@ -1897,11 +1897,12 @@ class CNNBase:
     def get_batch_size(self) -> int:
         return self.pi.batches
 
-    def save(self, checkpoint_path: str) -> None:
+    def save(self, checkpoint_path: str, iteration: Union[int, None]) -> None:
         """
         Save the actor, critic, and predictor neural network models.
 
         :param checkpoint_path: (str) Path to save neural network models to.
+        :param iteration: (int, none) tag for end of file.
         """
 
         # Save original modes
@@ -1909,7 +1910,7 @@ class CNNBase:
         critic_train_mode: bool = self.critic.training
         predictor_train_mode: bool = self.model.training
         self.set_mode(mode="eval")
-
+        
         self.pi.save_model(checkpoint_path=checkpoint_path)
         self.critic.save_model(checkpoint_path=checkpoint_path)
         self.model.save_model(checkpoint_path=checkpoint_path)
