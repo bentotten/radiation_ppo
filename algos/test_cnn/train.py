@@ -300,6 +300,7 @@ def ppo(
         loss_sto = torch.zeros((len(ep_form), 4), dtype=torch.float32)
         loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
         loss_arr = torch.autograd.Variable(loss_arr_buff)
+
         src_target_buffer = torch.zeros((len(ep_form), 2), dtype=torch.float32)
         loc_prediction_buffer = torch.zeros((len(ep_form), 2), dtype=torch.float32)
 
@@ -319,6 +320,10 @@ def ppo(
             adv = trajectories[:, advantage_idx]
             ret = trajectories[:, return_idx, None]
             src_tar = trajectories[:, source_loc_idx:].clone()
+
+            # Save just the last prediction
+            src_target_buffer[ii] = src_tar[-1]
+            loc_prediction_buffer[ii] = torch.tensor(loc_pred[-1])
 
             # Sanity check
             assert len(actor_mapstacks) == len(act)
@@ -368,8 +373,6 @@ def ppo(
             loss_sto[ii, 1] = ent
             loss_sto[ii, 2] = clipfrac
             loss_sto[ii, 3] = val_loss.detach()
-            src_target_buffer[ii] = src_tar[ii]
-            loc_prediction_buffer[ii] = torch.tensor(loc_pred[ii])
 
         mean_loss = loss_arr.mean()
         means = loss_sto.mean(axis=0)
@@ -799,6 +802,12 @@ if __name__ == "__main__":
         help="Number of timesteps per epoch per cpu. Default is equal to 4 episodes per cpu per epoch.",
     )
     parser.add_argument(
+        "--steps_per_episode",
+        type=int,
+        default=120,
+        help="Number of timesteps per episode (before resetting the environment)",
+    )
+    parser.add_argument(
         "--epochs", type=int, default=3000, help="Number of epochs to train the agent"
     )
     parser.add_argument(
@@ -871,7 +880,7 @@ if __name__ == "__main__":
     exp_name = timestamp  # + "_" + exp_name
     save_dir_name = save_dir_name + "/" + timestamp
 
-    max_ep_step = 120
+    max_ep_step = args.steps_per_episode
     if args.cpu > 1:
         # max cpus, steps in batch must be greater than the max eps steps times num. of cpu
         tot_epoch_steps = args.cpu * args.steps_per_epoch
@@ -918,6 +927,7 @@ if __name__ == "__main__":
         alpha=args.alpha,
         seed=robust_seed,
         steps_per_epoch=args.steps_per_epoch,
+        max_ep_len=args.steps_per_episode,
         epochs=args.epochs,
         dims=init_dims,
         logger_kwargs=logger_kwargs,

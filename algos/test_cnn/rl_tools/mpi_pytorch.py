@@ -21,8 +21,8 @@ def setup_pytorch_for_mpi():
 
 def mpi_avg_grads(module):
     """ Average contents of gradient buffers across MPI processes. """
-    # if num_procs()==1:
-    #     return
+    if num_procs()==1:
+         return
     for p in module.parameters():
         p_grad_numpy = p.grad.numpy()   # numpy view of tensor data
         avg_p_grad = mpi_avg(p.grad)
@@ -42,7 +42,7 @@ def sync_params(module):
         return
     for p in module.parameters():
         p_numpy = p.data.numpy()
-        broadcast(p_numpy) 
+        broadcast(p_numpy)
 
 def sync_params_env(env_dict):
     if num_procs()==1:
@@ -76,7 +76,7 @@ def sync_params_stats(x, t, stat_obj, count):
     """
     if num_procs()==1 or t==-2:
         return running_stats(x,stat_obj,count)
-    
+
     if t == -1:
         x = np.array(x, dtype=np.float32)
         global_sum, global_n = mpi_sum([x]), num_procs()
@@ -92,7 +92,7 @@ def sync_params_stats(x, t, stat_obj, count):
         rank = comm.Get_rank()
         mu, sig = np.array(stat_obj.mu_obs, dtype=np.float32), np.array(stat_obj.sigma_obs, dtype=np.float32)
         count = np.array(count, dtype=np.float32)
-        
+
         x = np.append(x, count)
         print(f'Proc id: {proc_id()} -> Before Call Sum {t}')
         sum_op = mpi_sum([x]).squeeze()
@@ -116,7 +116,7 @@ def synchronize():
 def update_stat_buff(stat_buff, stat_buff_act):
     comm = MPI.COMM_WORLD
     rank = comm.Get_rank()
-    
+
     root = None
     if not stat_buff and stat_buff_act:
         data = np.array([1],dtype=int)
@@ -127,7 +127,7 @@ def update_stat_buff(stat_buff, stat_buff_act):
     comm.Bcast(data, root=0)
     return data[0], root
 
-    
+
 
 def plot_mu(x_mu,x_sig):
     comm = MPI.REQUEST
@@ -146,4 +146,4 @@ def plot_mu(x_mu,x_sig):
         plt.plot(range(len(x_sig)),x_sig)
         plt.title('Std')
         plt.show()
-        
+

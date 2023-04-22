@@ -17,7 +17,7 @@ import scipy.signal  # type: ignore
 import ray
 
 import core as RADA2C_core  # type: ignore
-from rl_tools.logx import EpochLogger # type: ignore
+from rl_tools.logx import EpochLogger  # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
 from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
 
@@ -26,6 +26,7 @@ from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar
 PRIO_MEMORY = False
 
 Shape: TypeAlias = Union[int, Tuple[int], Tuple[int, Any], Tuple[int, int, Any]]
+
 
 # Ok via unit testing
 def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
@@ -53,6 +54,7 @@ def combined_shape(length: int, shape: Optional[Shape] = None) -> Shape:
     else:
         shape = cast(Tuple[int, Any], shape)
         return (length, *shape)
+
 
 # Ok via unit testing
 def discount_cumsum(
@@ -122,6 +124,7 @@ class OptimizationStorage:
     :param target_kl: (float) Roughly what KL divergence we think is appropriate between new and old policies after an update. This will get used
         for early stopping. It's usually small, 0.01 or 0.05.
     """
+
     critic_flag: bool
     pi_optimizer: torch.optim.Optimizer
     critic_optimizer: Union[torch.optim.Optimizer, None]
@@ -153,7 +156,7 @@ class OptimizationStorage:
             )
         else:
             self.critic_scheduler = None  # RAD-A2C has critic embeded in pi
-        
+
 
 # Ok now
 @dataclass
@@ -177,26 +180,54 @@ class PPOBuffer:
     max_episode_length: int
     number_agents: int
 
-    ptr: int = field(init=False)  # For keeping track of location in buffer during update
-    path_start_idx: int = field(init=False)  # For keeping track of starting location in buffer during update
+    ptr: int = field(
+        init=False
+    )  # For keeping track of location in buffer during update
+    path_start_idx: int = field(
+        init=False
+    )  # For keeping track of starting location in buffer during update
 
     episode_lengths_buffer: List = field(init=False)  # Stores episode lengths
-    # In memory-priority mode, for each timestep, stores every agents observation    
-    full_observation_buffer: List[Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]] = field(init=False)  
-    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(init=False)  # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
+    # In memory-priority mode, for each timestep, stores every agents observation
+    full_observation_buffer: List[
+        Dict[Union[int, str], Union[npt.NDArray[np.float32], bool, None]]
+    ] = field(init=False)
+    heatmap_buffer: Dict[str, List[torch.Tensor]] = field(
+        init=False
+    )  # When memory is not a concern, for each timestep, stores every steps heatmap stack for both actor and critic
 
-    obs_buf: npt.NDArray[np.float32] = field(init=False)  # Observation buffer for each agent
-    act_buf: npt.NDArray[np.float32] = field(init=False)  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
-    adv_buf: npt.NDArray[np.float32] = field(init=False)  # Advantages buffer for each step
+    obs_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Observation buffer for each agent
+    act_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Action buffer for each step. Note: each agent carries their own PPO buffer, no need to track all agent actions.
+    adv_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Advantages buffer for each step
     rew_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards buffer for each step
-    ret_buf: npt.NDArray[np.float32] = field(init=False)  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
-    val_buf: npt.NDArray[np.float32] = field(init=False)  # State-value buffer for each step
-    source_tar: npt.NDArray[np.float32] = field(init=False)  # Source location buffer (for moving targets)
-    logp_buf: npt.NDArray[np.float32] = field(init=False)  # action log probabilities buffer
-    location_pred_buf: npt.NDArray[np.float32] = field(init=False)  # Store location predictions
+    ret_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Rewards-to-go buffer (Rewards gained from timestep t until terminal state (similar to expected return, but actual))
+    val_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # State-value buffer for each step
+    source_tar: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Source location buffer (for moving targets)
+    logp_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # action log probabilities buffer
+    location_pred_buf: npt.NDArray[np.float32] = field(
+        init=False
+    )  # Store location predictions
 
-    obs_win: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
-    obs_win_std: npt.NDArray[np.float32] = field(init=False)  # For location prediction TODO find out what its doing
+    obs_win: npt.NDArray[np.float32] = field(
+        init=False
+    )  # For location prediction TODO find out what its doing
+    obs_win_std: npt.NDArray[np.float32] = field(
+        init=False
+    )  # For location prediction TODO find out what its doing
 
     gamma: float = 0.99  # trajectory discount for Generalize Advantage Estimate (GAE)
     lam: float = 0.90  # exponential mean discount Generalize Advantage Estimate (GAE). Can be thought of like a smoothing parameter.
@@ -228,7 +259,9 @@ class PPOBuffer:
             self.full_observation_buffer = None
 
         # TODO delete once full_observation_buffer is done
-        self.obs_buf = np.zeros(combined_shape(self.max_size, self.observation_dimension), dtype=np.float32)
+        self.obs_buf = np.zeros(
+            combined_shape(self.max_size, self.observation_dimension), dtype=np.float32
+        )
         self.act_buf = np.zeros(combined_shape(self.max_size), dtype=np.float32)
         self.adv_buf = np.zeros(self.max_size, dtype=np.float32)
         self.rew_buf = np.zeros(self.max_size, dtype=np.float32)
@@ -259,7 +292,7 @@ class PPOBuffer:
         full_observation: Dict[int, npt.NDArray],
         heatmap_stacks: None,
         terminal: bool,
-        location_prediction: torch.Tensor
+        location_prediction: torch.Tensor,
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -321,8 +354,12 @@ class PPOBuffer:
         # Choose only relevant section of buffers
         path_slice: slice = slice(self.path_start_idx, self.ptr)
         # size steps + 1. If epoch was 10 steps, this will hold 10 rewards plus the last states state_value (or 0 if terminal)
-        rews: npt.NDArray[np.float64] = np.append(self.rew_buf[path_slice], last_state_value)
-        vals: npt.NDArray[np.float64] = np.append(self.val_buf[path_slice], last_state_value)
+        rews: npt.NDArray[np.float64] = np.append(
+            self.rew_buf[path_slice], last_state_value
+        )
+        vals: npt.NDArray[np.float64] = np.append(
+            self.val_buf[path_slice], last_state_value
+        )
 
         # GAE-Lambda advantage calculation. Gamma determines scale of value function, introduces bias regardless of VF accuracy (similar to discount) and
         # lambda introduces bias when VF is inaccurate
@@ -333,8 +370,8 @@ class PPOBuffer:
         # the next line computes rewards-to-go, to be targets for the value function
         r2g = discount_cumsum(rews, self.gamma)
         self.ret_buf[path_slice] = r2g[:-1]  # Remove last non-step element
-        
-        self.path_start_idx = self.ptr # Update start index
+
+        self.path_start_idx = self.ptr  # Update start index
 
     def get(self) -> Dict[str, object]:
         """
@@ -351,7 +388,7 @@ class PPOBuffer:
 
         assert (
             number_episodes > 0
-        ), "0 completed episodes. Usually caused by having epochs shorter than an episode"
+        ), "0 completed episodes, this will cause NaN for advantage. Usually caused by having epochs shorter than a single episode."
 
         # the next two lines implement the advantage normalization trick
         # adv_mean = self.adv_buf.mean()
@@ -382,32 +419,56 @@ class PPOBuffer:
 
         # Data is currently stored per-step for the entire epoch. This divides the data into a per-episode form
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        actor_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        critic_heatmaps_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        prediction_location_in_episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        
+        actor_heatmaps_in_episode_form: List[List[torch.Tensor]] = [
+            [] for _ in range(episode_len_Size)
+        ]
+        critic_heatmaps_in_episode_form: List[List[torch.Tensor]] = [
+            [] for _ in range(episode_len_Size)
+        ]
+        prediction_location_in_episode_form: List[List[torch.Tensor]] = [
+            [] for _ in range(episode_len_Size)
+        ]
+
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         slice_b: int = 0
         slice_f: int = 0
         jj: int = 0
         for ep_i in episode_lengths:
             slice_f += ep_i
-            episode_form[jj].append(torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)) # Take readings from slice_b to slice_f. Slice_f marks the episode offset
-            actor_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['actor'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
-            critic_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['critic'][slice_b:slice_f]) # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
-            prediction_location_in_episode_form[jj].append(self.location_pred_buf[slice_b:slice_f])
+            episode_form[jj].append(
+                torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
+            )  # Take readings from slice_b to slice_f. Slice_f marks the episode offset
+            actor_heatmaps_in_episode_form[jj].append(
+                self.heatmap_buffer["actor"][slice_b:slice_f]
+            )  # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
+            critic_heatmaps_in_episode_form[jj].append(
+                self.heatmap_buffer["critic"][slice_b:slice_f]
+            )  # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
+            prediction_location_in_episode_form[jj].append(
+                self.location_pred_buf[slice_b:slice_f]
+            )
             slice_b += ep_i
             jj += 1
+
         # If epoch was cut off
         if slice_f != len(self.obs_buf):
-            episode_form[jj].append(torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32))
-            actor_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['actor'][slice_f:]) 
-            critic_heatmaps_in_episode_form[jj].append(self.heatmap_buffer['critic'][slice_f:]) 
-            prediction_location_in_episode_form[jj].append(self.location_pred_buf[slice_f:])            
+            episode_form[jj].append(
+                torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
+            )
+            actor_heatmaps_in_episode_form[jj].append(
+                self.heatmap_buffer["actor"][slice_f:]
+            )
+            critic_heatmaps_in_episode_form[jj].append(
+                self.heatmap_buffer["critic"][slice_f:]
+            )
+            prediction_location_in_episode_form[jj].append(
+                self.location_pred_buf[slice_f:]
+            )
 
-        assert len(actor_heatmaps_in_episode_form) == len(critic_heatmaps_in_episode_form)
+        assert len(actor_heatmaps_in_episode_form) == len(
+            critic_heatmaps_in_episode_form
+        )
         assert len(actor_heatmaps_in_episode_form) == len(episode_form)
-
 
         # Convert to tensors
         data = dict(
@@ -421,9 +482,9 @@ class PPOBuffer:
             ),  # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(np.copy(total_episode_length), dtype=torch.float32),
             ep_form=episode_form,
-            actor_heatmaps_ep_form = actor_heatmaps_in_episode_form,
-            critic_heatmaps_ep_form = critic_heatmaps_in_episode_form,
-            location_pred_ep_form = prediction_location_in_episode_form
+            actor_heatmaps_ep_form=actor_heatmaps_in_episode_form,
+            critic_heatmaps_ep_form=critic_heatmaps_in_episode_form,
+            location_pred_ep_form=prediction_location_in_episode_form,
         )
 
         return data
@@ -519,21 +580,19 @@ class AgentPPO:
     lam: float = field(default=0.9)
 
     # Initialized elsewhere
-    agent: RADA2C_core.RNNModelActorCritic = field(
-        init=False
-    )
+    agent: RADA2C_core.RNNModelActorCritic = field(init=False)
     #: (bool) Reduces PFGRU training iteration when further along to speed up training.
     reduce_pfgru_iters: bool = field(init=False)
 
-
     def __post_init__(self):
-        
         self.reduce_pfgru_iters = True
-        
+
         """Initialize Agent's neural network architecture"""
 
         ################################## set device ##################################
-        print("============================================================================================")
+        print(
+            "============================================================================================"
+        )
         # set device to cpu or cuda
         device = torch.device("cpu")
         if torch.cuda.is_available():
@@ -542,7 +601,9 @@ class AgentPPO:
             print("Device set to : " + str(torch.cuda.get_device_name(device)))
         else:
             print("Device set to : cpu")
-        print("============================================================================================")
+        print(
+            "============================================================================================"
+        )
 
         if (
             self.actor_critic_architecture == "rnn"
@@ -556,7 +617,7 @@ class AgentPPO:
 
             # Initialize learning opitmizers
             self.agent_optimizer = OptimizationStorage(
-                critic_flag = False,
+                critic_flag=False,
                 pi_optimizer=Adam(
                     self.agent.pi.parameters(), lr=self.actor_learning_rate
                 ),
@@ -581,12 +642,14 @@ class AgentPPO:
             )
         else:
             raise ValueError("Steps per epoch cannot be 0")
-        
+
         # Set to eval mode
-        self.agent.set_mode(mode="eval") # TODO investigate if needs to be ac_ppo.agent.pi.logits_net.v_net.eval() or if pi is ok for RAD-A2C
+        self.agent.set_mode(
+            mode="eval"
+        )  # TODO investigate if needs to be ac_ppo.agent.pi.logits_net.v_net.eval() or if pi is ok for RAD-A2C
 
     def reduce_pfgru_training(self):
-        """ Reduce localization module training iterations after some number of epochs to speed up training"""
+        """Reduce localization module training iterations after some number of epochs to speed up training"""
         if self.reduce_pfgru_iters:
             self.train_pfgru_iters = 5
             self.reduce_pfgru_iters = False
@@ -665,7 +728,7 @@ class AgentPPO:
         kk: int = 0
         term: bool = False
         results: UpdateResult
-        
+
         # Train RAD-A2C framework
         if (
             self.actor_critic_architecture == "rnn"
@@ -675,8 +738,8 @@ class AgentPPO:
             model_loss = self.update_model(data)
 
             # Reset gradients
-            self.agent_optimizer.pi_optimizer.zero_grad() # TODO not in original
-            
+            self.agent_optimizer.pi_optimizer.zero_grad()  # TODO not in original
+
             # Train Actor-Critic policy with multiple steps of gradient descent
             # Early stop training if KL divergence above certain threshold
             while not term and kk < self.train_pi_iters:
@@ -694,17 +757,17 @@ class AgentPPO:
 
             # Log changes from update
             results = UpdateResult(
-                stop_iteration = kk,
-                loss_policy = policy_loss_sum_new.item(),
-                loss_critic = policy_result["val_loss"].item(),
-                loss_predictor = model_loss.item(),  # TODO if using the regression GRU
-                kl_divergence = policy_result["kl"],
-                Entropy = policy_result["ent"], 
-                ClipFrac = policy_result["cf"], 
-                LocLoss = predictor_loss,  
+                stop_iteration=kk,
+                loss_policy=policy_loss_sum_new.item(),
+                loss_critic=policy_result["val_loss"].item(),
+                loss_predictor=model_loss.item(),  # TODO if using the regression GRU
+                kl_divergence=policy_result["kl"],
+                Entropy=policy_result["ent"],
+                ClipFrac=policy_result["cf"],
+                LocLoss=predictor_loss,
                 VarExplain=0,
             )
-            
+
         # Train RAD-TEAM framework
         else:
             # TODO add PFGRU to RAD-TEAM
@@ -726,7 +789,9 @@ class AgentPPO:
                 sample_indexes = sample(self, data=data)
 
                 # actor_loss_results = self.compute_batched_losses_pi(data=data, map_buffer_maps=map_buffer_maps, sample=sample_indexes)
-                actor_loss_results = self.compute_batched_losses_pi(data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer)
+                actor_loss_results = self.compute_batched_losses_pi(
+                    data=data, sample=sample_indexes, mapstacks_buffer=actor_maps_buffer
+                )
 
                 # Check Actor KL Divergence
                 if actor_loss_results["kl"].item() < 1.5 * self.target_kl:
@@ -794,7 +859,7 @@ class AgentPPO:
 
         # Put agents in eval mode
         self.agent.set_mode(mode="eval")
-        
+
         return results
 
     def compute_batched_losses_pi(self, sample, data, mapstacks_buffer, minibatch=None):
@@ -1073,20 +1138,24 @@ class AgentPPO:
         pi_info = dict(kl=[], ent=[], cf=[], val=np.array([]), val_loss=[])
 
         # Sample a random tensor
-        ep_select = np.random.choice(np.arange(0, len(ep_form)), size=int(min_iterations), replace=False)
+        ep_select = np.random.choice(
+            np.arange(0, len(ep_form)), size=int(min_iterations), replace=False
+        )
         ep_form = [ep_form[idx] for idx in ep_select]
 
         # Loss storage buffer(s)
-        loss_array_buffer = torch.zeros((len(ep_form), 1),dtype=torch.float32) # Prefilling is fast with numpy
+        loss_array_buffer = torch.zeros(
+            (len(ep_form), 1), dtype=torch.float32
+        )  # Prefilling is fast with numpy
         loss_buffer = torch.autograd.Variable(loss_array_buffer)
-        loss_storage = torch.zeros((len(ep_form),4),dtype=torch.float32)
-        
+        loss_storage = torch.zeros((len(ep_form), 4), dtype=torch.float32)
+
         for index, ep in enumerate(ep_form):
             # For each set of episodes per process from an epoch, compute loss
-            trajectories = ep[0]  
-            
+            trajectories = ep[0]
+
             hidden = self.reset_hidden()
-            
+
             # Pull data from episode
             obs = trajectories[:, :observation_idx]
             act = trajectories[:, action_idx]
@@ -1097,19 +1166,23 @@ class AgentPPO:
 
             # Calculate new action log probabilities
             pi, val, logp, loc = self.agent.grad_step(obs, act, hidden=hidden)
-            
+
             # PPO-Clip
             logp_diff: torch.Tensor = logp_old - logp
             ratio = torch.exp(logp - logp_old)
 
-            clip_adv = (torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv)
+            clip_adv = (
+                torch.clamp(ratio, 1 - self.clip_ratio, 1 + self.clip_ratio) * adv
+            )
             clipped = ratio.gt(1 + self.clip_ratio) | ratio.lt(1 - self.clip_ratio)
 
             # Useful extra info
-            clipfrac = (torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item())
+            clipfrac = (
+                torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
+            )
             approx_kl = logp_diff.detach().mean().item()
             ent = pi.entropy().detach().mean().item()
-            
+
             val_loss = self.agent_optimizer.MSELoss(val, ret)  # MSE critc loss
 
             loss_buffer[index] = -(
@@ -1117,28 +1190,28 @@ class AgentPPO:
                 - 0.01 * val_loss
                 + self.alpha * ent
             )
-            
-            loss_storage[index,0] = approx_kl; 
-            loss_storage[index,1] = ent; 
-            loss_storage[index,2] = clipfrac; 
-            loss_storage[index,3] = val_loss.detach()
+
+            loss_storage[index, 0] = approx_kl
+            loss_storage[index, 1] = ent
+            loss_storage[index, 2] = clipfrac
+            loss_storage[index, 3] = val_loss.detach()
 
         # Get means
         mean_loss = loss_buffer.mean()
-        means = loss_storage.mean(axis=0) # type: ignore
-        
+        means = loss_storage.mean(axis=0)  # type: ignore
+
         # For clarity
         loss_pi = mean_loss
         approx_kl = means[0].detach()
         ent = means[1].detach()
         clipfrac = means[2].detach()
-        loss_val = means[3].detach()    
-        
+        loss_val = means[3].detach()
+
         # TODO make a named tuple
-        pi_info["kl"].append(approx_kl) 
-        pi_info["ent"].append(ent)  
-        pi_info["cf"].append(clipfrac) 
-        pi_info["val_loss"].append(loss_val)  
+        pi_info["kl"].append(approx_kl)
+        pi_info["ent"].append(ent)
+        pi_info["cf"].append(clipfrac)
+        pi_info["val_loss"].append(loss_val)
 
         # Average KL across processes
         kl = mpi_avg(pi_info["kl"][-1])  # MPI
@@ -1154,18 +1227,21 @@ class AgentPPO:
         else:
             term = True
             if proc_id() == 0:
-                logger.log('Terminated update at %d gradient steps due to reaching max kl.'%iter)            
+                logger.log(
+                    "Terminated update at %d gradient steps due to reaching max kl."
+                    % iter
+                )
 
         policy_result: Dict[str, npt.NDArray] = dict()
-        policy_result["kl"] =  pi_info["kl"][0].numpy()
+        policy_result["kl"] = pi_info["kl"][0].numpy()
         policy_result["ent"] = pi_info["ent"][0].numpy()
         policy_result["cf"] = pi_info["cf"][0].numpy()
         policy_result["val_loss"] = pi_info["val_loss"][0].numpy()
-        
+
         policy_loss_sum_new = loss_pi
-        
+
         predictor_loss = (self.env_height * loc - (src_tar)).square().mean().sqrt()
-        
+
         return (
             policy_loss_sum_new,
             policy_result,
@@ -1216,16 +1292,16 @@ class AgentPPO:
         """Wrapper for network"""
         self.agent.load(checkpoint_path=path)
 
-    def sync_params(self)->None:
+    def sync_params(self) -> None:
         sync_params(self.agent)
 
-    def store_episode_length(self, episode_length: int)-> None:
+    def store_episode_length(self, episode_length: int) -> None:
         self.ppo_buffer.store_episode_length(episode_length=episode_length)
-        
+
     def GAE_advantage_and_rewardsToGO(self, last_state_value: float = 0.0) -> None:
         self.ppo_buffer.GAE_advantage_and_rewardsToGO(last_state_value=last_state_value)
-    
-    def store(self, **kwargs)->None:
+
+    def store(self, **kwargs) -> None:
         self.ppo_buffer.store(**kwargs)
 
     def render(
