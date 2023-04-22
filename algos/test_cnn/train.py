@@ -475,6 +475,8 @@ def ppo(
         mpi_avg_grads(ac.pi)
         optimization.critic_optimizer.step()
 
+        return critic_loss.item()
+
     def update_model(data, args):
         # Update the PFGRU, see Ma et al. 2020 for more details
         ep_form = data["ep_form"]
