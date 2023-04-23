@@ -48,9 +48,9 @@
         "--obstruct",
         "0",
         "--agent-count",
-        "1",
+        "2",
         "--net-type",
-        "og",
+        "rnn",
         // "--seed",
         // "2",
         "--no-enforce-boundaries",
@@ -135,8 +135,8 @@
       "console": "integratedTerminal",
       "justMyCode": false,
       //"args": ["--steps_per_epoch", "2", "--steps_per_episode", "1"],
-      //"args": ["--epochs", "1"],
-      "args": [],
+      //"args": ["--render", "True"],
+      "args": ["--obstruct", "1"],
       "cwd": "${workspaceFolder}/algos/test_ppo"
     }
   ]

@@ -19,6 +19,10 @@ from ppo import OptimizationStorage, AgentPPO, BpArgs
 
 import RADTEAM_core as core
 
+RENDER = False
+DEBUG = True
+#SAVE_GIF_FREQ = epochs // 3
+SAVE_GIF_FREQ = 9
 
 def compare_dicts(dict1, dict2):
     """Recursively compare all the values of objects"""
@@ -270,7 +274,7 @@ def ppo(
         number_agents=1,
     )
 
-    save_gif_freq = epochs // 3
+    save_gif_freq = SAVE_GIF_FREQ
     if proc_id() == 0:
         print(f"Local steps per epoch: {local_steps_per_epoch}")
 
@@ -283,6 +287,7 @@ def ppo(
         source_loc_idx = 15
 
         ep_form = data["ep_form"]
+
         pi_ep_form = data["actor_heatmaps_ep_form"]
         v_ep_form = data["critic_heatmaps_ep_form"]
         loc_pred_ep_form = data["location_pred_ep_form"]
@@ -377,6 +382,7 @@ def ppo(
             )
             approx_kl = logp_diff.detach().mean().item()
 
+            # Investigate why adding loss
             loss_arr[ii] = -(
                 torch.min(ratio * adv, clip_adv).mean() - 0.01 * val_loss + alpha * ent
             )
@@ -463,7 +469,7 @@ def ppo(
                 )
                 value_buffer[step] = value.clone()
 
-            loss_arr[ii] = val_loss = optimization.MSELoss(value_buffer, ret.squeeze())
+            loss_arr[ii] = optimization.MSELoss(value_buffer, ret.squeeze())
 
         critic_loss = loss_arr.mean()
 
@@ -475,7 +481,7 @@ def ppo(
         mpi_avg_grads(ac.pi)
         optimization.critic_optimizer.step()
 
-        return critic_loss.item()
+        return critic_loss
 
     def update_model(data, args):
         # Update the PFGRU, see Ma et al. 2020 for more details
@@ -658,7 +664,7 @@ def ppo(
 
     # Prepare for interaction with environment
     start_time = time.time()
-    o, _, _, _ = env.reset()
+    o, _, _, _ = env.reset()  
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
 
@@ -758,7 +764,7 @@ def ppo(
                     # Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
 
-                    o, _, _, _ = env.reset()
+                    o, _, _, _ = env.reset()                   
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
                 else:
@@ -841,6 +847,7 @@ if __name__ == "__main__":
         default=0.99,
         help="Reward attribution for advantage estimator",
     )
+
     parser.add_argument("--seed", "-s", type=int, default=2, help="Random seed control")
     parser.add_argument(
         "--cpu",
@@ -926,6 +933,7 @@ if __name__ == "__main__":
         "obstruction_count": args.obstruct,
         "number_agents": 1,  # TODO change for MARL
         "enforce_grid_boundaries": True,
+        "DEBUG": DEBUG
     }
 
     save_dir_name: str = args.exp_name
@@ -984,6 +992,6 @@ if __name__ == "__main__":
         epochs=args.epochs,
         dims=init_dims,
         logger_kwargs=logger_kwargs,
-        render=False,
-        save_gif=False,
+        render=RENDER,
+        save_gif=RENDER,
     )

@@ -578,8 +578,8 @@ class MapsBuffer:
             if PFGRU:
                 # Prediction can be outside of grid; if so, leave previous
                 if (
-                    inflated_prediction[0] < self.map_dimensions[0]
-                    and inflated_prediction[1] < self.map_dimensions[1]
+                    inflated_prediction[0] <= self.map_dimensions[0]
+                    and inflated_prediction[1] <= self.map_dimensions[1]
                 ):
                     self._update_prediction_map(
                         current_prediction=inflated_prediction,

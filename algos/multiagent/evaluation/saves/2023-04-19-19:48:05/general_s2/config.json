@@ -1,0 +1,648 @@
+{
+    "exp_name":	"general",
+    "self":	{
+        "train_PPO(env=<OrderEnforcing<RadSearch<RadSearchMulti-v1>>>, logger_kwargs={'exp_name': '2023-04-19-19:48:05_rhine-RADA2C-2Agent_agents2', 'seed': 2, 'data_dir': '../../models/train', 'env_name': 'rhine-RADA2C-2Agent/2023-04-19-19:48:05'}, ppo_kwargs={'observation_space': 11, 'bp_args': BpArgs(bp_decay=0.1, l2_weight=1.0, l1_weight=0.0, elbo_weight=1.0, area_scale=2200.0), 'steps_per_epoch': 480, 'steps_per_episode': 120, 'number_of_agents': 2, 'env_height': 2200.0, 'actor_critic_args': {'obs_dim': 11, 'act_dim': 8, 'hidden_sizes_pol': [[32]], 'hidden_sizes_val': [[32]], 'hidden_sizes_rec': [24], 'hidden': [[24]], 'net_type': 'rnn', 'batch_s': 1, 'seed': 289714752, 'pad_dim': 2}, 'actor_critic_architecture': 'rnn', 'minibatch': 1, 'train_pi_iters': 40, 'train_v_iters': 40, 'train_pfgru_iters': 15, 'reduce_pfgru_iters': True, 'actor_learning_rate': 0.0003, 'critic_learning_rate': 0.001, 'pfgru_learning_rate': 0.005, 'gamma': 0.99, 'alpha': 0.1, 'clip_ratio': 0.2, 'target_kl': 0.07, 'lam': 0.9, 'GlobalCriticOptimizer': None}, seed=289714752, number_of_agents=2, actor_critic_architecture='rnn', global_critic_flag=False, steps_per_epoch=480, steps_per_episode=120, total_epochs=3000, render=False, save_path=['../../models/train/rhine-RADA2C-2Agent/2023-04-19-19:48:05', '2023-04-19-19:48:05_rhine-RADA2C-2Agent_agents2_s2'], save_freq=500, save_gif_freq=inf, save_gif=False, render_first_episode=True, episode_count=0, DEBUG=False, start_time=1681958885.8880997, stat_buffers={}, agents={}, loggers={}, GlobalCritic=None, GlobalCriticOptimizer=None)":	{
+            "DEBUG":	false,
+            "GlobalCritic":	null,
+            "GlobalCriticOptimizer":	null,
+            "actor_critic_architecture":	"rnn",
+            "agents":	{},
+            "env":	{
+                "<OrderEnforcing<RadSearch<RadSearchMulti-v1>>>":	{
+                    "_action_space":	null,
+                    "_has_reset":	false,
+                    "_metadata":	null,
+                    "_observation_space":	null,
+                    "_reward_range":	null,
+                    "env":	{
+                        "<RadSearch<RadSearchMulti-v1>>":	{
+                            "DEBUG":	false,
+                            "DEBUG_DETECTOR_LOCATION":	[
+                                1000.0,
+                                1000.0
+                            ],
+                            "DEBUG_SOURCE_LOCATION":	[
+                                500.0,
+                                500.0
+                            ],
+                            "action_space":	{
+                                "Discrete(9)":	{
+                                    "_np_random":	null,
+                                    "_shape":	[],
+                                    "dtype":	"int64",
+                                    "n":	9
+                                }
+                            },
+                            "agents":	{
+                                "0":	{
+                                    "Agent(sp_dist=1829.3816733797314, euc_dist=1819.6527141188233, det_coords=(1932.0, 340.0), out_of_bounds=False, out_of_bounds_count=0, collision=False, intersect=True, obstacle_blocking=False, detector=<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b6d90> >, prev_det_dist=1829.3816733797314, id=0, marker_color=array([1.        , 0.41176471, 0.70588235]), det_sto=[(1932.0, 340.0)], meas_sto=[43], team_reward_sto=[-0.46], cum_reward_sto=[-0.45734541834493286], action_sto=[None], terminal_sto=[False])":	{
+                                        "action_sto":	[
+                                            null
+                                        ],
+                                        "collision":	false,
+                                        "cum_reward_sto":	[
+                                            -0.45734541834493286
+                                        ],
+                                        "det_coords":	[
+                                            1932.0,
+                                            340.0
+                                        ],
+                                        "det_sto":	[
+                                            [
+                                                1932.0,
+                                                340.0
+                                            ]
+                                        ],
+                                        "detector":	{
+                                            "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b6d90> >":	{
+                                                "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b6d90>"
+                                            }
+                                        },
+                                        "euc_dist":	1819.6527141188233,
+                                        "id":	0,
+                                        "intersect":	true,
+                                        "marker_color":	"[1.         0.41176471 0.70588235]",
+                                        "meas_sto":	[
+                                            43
+                                        ],
+                                        "obstacle_blocking":	false,
+                                        "out_of_bounds":	false,
+                                        "out_of_bounds_count":	0,
+                                        "prev_det_dist":	1829.3816733797314,
+                                        "sp_dist":	1829.3816733797314,
+                                        "team_reward_sto":	[
+                                            -0.46
+                                        ],
+                                        "terminal_sto":	[
+                                            false
+                                        ]
+                                    }
+                                },
+                                "1":	{
+                                    "Agent(sp_dist=1829.3816733797314, euc_dist=1819.6527141188233, det_coords=(1932.0, 340.0), out_of_bounds=False, out_of_bounds_count=0, collision=False, intersect=True, obstacle_blocking=False, detector=<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b6d90> >, prev_det_dist=1829.3816733797314, id=1, marker_color=array([0.29411765, 0.        , 0.50980392]), det_sto=[(1932.0, 340.0)], meas_sto=[57], team_reward_sto=[-0.46], cum_reward_sto=[-0.45734541834493286], action_sto=[None], terminal_sto=[False])":	{
+                                        "action_sto":	[
+                                            null
+                                        ],
+                                        "collision":	false,
+                                        "cum_reward_sto":	[
+                                            -0.45734541834493286
+                                        ],
+                                        "det_coords":	[
+                                            1932.0,
+                                            340.0
+                                        ],
+                                        "det_sto":	[
+                                            [
+                                                1932.0,
+                                                340.0
+                                            ]
+                                        ],
+                                        "detector":	{
+                                            "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b6d90> >":	{
+                                                "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b6d90>"
+                                            }
+                                        },
+                                        "euc_dist":	1819.6527141188233,
+                                        "id":	1,
+                                        "intersect":	true,
+                                        "marker_color":	"[0.29411765 0.         0.50980392]",
+                                        "meas_sto":	[
+                                            57
+                                        ],
+                                        "obstacle_blocking":	false,
+                                        "out_of_bounds":	false,
+                                        "out_of_bounds_count":	0,
+                                        "prev_det_dist":	1829.3816733797314,
+                                        "sp_dist":	1829.3816733797314,
+                                        "team_reward_sto":	[
+                                            -0.46
+                                        ],
+                                        "terminal_sto":	[
+                                            false
+                                        ]
+                                    }
+                                }
+                            },
+                            "all_agent_max_count":	0.0,
+                            "background_radiation_bounds":	[
+                                10,
+                                51
+                            ],
+                            "bbox":	"[[   0.    0.]\n [2700.    0.]\n [2700. 2700.]\n [   0. 2700.]]",
+                            "bkg_intensity":	"48",
+                            "continuous":	false,
+                            "coord_noise":	false,
+                            "detectable_directions":	8,
+                            "done":	false,
+                            "dwell_time":	1,
+                            "enforce_grid_boundaries":	true,
+                            "env_ls":	[
+                                [
+                                    "[0. 0.]",
+                                    "[2700.    0.]",
+                                    "[2700. 2700.]",
+                                    "[   0. 2700.]"
+                                ],
+                                [
+                                    [
+                                        1643.0,
+                                        753.0
+                                    ],
+                                    [
+                                        1643.0,
+                                        1094.0
+                                    ],
+                                    [
+                                        2030.0,
+                                        1094.0
+                                    ],
+                                    [
+                                        2030.0,
+                                        753.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        1941.0,
+                                        1480.0
+                                    ],
+                                    [
+                                        1941.0,
+                                        1813.0
+                                    ],
+                                    [
+                                        2144.0,
+                                        1813.0
+                                    ],
+                                    [
+                                        2144.0,
+                                        1480.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        265.0,
+                                        202.0
+                                    ],
+                                    [
+                                        265.0,
+                                        513.0
+                                    ],
+                                    [
+                                        694.0,
+                                        513.0
+                                    ],
+                                    [
+                                        694.0,
+                                        202.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        503.0,
+                                        563.0
+                                    ],
+                                    [
+                                        503.0,
+                                        805.0
+                                    ],
+                                    [
+                                        943.0,
+                                        805.0
+                                    ],
+                                    [
+                                        943.0,
+                                        563.0
+                                    ]
+                                ]
+                            ],
+                            "epoch_cnt":	1,
+                            "epoch_end":	false,
+                            "intensity":	"7434606",
+                            "iter_count":	0,
+                            "line_segs":	[
+                                [
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4ff0> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4ff0>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4d80> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4d80>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6070> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6070>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b7fc0> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b7fc0>"
+                                        }
+                                    }
+                                ],
+                                [
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4f30> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4f30>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b7d50> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b7d50>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6670> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6670>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6c10> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6c10>"
+                                        }
+                                    }
+                                ],
+                                [
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6700> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6700>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4e70> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b4e70>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6d00> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6d00>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6dc0> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6dc0>"
+                                        }
+                                    }
+                                ],
+                                [
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6e20> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6e20>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6730> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6730>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b51a0> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b51a0>"
+                                        }
+                                    },
+                                    {
+                                        "<visilibity.Line_Segment; proxy of <Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6f70> >":	{
+                                            "this":	"<Swig Object of type 'VisiLibity::Line_Segment *' at 0x7fd6035b6f70>"
+                                        }
+                                    }
+                                ]
+                            ],
+                            "max_dist":	2000.0,
+                            "metadata":	{
+                                "render.modes":	[
+                                    "human"
+                                ],
+                                "video.frames_per_second":	5
+                            },
+                            "np_random":	"Generator(PCG64)",
+                            "num_obs":	"4",
+                            "number_actions":	9,
+                            "number_agents":	2,
+                            "obs_coord":	[
+                                [
+                                    [
+                                        1643.0,
+                                        753.0
+                                    ],
+                                    [
+                                        1643.0,
+                                        1094.0
+                                    ],
+                                    [
+                                        2030.0,
+                                        1094.0
+                                    ],
+                                    [
+                                        2030.0,
+                                        753.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        1941.0,
+                                        1480.0
+                                    ],
+                                    [
+                                        1941.0,
+                                        1813.0
+                                    ],
+                                    [
+                                        2144.0,
+                                        1813.0
+                                    ],
+                                    [
+                                        2144.0,
+                                        1480.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        265.0,
+                                        202.0
+                                    ],
+                                    [
+                                        265.0,
+                                        513.0
+                                    ],
+                                    [
+                                        694.0,
+                                        513.0
+                                    ],
+                                    [
+                                        694.0,
+                                        202.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        503.0,
+                                        563.0
+                                    ],
+                                    [
+                                        503.0,
+                                        805.0
+                                    ],
+                                    [
+                                        943.0,
+                                        805.0
+                                    ],
+                                    [
+                                        943.0,
+                                        563.0
+                                    ]
+                                ]
+                            ],
+                            "observation_area":	"[200. 500.]",
+                            "observation_space":	{
+                                "Box([0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.], [inf inf inf inf inf inf inf inf inf inf inf], (11,), float32)":	{
+                                    "_np_random":	null,
+                                    "_shape":	[
+                                        11
+                                    ],
+                                    "bounded_above":	"[False False False False False False False False False False False]",
+                                    "bounded_below":	"[ True  True  True  True  True  True  True  True  True  True  True]",
+                                    "dtype":	"float32",
+                                    "high":	"[inf inf inf inf inf inf inf inf inf inf inf]",
+                                    "low":	"[0. 0. 0. 0. 0. 0. 0. 0. 0. 0. 0.]"
+                                }
+                            },
+                            "obstruction_count":	-1,
+                            "poly":	[
+                                [
+                                    [
+                                        1643.0,
+                                        753.0
+                                    ],
+                                    [
+                                        1643.0,
+                                        1094.0
+                                    ],
+                                    [
+                                        2030.0,
+                                        1094.0
+                                    ],
+                                    [
+                                        2030.0,
+                                        753.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        1941.0,
+                                        1480.0
+                                    ],
+                                    [
+                                        1941.0,
+                                        1813.0
+                                    ],
+                                    [
+                                        2144.0,
+                                        1813.0
+                                    ],
+                                    [
+                                        2144.0,
+                                        1480.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        265.0,
+                                        202.0
+                                    ],
+                                    [
+                                        265.0,
+                                        513.0
+                                    ],
+                                    [
+                                        694.0,
+                                        513.0
+                                    ],
+                                    [
+                                        694.0,
+                                        202.0
+                                    ]
+                                ],
+                                [
+                                    [
+                                        503.0,
+                                        563.0
+                                    ],
+                                    [
+                                        503.0,
+                                        805.0
+                                    ],
+                                    [
+                                        943.0,
+                                        805.0
+                                    ],
+                                    [
+                                        943.0,
+                                        563.0
+                                    ]
+                                ]
+                            ],
+                            "radiation_intensity_bounds":	[
+                                1000000.0,
+                                10000000.0
+                            ],
+                            "render_counter":	0,
+                            "save_gif":	false,
+                            "scale":	0.00045454545454545455,
+                            "scaled_grid_max":	[
+                                1,
+                                1
+                            ],
+                            "search_area":	[
+                                [
+                                    200.0,
+                                    200.0
+                                ],
+                                [
+                                    2200.0,
+                                    200.0
+                                ],
+                                [
+                                    2200.0,
+                                    2200.0
+                                ],
+                                [
+                                    200.0,
+                                    2200.0
+                                ]
+                            ],
+                            "source":	{
+                                "<visilibity.Point; proxy of <Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b7330> >":	{
+                                    "this":	"<Swig Object of type 'VisiLibity::Point *' at 0x7fd6035b7330>"
+                                }
+                            },
+                            "spec":	{
+                                "EnvSpec(RadSearchMulti-v1)":	{
+                                    "_env_name":	"RadSearchMulti",
+                                    "_kwargs":	{
+                                        "DEBUG":	false,
+                                        "bbox":	"[[   0.    0.]\n [2700.    0.]\n [2700. 2700.]\n [   0. 2700.]]",
+                                        "enforce_grid_boundaries":	true,
+                                        "np_random":	"Generator(PCG64)",
+                                        "number_agents":	2,
+                                        "observation_area":	"[200. 500.]",
+                                        "obstruction_count":	-1,
+                                        "save_gif":	false
+                                    },
+                                    "entry_point":	"gym_rad_search.envs:RadSearch",
+                                    "id":	"RadSearchMulti-v1",
+                                    "max_episode_steps":	null,
+                                    "nondeterministic":	false,
+                                    "order_enforce":	true,
+                                    "reward_threshold":	null
+                                }
+                            },
+                            "src_coords":	[
+                                1152.0,
+                                1984.0
+                            ],
+                            "vis_graph":	{
+                                "<visilibity.Visibility_Graph; proxy of <Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7fd6035b7300> >":	{
+                                    "this":	"<Swig Object of type 'VisiLibity::Visibility_Graph *' at 0x7fd6035b7300>"
+                                }
+                            },
+                            "walls":	[
+                                "[0. 0.]",
+                                "[2700.    0.]",
+                                "[2700. 2700.]",
+                                "[   0. 2700.]"
+                            ],
+                            "world":	{
+                                "<visilibity.Environment; proxy of <Swig Object of type 'VisiLibity::Environment *' at 0x7fd6035b71e0> >":	{
+                                    "this":	"<Swig Object of type 'VisiLibity::Environment *' at 0x7fd6035b71e0>"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "episode_count":	0,
+            "global_critic_flag":	false,
+            "logger_kwargs":	{
+                "data_dir":	"../../models/train",
+                "env_name":	"rhine-RADA2C-2Agent/2023-04-19-19:48:05",
+                "exp_name":	"2023-04-19-19:48:05_rhine-RADA2C-2Agent_agents2",
+                "seed":	2
+            },
+            "loggers":	{},
+            "number_of_agents":	2,
+            "ppo_kwargs":	{
+                "GlobalCriticOptimizer":	null,
+                "actor_critic_architecture":	"rnn",
+                "actor_critic_args":	{
+                    "act_dim":	8,
+                    "batch_s":	1,
+                    "hidden":	[
+                        [
+                            24
+                        ]
+                    ],
+                    "hidden_sizes_pol":	[
+                        [
+                            32
+                        ]
+                    ],
+                    "hidden_sizes_rec":	[
+                        24
+                    ],
+                    "hidden_sizes_val":	[
+                        [
+                            32
+                        ]
+                    ],
+                    "net_type":	"rnn",
+                    "obs_dim":	11,
+                    "pad_dim":	2,
+                    "seed":	289714752
+                },
+                "actor_learning_rate":	0.0003,
+                "alpha":	0.1,
+                "bp_args":	[
+                    0.1,
+                    1.0,
+                    0.0,
+                    1.0,
+                    2200.0
+                ],
+                "clip_ratio":	0.2,
+                "critic_learning_rate":	0.001,
+                "env_height":	2200.0,
+                "gamma":	0.99,
+                "lam":	0.9,
+                "minibatch":	1,
+                "number_of_agents":	2,
+                "observation_space":	11,
+                "pfgru_learning_rate":	0.005,
+                "reduce_pfgru_iters":	true,
+                "steps_per_episode":	120,
+                "steps_per_epoch":	480,
+                "target_kl":	0.07,
+                "train_pfgru_iters":	15,
+                "train_pi_iters":	40,
+                "train_v_iters":	40
+            },
+            "render":	false,
+            "render_first_episode":	true,
+            "save_freq":	500,
+            "save_gif":	false,
+            "save_gif_freq":	Infinity,
+            "save_path":	[
+                "../../models/train/rhine-RADA2C-2Agent/2023-04-19-19:48:05",
+                "2023-04-19-19:48:05_rhine-RADA2C-2Agent_agents2_s2"
+            ],
+            "seed":	289714752,
+            "start_time":	1681958885.8880997,
+            "stat_buffers":	{},
+            "steps_per_episode":	120,
+            "steps_per_epoch":	480,
+            "total_epochs":	3000
+        }
+    }
+}
