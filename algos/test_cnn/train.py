@@ -21,8 +21,8 @@ import RADTEAM_core as core
 
 RENDER = False
 DEBUG = False
-SAVE_GIF_FREQ = epochs // 3
-#SAVE_GIF_FREQ = 9
+#SAVE_GIF_FREQ = epochs // 3
+SAVE_GIF_FREQ = 10
 
 def compare_dicts(dict1, dict2):
     """Recursively compare all the values of objects"""

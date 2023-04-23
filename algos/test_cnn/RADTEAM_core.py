@@ -1264,10 +1264,9 @@ class Critic(nn.Module):
         self.step4 = nn.Flatten(
             start_dim=0, end_dim=-1
         )  # output tensor with shape (1, x)
-        self.step5 = nn.Linear(
-            in_features=16 * batches * pool_output * pool_output, out_features=32
-        )
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=512)
         # nn.ReLU()
+        self.step6 = nn.Linear(in_features=512, out_features=128)        
         self.step6 = nn.Linear(in_features=32, out_features=16)
         # nn.ReLU()
         self.step7 = nn.Linear(
