@@ -1019,9 +1019,8 @@ class Actor(nn.Module):
             in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
         )
         self.step4 = nn.Flatten(start_dim=0, end_dim=-1)
-        self.step5 = nn.Linear(
-            in_features=16 * batches * pool_output * pool_output, out_features=32
-        )
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=512)
+        self.step6 = nn.Linear(in_features=512, out_features=128)        
         self.step6 = nn.Linear(in_features=32, out_features=16)
         self.step7 = nn.Linear(in_features=16, out_features=action_dim)
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1]
