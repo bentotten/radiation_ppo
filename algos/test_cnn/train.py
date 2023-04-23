@@ -664,7 +664,7 @@ def ppo(
 
     # Prepare for interaction with environment
     start_time = time.time()
-    o, _, _, _ = env.reset()  
+    o, _, _, _ = env.reset()
     o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
 
@@ -764,7 +764,7 @@ def ppo(
                     # Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
 
-                    o, _, _, _ = env.reset()                   
+                    o, _, _, _ = env.reset()
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
                 else:

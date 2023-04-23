@@ -1020,7 +1020,8 @@ class Actor(nn.Module):
         )
         self.step4 = nn.Flatten(start_dim=0, end_dim=-1)
         self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=512)
-        self.step6 = nn.Linear(in_features=512, out_features=128)        
+        self.step6 = nn.Linear(in_features=512, out_features=128)
+        self.step6 = nn.Linear(in_features=128, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         self.step7 = nn.Linear(in_features=16, out_features=action_dim)
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1]
@@ -1038,15 +1039,15 @@ class Actor(nn.Module):
             ),  # output tensor with shape (4, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(
-                in_features=16 * batches * pool_output * pool_output, out_features=32
-            ),  # output tensor with shape (32)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=128),  # output tensor with shape (32)
             nn.ReLU(),
-            nn.Linear(in_features=32, out_features=16),  # output tensor with shape (16)
+            nn.Linear(in_features=128, out_features=64),  # output tensor with shape ()
             nn.ReLU(),
-            nn.Linear(
-                in_features=16, out_features=action_dim
-            ),  # output tensor with shape (8)
+            nn.Linear(in_features=64, out_features=32),  # output tensor with shape)
+            nn.ReLU(),
+            nn.Linear(in_features=32, out_features=16),  # output tensor with shape ()
+            nn.ReLU(),
+            nn.Linear(in_features=16, out_features=action_dim),  # output tensor with shape (8)
             nn.Softmax(dim=0),  # Put in range [0,1]
         )
 
@@ -1266,7 +1267,8 @@ class Critic(nn.Module):
         )  # output tensor with shape (1, x)
         self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=512)
         # nn.ReLU()
-        self.step6 = nn.Linear(in_features=512, out_features=128)        
+        self.step6 = nn.Linear(in_features=512, out_features=128)
+        self.step6 = nn.Linear(in_features=128, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         # nn.ReLU()
         self.step7 = nn.Linear(
@@ -1288,9 +1290,11 @@ class Critic(nn.Module):
             ),  # output tensor with shape (batch_size, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(
-                in_features=16 * batches * pool_output * pool_output, out_features=32
-            ),  # output tensor with shape (32)
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=128),  # output tensor with shape (32)
+            nn.ReLU(),
+            nn.Linear(in_features=128, out_features=64),  # output tensor with shape (16)
+            nn.ReLU(),
+            nn.Linear(in_features=64, out_features=32),  # output tensor with shape (16)
             nn.ReLU(),
             nn.Linear(in_features=32, out_features=16),  # output tensor with shape (16)
             nn.ReLU(),
