@@ -286,7 +286,6 @@ class PPOBuffer:
         full_observation: Dict[int, npt.NDArray],
         heatmap_stacks: None,
         terminal: bool,
-        location_prediction: torch.Tensor,
     ) -> None:
         """
         Append one timestep of agent-environment interaction to the buffer.
@@ -308,7 +307,6 @@ class PPOBuffer:
         self.val_buf[self.ptr] = val
         self.source_tar[self.ptr] = src
         self.logp_buf[self.ptr] = logp
-        self.location_pred_buf[self.ptr] = location_prediction
 
         if heatmap_stacks:
             if PRIO_MEMORY:

@@ -140,10 +140,10 @@
       "cwd": "${workspaceFolder}/algos/test_ppo"
     },
     {
-      "name": "Hail Mary - Train OG project ",
+      "name": "Hail Mary - Original Goal ",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/algos/test_cnn/train.py",
+      "program": "${workspaceFolder}/algos/original_goal/ppo/ppo.py",
       "console": "integratedTerminal",
       "justMyCode": false,
       //"args": ["--steps_per_epoch", "2", "--steps_per_episode", "1"],

@@ -586,13 +586,9 @@ class AgentPPO:
             # Initialize learning opitmizers
             self.agent_optimizer = OptimizationStorage(
                 critic_flag=False,
-                pi_optimizer=Adam(
-                    self.agent.pi.parameters(), lr=self.actor_learning_rate
-                ),
+                pi_optimizer=Adam(self.agent.pi.parameters(), lr=self.actor_learning_rate),
                 critic_optimizer=None,  # Critic is embeded in policy for RAD-A2C
-                model_optimizer=Adam(
-                    self.agent.model.parameters(), lr=self.pfgru_learning_rate
-                ),
+                model_optimizer=Adam(self.agent.model.parameters(), lr=self.pfgru_learning_rate),
                 MSELoss=torch.nn.MSELoss(reduction="mean"),
             )
         else:

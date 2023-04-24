@@ -5,7 +5,7 @@ import gym # type: ignore
 import time
 import os
 import core # type: ignore
-from ppo_tools import PPOBuffer # type: ignore
+from ppo_tools import PPOBuffer, OptimizationStorage # type: ignore
 from gym.utils.seeding import _int_list_from_bigint, hash_seed # type: ignore
 from rl_tools.logx import EpochLogger # type: ignore
 from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params,synchronize, mpi_avg_grads, sync_params_stats # type: ignore
@@ -171,35 +171,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         number_agents=number_of_agents,
     )    
     
-    
     save_gif_freq = epochs // 3
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
-
-    def update_loc_rnn(data, env_sim, loss):
-        """Update for the simple regression GRU"""
-        ep_form= data['ep_form']
-        model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii,ep in enumerate(ep_form):
-                hidden = ac.model.init_hidden(1)
-                src_tar =  ep[0][:,15:].clone()
-                src_tar[:,:2] = src_tar[:,:2]/env_sim.search_area[2][1]
-                obs_t = torch.as_tensor(ep[0][:,:3], dtype=torch.float32)
-                loc_pred, _ = ac.model(obs_t,hidden,batch=True)
-                model_loss_arr[ii] = loss(loc_pred.squeeze(),src_tar.squeeze())
-            
-            model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
-            model_loss.backward()
-            mpi_avg_grads(ac.model)
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            model_optimizer.step()    
-
-        return model_loss
-            
 
     def update_a2c(data, env_sim, minibatch=None,iter=None):
         observation_idx = 11
@@ -249,11 +223,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         #Average KL across processes 
         kl = mpi_avg(pi_info['kl'][-1])
         if kl.item() < 1.5 * target_kl:
-            pi_optimizer.zero_grad() 
+            # pi_optimizer.zero_grad() 
+            optimization.pi_optimizer.zero_grad()
             loss_pi.backward()
             #Average gradients across processes
             mpi_avg_grads(ac.pi)
-            pi_optimizer.step()
+            # pi_optimizer.step()
+            optimization.pi_optimizer.step()
             term = False
         else:
             term = True
@@ -328,22 +304,30 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 model_loss_arr[ii] = total_loss
             
             model_loss = model_loss_arr.mean()
-            model_optimizer.zero_grad()
+            # model_optimizer.zero_grad()
+            optimization.model_optimizer.zero_grad()
             model_loss.backward()
 
             #Average gradients across the processes
             mpi_avg_grads(ac.model)
             torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
             
-            model_optimizer.step() 
+            # model_optimizer.step()
+            optimization.model_optimizer.step() 
         
         return model_loss
     
     # Set up optimizers and learning rate decay for policy and localization module
-    pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
-    model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
-    pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
-    model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
+    # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
+    # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
+    # pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
+    # model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
+    optimization = OptimizationStorage(
+        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
+        critic_optimizer=None,
+        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
+        critic_flag=False,
+    )    
     loss = torch.nn.MSELoss(reduction='mean')
 
     # Set up model saving
@@ -351,7 +335,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     def update(env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
-        data = buf.get(logger=logger)
+        # data = buf.get(logger=logger)
+        data = buf.get()
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
@@ -371,8 +356,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             kk += 1
         
         #Reduce learning rate
-        pi_scheduler.step()
-        model_scheduler.step()
+        optimization.pi_scheduler.step()
+        optimization.model_scheduler.step()
 
         logger.store(StopIter=kk)
 
@@ -382,12 +367,15 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         logger.store(LossPi=pi_l.item(), LossV=loss_v.item(), LossModel= loss_mod.item(),
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      LocLoss=loc_loss, VarExplain=0)
-
-
     
     # Prepare for interaction with environment
     start_time = time.time()
-    o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
+    # o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
+    # TODO needs MARL
+    o, _, _, _ = env.reset()
+    o = o[0]
+    ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+    
     stat_buff = core.StatBuff()
     stat_buff.update(o[0])
     ep_ret_ls = []
@@ -406,12 +394,18 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
             #compute action and logp (Actor), compute value (Critic)
             a, v, logp, hidden, out_pred = ac.step(obs_std, hidden=hidden)
-            next_o, r, d, _ = env.step(a)
+            # TODO needs marl
+            # next_o, r, d, _ = env.step(a)
+            next_o, r, d, _ = env.step({0: a})
+            next_o, r, d = next_o[0], r["individual_reward"][0], d[0]         
+            
             ep_ret += r
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
-            buf.store(obs_std, a, r, v, logp, env.src_coords)
+            # buf.store(obs_std, a, r, v, logp, env.src_coords)
+            buf.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+            
             logger.store(VVals=v)
 
             # Update obs (critical!)
@@ -427,8 +421,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             if terminal or epoch_ended:
                 if d and not timeout:
                     done_count += 1
-                if env.oob:
+                # if env.oob:
                     #Log if agent went out of bounds
+                    # oob += 1
+                # TODO needs MARL
+                if env.get_agent_outOfBounds_count(id=0) > 0:
+                    # Log if agent went out of bounds
                     oob += 1
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
@@ -442,11 +440,14 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                         env.epoch_end = True
                 else:
                     v = 0
-                buf.finish_path(v)
+                # buf.finish_path(v)
+                buf.GAE_advantage_and_rewardsToGO(v)
+                
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-
+                    buf.store_episode_length(episode_length=ep_len)
+                    
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
                     if proc_id() == 0 and epoch != 0:
@@ -458,13 +459,22 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     hidden = ac.reset_hidden()
-                    o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    # TODO needs MARL
+                    # o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    o, _, _, _ = env.reset()
+                    o = o[0]
+                    ep_ret, ep_len, a = 0, 0, -1                    
                 else:
+                    # TODO needs MARL
                     #Sample new environment parameters, log epoch results
-                    oob += env.oob_count
+                    # oob += env.oob_count
+                    oob += env.get_agent_outOfBounds_count(id=0)
                     logger.store(DoneCount=done_count, OutOfBound=oob)
                     done_count = 0; oob = 0
-                    o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    # o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
+                    o, _, _, _ = env.reset()
+                    o = o[0]
+                    ep_ret, ep_len, a = 0, 0, -1
 
                 stat_buff.update(o[0])
 
@@ -504,7 +514,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument('--env', type=str, default='gym_rad_search:RadSearch-v0')
+    parser.add_argument('--env', type=str, default='gym_rad_search:RadSearchMulti-v1')
     parser.add_argument('--hid_gru', type=int, default=[24],help='A2C GRU hidden state size')
     parser.add_argument('--hid_pol', type=int, default=[32],help='Actor linear layer size') 
     parser.add_argument('--hid_val', type=int, default=[32],help='Critic linear layer size') 
@@ -556,7 +566,7 @@ if __name__ == '__main__':
     #Generate a large random seed and random generator object for reproducibility
     robust_seed = _int_list_from_bigint(hash_seed((1+proc_id())*args.seed))[0]
     rng = np.random.default_rng(robust_seed)
-    init_dims['seed'] = rng
+    init_dims["np_random"] = rng
 
     #Setup logger for tracking training metrics
     from rl_tools.run_utils import setup_logger_kwargs  # type: ignore

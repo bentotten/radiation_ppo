@@ -525,7 +525,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if d and not timeout:
                     done_count += 1
                 if env.get_agent_outOfBounds_count(id=0) > 0:
-                    #Log if agent went out of bounds
+                    # Log if agent went out of bounds
                     oob += 1
                 if epoch_ended and not(terminal):
                     print(f'Warning: trajectory cut off by epoch at {ep_len} steps and time {t}.', flush=True)
@@ -568,7 +568,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     done_count = 0; oob = 0
                     o, _, _, _ = env.reset()
                     o = o[0]
-                    ep_ret, ep_len, a = 0, 0, -1                       
+                    ep_ret, ep_len, a = 0, 0, -1
 
                 stat_buff.update(o[0])
 
