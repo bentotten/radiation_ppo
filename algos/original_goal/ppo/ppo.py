@@ -122,6 +122,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     """
 
+    # Global stats buffer
+    stat_buff = core.StatBuff()    
+
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
     
@@ -388,7 +391,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     # Prepare for interaction with environment
     start_time = time.time()
     # o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
-    # TODO needs MARL
     o, _, _, _ = env.reset()
     
     numpy_shape = core.combined_shape(number_of_agents)    
@@ -397,7 +399,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     ep_len = 0
     done_count = 0
     
-    stat_buff = core.StatBuff()
     for id in range(number_of_agents):
         stat_buff.update(o[id]) # update with all agent obs
     oob = 0
@@ -435,7 +436,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
             # next_o, r, d, _ = env.step(a)
             next_o, r, d, _ = env.step(actions)
-            next_o, d = next_o[0], d[0]         
+            
+            d = True if True in d.values() else False
             
             for id in range(number_of_agents):
                 ep_ret[id] += r["individual_reward"][id]
@@ -444,7 +446,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
             # buf.store(obs_std, a, r, v, logp, env.src_coords)
             for id in range(number_of_agents):
-                PPObuffer[id].store(obs=obs_std, act=actions[id], rew=r, val=state_values[id], logp=logprobs[id], src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+                PPObuffer[id].store(
+                    obs=obs_std[id], 
+                    act=actions[id],
+                    rew=r["individual_reward"][id],
+                    val=state_values[id],
+                    logp=logprobs[id], 
+                    src=env.src_coords, 
+                    full_observation=obs_std, 
+                    heatmap_stacks=None, 
+                    terminal=d
+                    )
             
             logger.store(VVals=state_values.mean())
 
