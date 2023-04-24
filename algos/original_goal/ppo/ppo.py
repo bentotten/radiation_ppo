@@ -390,7 +390,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     # o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
     # TODO needs MARL
     o, _, _, _ = env.reset()
-    ep_ret, ep_len, done_count, a = 0, 0, 0, -1
+    
+    numpy_shape = core.combined_shape(number_of_agents)    
+    
+    ep_ret = np.zeros(numpy_shape)
+    ep_len = 0
+    done_count = 0
     
     stat_buff = core.StatBuff()
     for id in range(number_of_agents):
@@ -399,7 +404,11 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     oob = 0
     reduce_v_iters = True
     hidden = [_ for _ in range(number_of_agents)]
-
+    
+    actions = {id: None for id in range(number_of_agents)}
+    state_values = np.zeros(numpy_shape)
+    logprobs = np.zeros(numpy_shape)
+            
     for id in range(number_of_agents):
         ac[id].model.eval()
         
@@ -421,20 +430,17 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             
             #compute action and logp (Actor), compute value (Critic)
             # a, v, logp, hidden[id], out_pred = ac[id].step(obs_std, hidden=hidden[id])
-            
-            numpy_shape = core.combined_shape(number_of_agents)
-            actions = {id: None for id in range(number_of_agents)}
-            state_values = np.zeros(numpy_shape)
-            logprobs = np.zeros(numpy_shape)
-            
+
             for id in range(number_of_agents):
                 actions[id], state_values[id], logprobs[id], _ = ac[id].step(obs_std, hidden=hidden[id])
 
             # next_o, r, d, _ = env.step(a)
             next_o, r, d, _ = env.step(actions)
-            next_o, r, d = next_o[0], r["individual_reward"][0], d[0]         
+            next_o, d = next_o[0], d[0]         
             
-            ep_ret += r
+            for id in range(number_of_agents):
+                ep_ret[id] += r["individual_reward"][id]
+                
             ep_len += 1
             ep_ret_ls.append(ep_ret)
 
@@ -492,8 +498,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
                     if proc_id() == 0 and epoch != 0:
-                        env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
-                                   ep_rew=ep_ret_ls)
+                        print("Environment render not implemented")
+                        pass
+                        # env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
+                        #            ep_rew=ep_ret_ls)
                 
                 ep_ret_ls = []
                 stat_buff.reset()
@@ -504,18 +512,20 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     # o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
                     o, _, _, _ = env.reset()
                     o = o[0]
-                    ep_ret, ep_len, a = 0, 0, -1                    
+                    ep_ret = np.zeros(core.combined_shape(numpy_shape))
+                    ep_len = 0                
                 else:
                     # TODO needs MARL
                     #Sample new environment parameters, log epoch results
                     # oob += env.oob_count
                     oob += env.get_agent_outOfBounds_count(id=0)
                     logger.store(DoneCount=done_count, OutOfBound=oob)
-                    done_count = 0; oob = 0
+                    done_count = 0; 
+                    oob = 0
                     # o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
                     o, _, _, _ = env.reset()
-                    o = o[0]
-                    ep_ret, ep_len, a = 0, 0, -1
+                    ep_ret = np.zeros(core.combined_shape(numpy_shape))
+                    ep_len = 0
 
                 for id in range(number_of_agents):
                     stat_buff.update(o[id])
