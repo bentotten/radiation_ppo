@@ -390,11 +390,11 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     # o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1
     # TODO needs MARL
     o, _, _, _ = env.reset()
-    o = o[0]
     ep_ret, ep_len, done_count, a = 0, 0, 0, -1
     
     stat_buff = core.StatBuff()
-    stat_buff.update(o[0])
+    for id in range(number_of_agents):
+        stat_buff.update(o[id]) # update with all agent obs
     ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
@@ -415,18 +415,21 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         for t in range(local_steps_per_epoch):
             #Standardize input using running statistics per episode
             obs_std = o
-            obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            
+            for id in range(number_of_agents):
+                obs_std[id] = np.clip((o[id]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
+            
             #compute action and logp (Actor), compute value (Critic)
             # a, v, logp, hidden[id], out_pred = ac[id].step(obs_std, hidden=hidden[id])
             
+            numpy_shape = core.combined_shape(number_of_agents)
             actions = {id: None for id in range(number_of_agents)}
-            state_values = np.zeros(core.combined_shape(number_of_agents))
-            logprobs = {id: None for id in range(number_of_agents)}
-            out_predictions = {id: None for id in range(number_of_agents)}            
+            state_values = np.zeros(numpy_shape)
+            logprobs = np.zeros(numpy_shape)
             
             for id in range(number_of_agents):
-                actions[id], state_values[id], logprobs[id], out_predictions[id]
-            # TODO needs marl
+                actions[id], state_values[id], logprobs[id], _ = ac[id].step(obs_std, hidden=hidden[id])
+
             # next_o, r, d, _ = env.step(a)
             next_o, r, d, _ = env.step(actions)
             next_o, r, d = next_o[0], r["individual_reward"][0], d[0]         
@@ -437,7 +440,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
             # buf.store(obs_std, a, r, v, logp, env.src_coords)
             for id in range(number_of_agents):
-                PPObuffer[id].store(obs=obs_std, act=actions[id], rew=r, val=state_values[id], logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+                PPObuffer[id].store(obs=obs_std, act=actions[id], rew=r, val=state_values[id], logp=logprobs[id], src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
             
             logger.store(VVals=state_values.mean())
 
@@ -445,7 +448,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             o = next_o
 
             #Update running mean and std
-            stat_buff.update(o[0])
+            for id in range(number_of_agents):
+                stat_buff.update(o[id])
 
             timeout = ep_len == max_ep_len
             terminal = d or timeout
@@ -466,9 +470,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
                 if timeout or epoch_ended:
                     # if trajectory didn't reach terminal state, bootstrap value target
-                    obs_std[0] = np.clip((o[0]-stat_buff.mu)/stat_buff.sig_obs,-8,8)
-                    
                     for id in range(number_of_agents):
+                        obs_std[id] = np.clip((o[id]-stat_buff.mu)/stat_buff.sig_obs,-8,8)                    
                         _, state_values[id], _, _, _ = ac[id].step(obs_std, hidden=hidden[id])
                     if epoch_ended:
                         #Set flag to sample new environment parameters
@@ -514,7 +517,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     o = o[0]
                     ep_ret, ep_len, a = 0, 0, -1
 
-                stat_buff.update(o[0])
+                for id in range(number_of_agents):
+                    stat_buff.update(o[id])
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
