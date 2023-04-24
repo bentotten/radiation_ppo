@@ -299,12 +299,14 @@ def ppo(
 
     # Set up function for computing value loss
     def compute_loss_v(data, step):
-        ret = data['ret']
+        ret = torch.unsqueeze(data['ret'][step], 0)
         mapstacks = data['critic_mapstacks']
         
         value = ac.step_keep_gradient_for_critic(critic_mapstack=mapstacks[step])
         
-        return optimization.MSELoss(value, ret)
+        loss = optimization.MSELoss(value, ret)
+        
+        return loss
 
     def update_a2c(id, data, env_sim, minibatch=None, iter=None):
         observation_idx = 11
