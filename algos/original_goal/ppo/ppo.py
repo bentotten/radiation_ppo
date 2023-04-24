@@ -400,7 +400,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     stat_buff = core.StatBuff()
     for id in range(number_of_agents):
         stat_buff.update(o[id]) # update with all agent obs
-    ep_ret_ls = []
     oob = 0
     reduce_v_iters = True
     hidden = [_ for _ in range(number_of_agents)]
@@ -442,7 +441,6 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 ep_ret[id] += r["individual_reward"][id]
                 
             ep_len += 1
-            ep_ret_ls.append(ep_ret)
 
             # buf.store(obs_std, a, r, v, logp, env.src_coords)
             for id in range(number_of_agents):
@@ -491,7 +489,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
-                    logger.store(EpRet=ep_ret, EpLen=ep_len)
+                    logger.store(EpRet=ep_ret.max(), EpLen=ep_len)
                     for id in range(number_of_agents):
                         PPObuffer[id].store_episode_length(episode_length=ep_len)
                     
@@ -500,15 +498,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                     if proc_id() == 0 and epoch != 0:
                         print("Environment render not implemented")
                         pass
-                        # env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch,
-                        #            ep_rew=ep_ret_ls)
+                        # env.render(save_gif=save_gif,path=logger.output_dir,epoch_count=epoch)
                 
-                ep_ret_ls = []
                 stat_buff.reset()
                 if not env.epoch_end:
                     #Reset detector position and episode tracking
                     hidden[id] = ac.reset_hidden()
-                    # TODO needs MARL
                     # o, ep_ret, ep_len, a = env.reset(), 0, 0, -1
                     o, _, _, _ = env.reset()
                     o = o[0]
