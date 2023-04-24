@@ -140,10 +140,12 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     act_dim = env.action_space.shape
 
     #Instantiate A2C
-    ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    # ac = actor_critic(env.observation_space, env.action_space, **ac_kwargs)
+    ac = [actor_critic(env.observation_space, env.action_space, **ac_kwargs) for _ in range(number_of_agents)]
     
     # Sync params across processes
-    sync_params(ac)
+    for id in range(number_of_agents):
+        sync_params(ac[id])
 
     #PFGRU args, from Ma et al. 2020
     bp_args = {
@@ -154,7 +156,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
         'area_scale':env.search_area[2][1]}
 
     # Count variables
-    var_counts = tuple(core.count_vars(module) for module in [ac.pi,ac.model])
+    var_counts = tuple(core.count_vars(module) for module in [ac[0].pi, ac[0].model])
     logger.log('\nNumber of parameters: \t pi: %d, model: %d \t'%var_counts)
 
     # Set up trajectory buffer
@@ -175,177 +177,184 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     if proc_id() == 0:
         print(f'Local steps per epoch: {local_steps_per_epoch}')
 
-    def update_a2c(data, env_sim, minibatch=None,iter=None):
-        observation_idx = 11
-        action_idx = 14
-        logp_old_idx = 13
-        advantage_idx = 11
-        return_idx = 12
-        source_loc_idx = 15
-        
-        ep_form= data['ep_form']
-        pi_info = dict(kl=[], ent=[], cf=[], val= np.array([]), val_loss = [])
-        ep_select = np.random.choice(np.arange(0,len(ep_form)),size=int(minibatch),replace=False)
-        ep_form = [ep_form[idx] for idx in ep_select]
-        loss_sto = torch.zeros((len(ep_form),4),dtype=torch.float32)
-        loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        loss_arr = torch.autograd.Variable(loss_arr_buff)
 
-        for ii,ep in enumerate(ep_form):
-            #For each set of episodes per process from an epoch, compute loss 
-            trajectories = ep[0]
-            hidden = ac.reset_hidden()
-            obs, act, logp_old, adv, ret, src_tar = trajectories[:,:observation_idx], trajectories[:,action_idx],trajectories[:,logp_old_idx], \
-                                                     trajectories[:,advantage_idx], trajectories[:,return_idx,None], trajectories[:,source_loc_idx:].clone()
-            #Calculate new log prob.
-            pi, val, logp, loc = ac.grad_step(obs, act, hidden=hidden)
-            logp_diff = logp_old - logp 
-            ratio = torch.exp(logp - logp_old)
-
-            clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
-            clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
-
-            #Useful extra info
-            clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
-            approx_kl = logp_diff.detach().mean().item()
-            ent = pi.entropy().detach().mean().item()
-            val_loss = loss(val,ret)
-            
-            loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
-            loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
-            
-
-        mean_loss = loss_arr.mean()
-        means = loss_sto.mean(axis=0)
-        loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
-        pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
-        
-        #Average KL across processes 
-        kl = mpi_avg(pi_info['kl'][-1])
-        if kl.item() < 1.5 * target_kl:
-            # pi_optimizer.zero_grad() 
-            optimization.pi_optimizer.zero_grad()
-            loss_pi.backward()
-            #Average gradients across processes
-            mpi_avg_grads(ac.pi)
-            # pi_optimizer.step()
-            optimization.pi_optimizer.step()
-            term = False
-        else:
-            term = True
-            if proc_id() == 0:
-                logger.log('Terminated at %d steps due to reaching max kl.'%iter)
-
-        pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss'] = pi_info['kl'][0].numpy(), pi_info['ent'][0].numpy(), pi_info['cf'][0].numpy(), pi_info['val_loss'][0].numpy()
-        loss_sum_new = loss_pi
-        return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
-
-    
-    def update_model(data, args, loss=None):
-        #Update the PFGRU, see Ma et al. 2020 for more details
-        ep_form= data['ep_form']
-        model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
-        source_loc_idx = 15
-        o_idx = 3
-
-        for jj in range(train_v_iters):
-            model_loss_arr_buff.zero_()
-            model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
-            for ii,ep in enumerate(ep_form):
-                sl = len(ep[0])
-                hidden = ac.reset_hidden()[0]
-                src_tar =  ep[0][:,source_loc_idx:].clone()
-                src_tar[:,:2] = src_tar[:,:2]/args['area_scale']
-                obs_t = torch.as_tensor(ep[0][:,:o_idx], dtype=torch.float32)
-                loc_pred = torch.empty_like(src_tar)
-                particle_pred = torch.empty((sl,ac.model.num_particles,src_tar.shape[1]))
-                
-                bpdecay_params = np.exp(args['bp_decay'] * np.arange(sl))
-                bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
-                for zz,meas in enumerate(obs_t):
-                    loc, hidden = ac.model(meas, hidden)
-                    particle_pred[zz] = ac.model.hid_obs(hidden[0])
-                    loc_pred[zz,:] = loc
-
-                bpdecay_params = torch.FloatTensor(bpdecay_params)
-                bpdecay_params = bpdecay_params.unsqueeze(-1)
-                l2_pred_loss = torch.nn.functional.mse_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction='none') * bpdecay_params
-                l1_pred_loss = torch.nn.functional.l1_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction='none') * bpdecay_params
-                
-                l2_loss = torch.sum(l2_pred_loss)
-                l1_loss = 10*torch.mean(l1_pred_loss)
-
-                pred_loss = args['l2_weight'] * l2_loss + args['l1_weight'] * l1_loss
-
-                total_loss = pred_loss
-                particle_pred = particle_pred.transpose(0, 1).contiguous()
-
-                particle_gt = src_tar.repeat(ac.model.num_particles, 1, 1)
-                l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-                l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
-
-                # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
-                # other more complicated distributions could be used to improve the performance
-                y_prob_l2 = torch.exp(-l2_particle_loss).view(ac.model.num_particles, -1, sl, 2)
-                l2_particle_loss = - y_prob_l2.mean(dim=0).log()
-
-                y_prob_l1 = torch.exp(-l1_particle_loss).view(ac.model.num_particles, -1, sl, 2)
-                l1_particle_loss = - y_prob_l1.mean(dim=0).log()
-
-                xy_l2_particle_loss = torch.mean(l2_particle_loss)
-                l2_particle_loss = xy_l2_particle_loss
-
-                xy_l1_particle_loss = torch.mean(l1_particle_loss)
-                l1_particle_loss = 10 * xy_l1_particle_loss
-
-                belief_loss = args['l2_weight'] * l2_particle_loss + args['l1_weight'] * l1_particle_loss
-                total_loss = total_loss + args['elbo_weight'] * belief_loss
-
-                model_loss_arr[ii] = total_loss
-            
-            model_loss = model_loss_arr.mean()
-            # model_optimizer.zero_grad()
-            optimization.model_optimizer.zero_grad()
-            model_loss.backward()
-
-            #Average gradients across the processes
-            mpi_avg_grads(ac.model)
-            torch.nn.utils.clip_grad_norm_(ac.model.parameters(), 5)
-            
-            # model_optimizer.step()
-            optimization.model_optimizer.step() 
-        
-        return model_loss
-    
     # Set up optimizers and learning rate decay for policy and localization module
     # pi_optimizer = Adam(ac.pi.parameters(), lr=pi_lr)
     # model_optimizer = Adam(ac.model.parameters(), lr=vf_lr)
     # pi_scheduler = torch.optim.lr_scheduler.StepLR(pi_optimizer,step_size=100,gamma=0.99)
     # model_scheduler = torch.optim.lr_scheduler.StepLR(model_optimizer,step_size=100,gamma=0.99)
-    optimization = OptimizationStorage(
-        pi_optimizer=Adam(ac.pi.parameters(), lr=pi_lr),
-        critic_optimizer=None,
-        model_optimizer=Adam(ac.model.parameters(), lr=vf_lr),
-        critic_flag=False,
-    )    
+    optimization = [
+        OptimizationStorage(
+                pi_optimizer=Adam(ac[id].pi.parameters(), 
+                lr=pi_lr),
+                critic_optimizer=None,
+                model_optimizer=Adam(ac[id].model.parameters(), 
+                lr=vf_lr),
+                critic_flag=False
+            ) 
+        for id in range(number_of_agents)
+        ]    
     loss = torch.nn.MSELoss(reduction='mean')
 
     # Set up model saving
     logger.setup_pytorch_saver(ac)
 
-    def update(env, args, loss_fcn=loss):
+    def update(agent, agent_optimizer, env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
+        
+        def update_a2c(data, env_sim, minibatch=None,iter=None):
+            observation_idx = 11
+            action_idx = 14
+            logp_old_idx = 13
+            advantage_idx = 11
+            return_idx = 12
+            source_loc_idx = 15
+            
+            ep_form= data['ep_form']
+            pi_info = dict(kl=[], ent=[], cf=[], val= np.array([]), val_loss = [])
+            ep_select = np.random.choice(np.arange(0,len(ep_form)),size=int(minibatch),replace=False)
+            ep_form = [ep_form[idx] for idx in ep_select]
+            loss_sto = torch.zeros((len(ep_form),4),dtype=torch.float32)
+            loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
+            loss_arr = torch.autograd.Variable(loss_arr_buff)
+
+            for ii,ep in enumerate(ep_form):
+                #For each set of episodes per process from an epoch, compute loss 
+                trajectories = ep[0]
+                hidden = agent.reset_hidden()
+                obs, act, logp_old, adv, ret, src_tar = trajectories[:,:observation_idx], trajectories[:,action_idx],trajectories[:,logp_old_idx], \
+                                                        trajectories[:,advantage_idx], trajectories[:,return_idx,None], trajectories[:,source_loc_idx:].clone()
+                #Calculate new log prob.
+                pi, val, logp, loc = agent.grad_step(obs, act, hidden=hidden)
+                logp_diff = logp_old - logp 
+                ratio = torch.exp(logp - logp_old)
+
+                clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv
+                clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
+
+                #Useful extra info
+                clipfrac = torch.as_tensor(clipped, dtype=torch.float32).detach().mean().item()
+                approx_kl = logp_diff.detach().mean().item()
+                ent = pi.entropy().detach().mean().item()
+                val_loss = loss(val,ret)
+                
+                loss_arr[ii] = -(torch.min(ratio * adv, clip_adv).mean() - 0.01*val_loss + alpha * ent)
+                loss_sto[ii,0] = approx_kl; loss_sto[ii,1] = ent; loss_sto[ii,2] = clipfrac; loss_sto[ii,3] = val_loss.detach()
+                
+
+            mean_loss = loss_arr.mean()
+            means = loss_sto.mean(axis=0)
+            loss_pi, approx_kl, ent, clipfrac, loss_val = mean_loss, means[0].detach(), means[1].detach(), means[2].detach(), means[3].detach()
+            pi_info['kl'].append(approx_kl), pi_info['ent'].append(ent), pi_info['cf'].append(clipfrac), pi_info['val_loss'].append(loss_val)
+            
+            #Average KL across processes 
+            kl = mpi_avg(pi_info['kl'][-1])
+            if kl.item() < 1.5 * target_kl:
+                # pi_optimizer.zero_grad() 
+                agent_optimizer.pi_optimizer.zero_grad()
+                loss_pi.backward()
+                #Average gradients across processes
+                mpi_avg_grads(agent.pi)
+                # pi_optimizer.step()
+                agent_optimizer.pi_optimizer.step()
+                term = False
+            else:
+                term = True
+                if proc_id() == 0:
+                    logger.log('Terminated at %d steps due to reaching max kl.'%iter)
+
+            pi_info['kl'], pi_info['ent'], pi_info['cf'], pi_info['val_loss'] = pi_info['kl'][0].numpy(), pi_info['ent'][0].numpy(), pi_info['cf'][0].numpy(), pi_info['val_loss'][0].numpy()
+            loss_sum_new = loss_pi
+            return loss_sum_new, pi_info, term, (env_sim.search_area[2][1]*loc-(src_tar)).square().mean().sqrt()
+
+        def update_model(data, args, loss=None):
+            #Update the PFGRU, see Ma et al. 2020 for more details
+            ep_form= data['ep_form']
+            model_loss_arr_buff = torch.zeros((len(ep_form),1),dtype=torch.float32)
+            source_loc_idx = 15
+            o_idx = 3
+
+            for jj in range(train_v_iters):
+                model_loss_arr_buff.zero_()
+                model_loss_arr = torch.autograd.Variable(model_loss_arr_buff)
+                for ii,ep in enumerate(ep_form):
+                    sl = len(ep[0])
+                    hidden = agent.reset_hidden()[0]
+                    src_tar =  ep[0][:,source_loc_idx:].clone()
+                    src_tar[:,:2] = src_tar[:,:2]/args['area_scale']
+                    obs_t = torch.as_tensor(ep[0][:,:o_idx], dtype=torch.float32)
+                    loc_pred = torch.empty_like(src_tar)
+                    particle_pred = torch.empty((sl,agent.model.num_particles,src_tar.shape[1]))
+                    
+                    bpdecay_params = np.exp(args['bp_decay'] * np.arange(sl))
+                    bpdecay_params = bpdecay_params / np.sum(bpdecay_params)
+                    for zz,meas in enumerate(obs_t):
+                        loc, hidden = agent.model(meas, hidden)
+                        particle_pred[zz] = agent.model.hid_obs(hidden[0])
+                        loc_pred[zz,:] = loc
+
+                    bpdecay_params = torch.FloatTensor(bpdecay_params)
+                    bpdecay_params = bpdecay_params.unsqueeze(-1)
+                    l2_pred_loss = torch.nn.functional.mse_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction='none') * bpdecay_params
+                    l1_pred_loss = torch.nn.functional.l1_loss(loc_pred.squeeze(), src_tar.squeeze(), reduction='none') * bpdecay_params
+                    
+                    l2_loss = torch.sum(l2_pred_loss)
+                    l1_loss = 10*torch.mean(l1_pred_loss)
+
+                    pred_loss = args['l2_weight'] * l2_loss + args['l1_weight'] * l1_loss
+
+                    total_loss = pred_loss
+                    particle_pred = particle_pred.transpose(0, 1).contiguous()
+
+                    particle_gt = src_tar.repeat(agent.model.num_particles, 1, 1)
+                    l2_particle_loss = torch.nn.functional.mse_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
+                    l1_particle_loss = torch.nn.functional.l1_loss(particle_pred, particle_gt, reduction='none') * bpdecay_params
+
+                    # p(y_t| \tau_{1:t}, x_{1:t}, \theta) is assumed to be a Gaussian with variance = 1.
+                    # other more complicated distributions could be used to improve the performance
+                    y_prob_l2 = torch.exp(-l2_particle_loss).view(agent.model.num_particles, -1, sl, 2)
+                    l2_particle_loss = - y_prob_l2.mean(dim=0).log()
+
+                    y_prob_l1 = torch.exp(-l1_particle_loss).view(agent.model.num_particles, -1, sl, 2)
+                    l1_particle_loss = - y_prob_l1.mean(dim=0).log()
+
+                    xy_l2_particle_loss = torch.mean(l2_particle_loss)
+                    l2_particle_loss = xy_l2_particle_loss
+
+                    xy_l1_particle_loss = torch.mean(l1_particle_loss)
+                    l1_particle_loss = 10 * xy_l1_particle_loss
+
+                    belief_loss = args['l2_weight'] * l2_particle_loss + args['l1_weight'] * l1_particle_loss
+                    total_loss = total_loss + args['elbo_weight'] * belief_loss
+
+                    model_loss_arr[ii] = total_loss
+                
+                model_loss = model_loss_arr.mean()
+                # model_optimizer.zero_grad()
+                agent_optimizer.model_optimizer.zero_grad()
+                model_loss.backward()
+
+                #Average gradients across the processes
+                mpi_avg_grads(agent.model)
+                torch.nn.utils.clip_grad_norm_(agent.model.parameters(), 5)
+                
+                # model_optimizer.step()
+                agent_optimizer.model_optimizer.step() 
+            
+            return model_loss
+        
+        ### UPDATE ###
         # data = buf.get(logger=logger)
         data = buf.get()
 
         #Update function if using the PFGRU, fcn. performs multiple updates per call
-        ac.model.train()
+        agent.model.train()
         loss_mod = update_model(data, args, loss=loss_fcn)
 
         #Update function if using the regression GRU
         #loss_mod = update_loc_rnn(data,env,loss)
 
-        ac.model.eval()
+        agent.model.eval()
         min_iters = len(data['ep_form'])
         kk = 0; term = False
 
@@ -356,8 +365,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             kk += 1
         
         #Reduce learning rate
-        optimization.pi_scheduler.step()
-        optimization.model_scheduler.step()
+        for id in range(number_of_agents):
+            optimization[id].pi_scheduler.step()
+            optimization[id].model_scheduler.step()
 
         logger.store(StopIter=kk)
 
@@ -490,7 +500,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             reduce_v_iters = False
 
         # Perform PPO update!
-        update(env, bp_args, loss_fcn=loss)
+        for id in range(number_of_agents):
+            update(agent=ac[id], agent_optimizer=optimization[id], env=env, args=bp_args, loss_fcn=loss)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)

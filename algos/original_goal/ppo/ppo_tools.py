@@ -140,7 +140,7 @@ class OptimizationStorage:
         self.pi_scheduler = torch.optim.lr_scheduler.StepLR(
             self.pi_optimizer, step_size=100, gamma=0.99
         )
-        self.pfgru_scheduler = torch.optim.lr_scheduler.StepLR(
+        self.model_scheduler = torch.optim.lr_scheduler.StepLR(
             self.model_optimizer, step_size=100, gamma=0.99
         )
 
