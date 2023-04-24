@@ -14,12 +14,8 @@ from dataclasses import dataclass, field
 from typing_extensions import TypeAlias  # type: ignore
 from typing import Union, cast, Optional, Any, NamedTuple, Tuple, Dict, List, Dict
 import scipy.signal  # type: ignore
-import ray
 
-import core as RADA2C_core  # type: ignore
-from rl_tools.logx import EpochLogger  # type: ignore
-from rl_tools.mpi_pytorch import setup_pytorch_for_mpi, sync_params, mpi_avg_grads  # type: ignore
-from rl_tools.mpi_tools import mpi_fork, mpi_avg, proc_id, mpi_statistics_scalar, num_procs  # type: ignore
+from rl_tools.mpi_tools import mpi_statistics_scalar  # type: ignore
 
 
 # If prioritizing memory, only keep observations and reinflate heatmaps when update happens. Reduces memory requirements, but greatly slows down training.

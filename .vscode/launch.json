@@ -138,6 +138,18 @@
       //"args": ["--render", "True"],
       "args": ["--obstruct", "1"],
       "cwd": "${workspaceFolder}/algos/test_ppo"
-    }
+    },
+    {
+      "name": "Hail Mary - Train OG project ",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/algos/test_cnn/train.py",
+      "console": "integratedTerminal",
+      "justMyCode": false,
+      //"args": ["--steps_per_epoch", "2", "--steps_per_episode", "1"],
+      //"args": ["--render", "True"],
+      //"args": ["--obstruct", "1"],
+      "cwd": "${workspaceFolder}/algos/test_ppo"
+    }    
   ]
 }
