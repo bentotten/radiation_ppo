@@ -124,9 +124,13 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
     # Special function to avoid certain slowdowns from PyTorch + MPI combo.
     setup_pytorch_for_mpi()
+    
     # Set up logger and save configuration
     logger = EpochLogger(**logger_kwargs)
     logger.save_config(locals())
+    
+    # Set up saver using logger class
+    model_saver = [EpochLogger(**logger_kwargs) for _ in range(number_of_agents)]
 
     #Set Pytorch random seed
     torch.manual_seed(seed)
@@ -199,7 +203,9 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     loss = torch.nn.MSELoss(reduction='mean')
 
     # Set up model saving
-    logger.setup_pytorch_saver(ac)
+    #logger.setup_pytorch_saver(ac)
+    for id in range(number_of_agents):
+        model_saver[id].setup_pytorch_saver(ac[id])
 
     def update(agent, agent_optimizer, buf, env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
@@ -495,10 +501,10 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
         # Save model
         if (epoch % save_freq == 0) or (epoch == epochs-1):
-            logger.save_state(None, None)
-            pass
+            for id in range(number_of_agents):
+                model_saver[id].save_state(state_dict=None, itr=id)
+                pass    
 
-        
         #Reduce localization module training iterations after 100 epochs to speed up training
         if reduce_v_iters and epoch > 99:
             train_v_iters = 5
