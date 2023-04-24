@@ -164,14 +164,16 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     
     #buf = PPOBuffer(obs_dim, act_dim, local_steps_per_epoch, gamma, lam, ac_kwargs['hidden_sizes_rec'][0])
     
-    buf = PPOBuffer(
-        observation_dimension=env.observation_space.shape[0],
-        max_size=local_steps_per_epoch,
-        max_episode_length=max_ep_len,
-        gamma=gamma,
-        lam=lam,
-        number_agents=number_of_agents,
-    )    
+    PPObuffer = [ 
+        PPOBuffer(
+            observation_dimension=env.observation_space.shape[0],
+            max_size=local_steps_per_epoch,
+            max_episode_length=max_ep_len,
+            gamma=gamma,
+            lam=lam,
+            number_agents=number_of_agents,
+        ) for _ in range(number_of_agents)
+    ]
     
     save_gif_freq = epochs // 3
     if proc_id() == 0:
@@ -199,7 +201,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
     # Set up model saving
     logger.setup_pytorch_saver(ac)
 
-    def update(agent, agent_optimizer, env, args, loss_fcn=loss):
+    def update(agent, agent_optimizer, buf, env, args, loss_fcn=loss):
         """Update for the localization and A2C modules"""
         
         def update_a2c(data, env_sim, minibatch=None,iter=None):
@@ -414,7 +416,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             ep_ret_ls.append(ep_ret)
 
             # buf.store(obs_std, a, r, v, logp, env.src_coords)
-            buf.store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
+            for id in range(number_of_agents):
+                PPObuffer[id].store(obs=obs_std, act=a, rew=r, val=v, logp=logp, src=env.src_coords, full_observation={0: obs_std}, heatmap_stacks=None, terminal=d)
             
             logger.store(VVals=v)
 
@@ -451,12 +454,14 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                 else:
                     v = 0
                 # buf.finish_path(v)
-                buf.GAE_advantage_and_rewardsToGO(v)
+                for id in range(number_of_agents):
+                    PPObuffer[id].GAE_advantage_and_rewardsToGO(v)
                 
                 if terminal:
                     # only save EpRet / EpLen if trajectory finished
                     logger.store(EpRet=ep_ret, EpLen=ep_len)
-                    buf.store_episode_length(episode_length=ep_len)
+                    for id in range(number_of_agents):
+                        PPObuffer[id].store_episode_length(episode_length=ep_len)
                     
                 if epoch_ended and render and (epoch % save_gif_freq == 0 or ((epoch + 1 ) == epochs)):
                     #Check agent progress during training
@@ -501,7 +506,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
 
         # Perform PPO update!
         for id in range(number_of_agents):
-            update(agent=ac[id], agent_optimizer=optimization[id], env=env, args=bp_args, loss_fcn=loss)
+            update(agent=ac[id], agent_optimizer=optimization[id], buf=PPObuffer[id], env=env, args=bp_args, loss_fcn=loss)
 
         # Log info about epoch
         logger.log_tabular('Epoch', epoch)
