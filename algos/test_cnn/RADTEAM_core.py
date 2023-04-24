@@ -1019,29 +1019,20 @@ class Actor(nn.Module):
             in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
         )
         self.step4 = nn.Flatten(start_dim=0, end_dim=-1)
-        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=512)
-        self.step6 = nn.Linear(in_features=512, out_features=128)
-        self.step6 = nn.Linear(in_features=128, out_features=32)
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=64)
+        self.step6 = nn.Linear(in_features=64, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         self.step7 = nn.Linear(in_features=16, out_features=action_dim)
         self.softmax = nn.Softmax(dim=0)  # Put in range [0,1]
 
         self.actor = nn.Sequential(
-            nn.Conv2d(
-                in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1
-            ),  # output tensor with shape (5, 8, Height, Width)
+            nn.Conv2d(in_channels=channels, out_channels=8, kernel_size=3, stride=1, padding=1),  # output tensor with shape (5, 8, Height, Width)
             nn.ReLU(),
-            nn.MaxPool2d(
-                kernel_size=2, stride=2
-            ),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
-            nn.Conv2d(
-                in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1
-            ),  # output tensor with shape (4, 16, 2, 2)
+            nn.MaxPool2d(kernel_size=2, stride=2),  # output tensor with shape (4, 8, 2, 2). Output height and width is floor(((Width - Size)/ Stride) +1)
+            nn.Conv2d(in_channels=8, out_channels=16, kernel_size=3, padding=1, stride=1),  # output tensor with shape (4, 16, 2, 2)
             nn.ReLU(),
             nn.Flatten(start_dim=0, end_dim=-1),  # output tensor with shape (1, x)
-            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=128),  # output tensor with shape (32)
-            nn.ReLU(),
-            nn.Linear(in_features=128, out_features=64),  # output tensor with shape ()
+            nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=64),  # output tensor with shape (32)
             nn.ReLU(),
             nn.Linear(in_features=64, out_features=32),  # output tensor with shape)
             nn.ReLU(),
@@ -1265,15 +1256,12 @@ class Critic(nn.Module):
         self.step4 = nn.Flatten(
             start_dim=0, end_dim=-1
         )  # output tensor with shape (1, x)
-        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=512)
+        self.step5 = nn.Linear(in_features=16 * batches * pool_output * pool_output, out_features=64)
         # nn.ReLU()
-        self.step6 = nn.Linear(in_features=512, out_features=128)
-        self.step6 = nn.Linear(in_features=128, out_features=32)
+        self.step6 = nn.Linear(in_features=64, out_features=32)
         self.step6 = nn.Linear(in_features=32, out_features=16)
         # nn.ReLU()
-        self.step7 = nn.Linear(
-            in_features=16, out_features=1
-        )  # output tensor with shape (1)
+        self.step7 = nn.Linear(in_features=16, out_features=1)  # output tensor with shape (1)
         # nn.ReLU()
 
         self.critic = nn.Sequential(
@@ -1986,7 +1974,7 @@ class CNNBase:
             state_observation=state_observation, id=self.id, hidden=hidden
         )
 
-    def step_with_gradient_for_critic(
+    def step_keep_gradient_for_critic(
         self,
         critic_mapstack: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -1997,15 +1985,12 @@ class CNNBase:
         :param id: (int) ID of the agent who's observation is being processed. This allows any agent to recreate mapbuffers for any other agent
         :param hidden: hidden layers for PFGRU.
         """
+        return self.critic.forward(critic_mapstack)  # type: ignore
 
-        state_value = self.critic.forward(critic_mapstack)
-
-        return state_value  # type: ignore
-
-    def step_with_gradient_for_actor(
+    def step_keep_gradient_for_actor(
         self,
         actor_mapstack: torch.Tensor,
-        critic_mapstack: torch.Tensor,
+        # critic_mapstack: torch.Tensor,
         action_taken: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -2037,10 +2022,10 @@ class CNNBase:
             state_map_stack=actor_mapstack, action=action_taken
         )
 
-        with torch.no_grad():
-            state_value = self.critic.forward(critic_mapstack)
+        # with torch.no_grad():
+        #     state_value = self.critic.forward(critic_mapstack)
 
-        return action_logprobs, state_value, dist_entropy  # type: ignore
+        return action_logprobs, dist_entropy  # type: ignore
 
     def reset_hidden(self, batch_size=1) -> Tuple[torch.Tensor, torch.Tensor]:
         """For compatibility - returns nothing"""

@@ -417,17 +417,8 @@ class PPOBuffer:
             )
         )
 
-        # Data is currently stored per-step for the entire epoch. This divides the data into a per-episode form
+        # Data is currently stored per-step for the entire epoch. This divides the data into a per-episode form for the model
         episode_form: List[List[torch.Tensor]] = [[] for _ in range(episode_len_Size)]
-        actor_heatmaps_in_episode_form: List[List[torch.Tensor]] = [
-            [] for _ in range(episode_len_Size)
-        ]
-        critic_heatmaps_in_episode_form: List[List[torch.Tensor]] = [
-            [] for _ in range(episode_len_Size)
-        ]
-        prediction_location_in_episode_form: List[List[torch.Tensor]] = [
-            [] for _ in range(episode_len_Size)
-        ]
 
         # TODO: This is essentially just a sliding window over obs_buf; use a built-in function to do this
         slice_b: int = 0
@@ -438,15 +429,6 @@ class PPOBuffer:
             episode_form[jj].append(
                 torch.as_tensor(obs_buf[slice_b:slice_f], dtype=torch.float32)
             )  # Take readings from slice_b to slice_f. Slice_f marks the episode offset
-            actor_heatmaps_in_episode_form[jj].append(
-                self.heatmap_buffer["actor"][slice_b:slice_f]
-            )  # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
-            critic_heatmaps_in_episode_form[jj].append(
-                self.heatmap_buffer["critic"][slice_b:slice_f]
-            )  # NOTE: CNN cannot process in batches, leave as a list instead of a tensor
-            prediction_location_in_episode_form[jj].append(
-                self.location_pred_buf[slice_b:slice_f]
-            )
             slice_b += ep_i
             jj += 1
 
@@ -455,20 +437,6 @@ class PPOBuffer:
             episode_form[jj].append(
                 torch.as_tensor(obs_buf[slice_f:], dtype=torch.float32)
             )
-            actor_heatmaps_in_episode_form[jj].append(
-                self.heatmap_buffer["actor"][slice_f:]
-            )
-            critic_heatmaps_in_episode_form[jj].append(
-                self.heatmap_buffer["critic"][slice_f:]
-            )
-            prediction_location_in_episode_form[jj].append(
-                self.location_pred_buf[slice_f:]
-            )
-
-        assert len(actor_heatmaps_in_episode_form) == len(
-            critic_heatmaps_in_episode_form
-        )
-        assert len(actor_heatmaps_in_episode_form) == len(episode_form)
 
         # Convert to tensors
         data = dict(
@@ -482,9 +450,9 @@ class PPOBuffer:
             ),  # TODO artifact - delete? Appears to be used in the location prediction, but is never updated
             ep_len=torch.as_tensor(np.copy(total_episode_length), dtype=torch.float32),
             ep_form=episode_form,
-            actor_heatmaps_ep_form=actor_heatmaps_in_episode_form,
-            critic_heatmaps_ep_form=critic_heatmaps_in_episode_form,
-            location_pred_ep_form=prediction_location_in_episode_form,
+            actor_mapstacks = self.heatmap_buffer['actor'],
+            critic_mapstacks = self.heatmap_buffer['critic']
+            
         )
 
         return data

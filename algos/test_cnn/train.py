@@ -278,7 +278,35 @@ def ppo(
     if proc_id() == 0:
         print(f"Local steps per epoch: {local_steps_per_epoch}")
 
-    def update_actor(id, data, env_sim, minibatch=None, iter=None):
+    def compute_loss_pi(data, step):
+        obs, act, adv, logp_old = data['obs'], data['act'], data['adv'], data['logp']
+        mapstacks = data['actor_mapstacks']
+
+        # Policy loss
+        logp, dist_entropy = ac.step_keep_gradient_for_actor(actor_mapstack=mapstacks[step], action_taken=act[step])
+        ratio = torch.exp(logp - logp_old)
+        clip_adv = torch.clamp(ratio, 1-clip_ratio, 1+clip_ratio) * adv # Alpha and entropy here?
+        loss_pi = -(torch.min(ratio * adv, clip_adv)).mean()
+
+        # Useful extra info
+        approx_kl = (logp_old - logp).mean().item()
+        ent = dist_entropy.mean().item()
+        clipped = ratio.gt(1+clip_ratio) | ratio.lt(1-clip_ratio)
+        clipfrac = torch.as_tensor(clipped, dtype=torch.float32).mean().item()
+        pi_info = dict(kl=approx_kl, ent=ent, cf=clipfrac)
+
+        return loss_pi, pi_info
+
+    # Set up function for computing value loss
+    def compute_loss_v(data, step):
+        ret = data['ret']
+        mapstacks = data['critic_mapstacks']
+        
+        value = ac.step_keep_gradient_for_critic(critic_mapstack=mapstacks[step])
+        
+        return optimization.MSELoss(value, ret)
+
+    def update_a2c(id, data, env_sim, minibatch=None, iter=None):
         observation_idx = 11
         action_idx = 14
         logp_old_idx = 13
@@ -440,49 +468,6 @@ def ppo(
 
         return loss_sum_new, pi_info, term, prediction_loss
 
-    def update_critic(data):
-        ep_form = data["ep_form"]
-        v_ep_form = data["critic_heatmaps_ep_form"]
-        return_idx = 12
-
-        loss_arr_buff = torch.zeros((len(ep_form), 1), dtype=torch.float32)
-        loss_arr = torch.autograd.Variable(loss_arr_buff)
-
-        for ii in range(len(ep_form)):
-            # Clear stored maps
-            ac.reset()
-
-            # Get Data
-            trajectories = ep_form[ii][0]
-            ret = trajectories[:, return_idx, None]
-
-            critic_mapstacks = v_ep_form[ii][0]
-
-            # For Critic/Value function
-            value_b = torch.zeros((len(ret)), dtype=torch.float32)
-            value_buffer = torch.autograd.Variable(value_b)
-
-            for step in range(len(critic_mapstacks)):
-                # Calculate new log prob.
-                value = ac.step_with_gradient_for_critic(
-                    critic_mapstack=critic_mapstacks[step]
-                )
-                value_buffer[step] = value.clone()
-
-            loss_arr[ii] = optimization.MSELoss(value_buffer, ret.squeeze())
-
-        critic_loss = loss_arr.mean()
-
-        # Take critic gradient step
-        optimization.critic_optimizer.zero_grad()
-        critic_loss.backward()
-        # Average gradients across processes
-        # TODO pi does not have any gradients
-        mpi_avg_grads(ac.pi)
-        optimization.critic_optimizer.step()
-
-        return critic_loss
-
     def update_model(data, args):
         # Update the PFGRU, see Ma et al. 2020 for more details
         ep_form = data["ep_form"]
@@ -616,26 +601,44 @@ def ppo(
         # Update function if using the PFGRU, fcn. performs multiple updates per call
         ac.model.train()
         loss_mod = update_model(data, args)
-
         ac.model.eval()
+        
         min_iters = len(data["ep_form"])
         kk = 0
         term = False
 
-        # Update policy
-        while not term and kk < train_pi_iters:
-            # Early stop training if KL-div above certain threshold
-            pi_l, pi_info, term, loc_loss = update_actor(
-                id=0, data=data, env_sim=env, minibatch=min_iters, iter=kk
-            )
-            kk += 1
+        # Update RAD-A2c
+        # while not term and kk < train_pi_iters:
+        #     # Early stop training if KL-div above certain threshold
+        #     pi_l, pi_info, term, loc_loss = update_actor(
+        #         id=0, data=data, env_sim=env, minibatch=min_iters, iter=kk
+        #     )
+        #     kk += 1
 
-        # Update value function
-        for _ in range(train_v_iters):
-            loss_v = update_critic(data=data)
+        for i in range(train_pi_iters):
+            for step in range(len(data['obs'])):
+                optimization.pi_optimizer.zero_grad()
+                loss_pi, pi_info = compute_loss_pi(data, step)
+                kl = mpi_avg(pi_info['kl'])
 
-        print(pi_info["val_loss"])
-        print(loss_v)
+                loss_pi.backward()
+                mpi_avg_grads(ac.pi)    # average grads across MPI processes
+                optimization.pi_optimizer.step()        
+            if kl > 1.5 * target_kl:
+                logger.log('Early stopping at step %d due to reaching max kl.'%i)
+                break             
+                
+
+        # Update value function 
+        # Value function learning
+        for i in range(train_v_iters):
+            for step in range(len(data['obs'])):
+            
+                optimization.critic_optimizer.zero_grad()
+                loss_v = compute_loss_v(data, step)
+                loss_v.backward()
+                mpi_avg_grads(ac.critic)    # average grads across MPI processes
+                optimization.critic_optimizer.step()
 
         # Reduce learning rate
         optimization.pi_scheduler.step()
@@ -652,13 +655,13 @@ def ppo(
         )
 
         logger.store(
-            LossPi=pi_l.item(),
+            LossPi=loss_pi.item(),
             LossV=loss_v.item(),
             LossModel=loss_mod.item(),
             KL=kl,
             Entropy=ent,
             ClipFrac=cf,
-            LocLoss=loc_loss,
+            LocLoss=0,
             VarExplain=0,
         )
 
