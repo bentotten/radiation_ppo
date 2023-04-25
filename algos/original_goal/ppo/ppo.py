@@ -375,9 +375,8 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
             kk += 1
         
         #Reduce learning rate
-        for id in range(number_of_agents):
-            optimization[id].pi_scheduler.step()
-            optimization[id].model_scheduler.step()
+        agent_optimizer.pi_scheduler.step()
+        agent_optimizer.model_scheduler.step()
 
         logger.store(StopIter=kk)
 
@@ -388,6 +387,7 @@ def ppo(env_fn, actor_critic=core.RNNModelActorCritic, ac_kwargs=dict(), seed=0,
                      KL=kl, Entropy=ent, ClipFrac=cf,
                      LocLoss=loc_loss, VarExplain=0)
     
+    ############# START #############
     # Prepare for interaction with environment
     start_time = time.time()
     # o, ep_ret, ep_len, done_count, a = env.reset(), 0, 0, 0, -1

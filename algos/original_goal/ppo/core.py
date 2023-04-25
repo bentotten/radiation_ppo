@@ -150,10 +150,10 @@ class PFRNNBaseCell(nn.Module):
             tensor -- sample
         """
         std = torch.nn.functional.softplus(var)
-        if torch.cuda.is_available():
-            eps = torch.cuda.FloatTensor(std.shape).normal_()
-        else:
-            eps = torch.FloatTensor(std.shape).normal_()
+        # if torch.cuda.is_available():
+        #     eps = torch.cuda.FloatTensor(std.shape).normal_()
+        # else:
+        eps = torch.FloatTensor(std.shape).normal_()
 
         return mu + eps * std
 
