@@ -1,4 +1,6 @@
-# Radiation Source Search Environment
+# Project moved to -> https://github.com/bentotten/RAD-TEAM
+
+## Radiation Source Search Environment
 
 This contains the multi-agent radiation localization architecture created by Ben Totten, loosely based on 
 - The multi-agent architecture created by Alagha et al. and their published [paper](https://www.sciencedirect.com/science/article/abs/pii/S0167739X22002266)
@@ -7,7 +9,7 @@ This contains the multi-agent radiation localization architecture created by Ben
 
 This also contains an adapted form of the single-agent radiation source search architecture (RAD-A2C) created by Proctor et al. that can be run with multiple independent learners.
 
-# Algorithms
+## Algorithms
 
 TBD
 
